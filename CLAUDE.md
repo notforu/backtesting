@@ -15,18 +15,54 @@ A modular crypto backtesting platform for testing trading strategies across mult
 
 ## Agent System
 
-This project uses specialized agents. For complex tasks, always use the orchestrator:
+**IMPORTANT**: All non-trivial tasks MUST go through the orchestrator first. The orchestrator will break down work and delegate to specialized agents.
 
 ```
-/orchestrator <task description>
+Use orchestrator agent for any task that:
+- Spans multiple files or components
+- Requires coordination between FE/BE
+- Involves feature implementation
+- Needs architectural decisions
 ```
 
-Available agents:
-- `orchestrator` - Coordinates multi-step tasks, delegates to specialists
-- `fe-dev` - React/UI development
-- `be-dev` - Backend/API/engine development
+### Available Agents
+
+**Development:**
+- `orchestrator` - **USE FIRST** - Coordinates multi-step tasks, delegates to specialists
+- `fe-dev` - React/UI development (charts, dashboard, forms, styling)
+- `be-dev` - Backend/API/engine (trading logic, strategies, risk, metrics)
+- `fullstack-dev` - Platform/infrastructure (data fetching, caching, database, cross-cutting concerns)
+
+**Quality & Operations:**
 - `qa` - Testing and quality assurance
 - `builder` - Build, deploy, dependency management
+- `runner` - Start/stop servers, check logs, monitor processes (lightweight, haiku model)
+- `docs-writer` - Documentation updates
+- `ui-tester` - Visual UI testing with Playwright
+
+**Architecture & Research:**
+- `architect` - Deep system design, asks clarifying questions (opus model - use for complex problems)
+- `Explore` - Codebase exploration and search
+- `Plan` - Implementation planning and architecture
+
+### Agent Usage Logging
+
+**After invoking any agent, log it to `/chat_logs/agent-usage.log`:**
+
+```
+[YYYY-MM-DD HH:MM] agent-name (model) - brief task description
+```
+
+This tracks token consumption patterns:
+- `opus` = high tokens (~10x haiku)
+- `sonnet` = medium tokens (~3x haiku)
+- `haiku` = low tokens (baseline)
+
+Example:
+```
+[2025-01-24 14:30] be-dev (sonnet) - Implement short selling support
+[2025-01-24 14:45] docs-writer (haiku) - Update changelog
+```
 
 ## Workflows
 
@@ -97,6 +133,23 @@ The risk module is critical for capital preservation:
 - All risk rules must be configurable
 - Kill switch must be tested with each strategy
 - Log all risk-related decisions
+
+## Changelog (IMPORTANT)
+
+**After ANY significant code change, create a changelog file:**
+
+1. Call `docs-writer` agent with summary of changes
+2. Or manually create `/chat_logs/YYYY-MM-DD-HHMMSS-brief-title.md`
+
+Example: `chat_logs/2025-01-24-143052-add-short-selling.md`
+
+Significant changes include:
+- New features or refactoring
+- Bug fixes
+- API or type changes
+- New files or modules
+
+Each change gets its own file for easy tracking and review.
 
 ## Chat Logs
 

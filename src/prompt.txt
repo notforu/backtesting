@@ -1,0 +1,22 @@
+I want to implement simple backtesting system, to test trading strategies. Initially i want to test candle-based strategies, for crypto assets, maybe with analyzing correlations between tokens and
+
+  btc/eth. The strategy itself is the subject of later considerations, firstly lets focus on system architecture. I want strategies to work as plugins, so I can write different strategies and test them.
+
+  Later I want seamlessly connect it to real trading connectors (but leave it for next iterations). I would like to test against all existing tokens, so would be nice to store candles in the cache. But
+
+  for the start 1 set of candles in different resolutions would be OK (for example BTCUSDT). I want to have UI for backtesting: i want tradingview lightweight chart to view price history (candles), and
+
+  see on chart where the strategy buys or sells, during backtesting. I want to have an ability to configure strategy params, and see dashboard with results: roi, max drawdown, and so on. Also I want
+
+  separate configurable risk management module, with kill switch for risk for trade or risk for day, and so on. I want to store backtesting runs so I can navigate through the history, and analyze
+  previous
+  runs. I want to be able to change chart resolution (1m 5m 15m 30m 1h 4h 1d 1w), and rerun the backtesting for new set of candles. Please ultrathink about the best way for me to achieve my goals and
+
+  propose the architecture and set of free libs/tools/apis to speed up the process, ask me questions to clarify task as much as possible. My main goal here is to test different strategies and earn from
+
+  the crypto market by algotrading. Also I want you to save detailed docs for the future runs, and you should add chats_logs dir, and store there the log of summary of our every chat, so we could appeal
+  to it later
+
+  Also, recommend me 2 thigns: 1) how to add system prompt to all prompts in this project? i want you to read docs before every task. 2) i want to know, which agents i can create to speed up the process,
+      and give me instructions how to create them, and how to force you to start using them (orchestrator / fe dev / be dev / qa / builder / etc). I want them to be used for every prompt as well, without
+      explicit mention

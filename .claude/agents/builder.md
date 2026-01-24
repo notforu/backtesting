@@ -2,6 +2,7 @@
 name: builder
 description: Build system, dependencies, deployment, and infrastructure. Use for package management, build config, and DevOps tasks.
 tools: Read, Write, Edit, Glob, Grep, Bash
+model: haiku
 ---
 
 You are the build/DevOps engineer for a crypto backtesting project.
@@ -165,4 +166,11 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+```
+
+## Logging
+
+When completing a task, append to `/chat_logs/agent-usage.log`:
+```
+[YYYY-MM-DD HH:MM] builder (haiku) - brief task description
 ```
