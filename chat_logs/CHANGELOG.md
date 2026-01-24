@@ -4,6 +4,68 @@ All notable changes to this project are documented here. Newest entries first.
 
 ---
 
+## [2026-01-24] Add GPT LONG ULTIMATE Strategy
+
+### Added
+- `strategies/gptLongUltimate.ts` - Multi-signal trend-following strategy with fractal analysis
+
+### Key Features
+- SMA(60) and EMA(120) trend filters
+- BB% RSI momentum confirmation (Bollinger Bands applied to RSI)
+- Klinger Volume Oscillator (KVO) with configurable lengths
+- Williams Fractals for price structure identification
+- Fractal trend counting for confirmation (3+ consecutive = confirmed trend)
+- Fractal Breakout and CHoCH (Change of Character) entry types
+- Dynamic stop losses at 3rd most recent opposite fractal
+- 14 configurable parameters with sensible defaults
+- Symmetric long/short logic (shorts can be disabled)
+
+### Context
+Pine Script-derived strategy combining multiple indicators with fractal-based structure analysis. Provides institutional-grade technical analysis for identifying high-probability trade setups. The symmetric design ensures consistency between long and short trades.
+
+See `/chat_logs/2026-01-24-150000-add-gpt-long-ultimate-strategy.md` for full details.
+
+---
+
+## [2026-01-24] Strengthen Orchestrator Delegation Rules
+
+### Changed
+- Rule 1 (ALWAYS USE ORCHESTRATOR) now enforces stricter delegation
+- Removed "trivial single-line fixes" exception to prevent scope creep
+- Added explicit requirement: orchestrator MUST delegate ALL code work to specialized agents
+- Orchestrator cannot make code changes itself or return instructions (must delegate instead)
+
+### Added
+- New "STRICT ENFORCEMENT" section in Rule 1 clarifying delegation requirements
+
+### Files Modified
+- `CLAUDE.md` - Updated Rule 1 with stricter language and STRICT ENFORCEMENT section
+
+### Context
+Previous wording allowed ambiguity about what constituted "exceptions" for the orchestrator. The stricter language ensures:
+- Clean separation between orchestrator (coordinator) and developers (fe-dev, be-dev, etc.)
+- Proper tracking of which agent performs code work
+- Prevention of orchestrator scope creep
+- Clear audit trail for all code changes
+
+See `/chat_logs/2026-01-24-140000-strengthen-orchestrator-rules.md` for full details.
+
+---
+
+## [2026-01-24] Improve Trade Action Labels for Clarity
+
+### Changed
+- Trade action labels now explicitly show position type (Long/Short)
+- Updated `getTradeActionLabel()` to show: 'Open Long ↑', 'Close Long ↑', 'Open Short ↓', 'Close Short ↓'
+
+### Files Modified
+- `src/web/types.ts` - Enhanced label generation with Long/Short descriptors
+
+### Context
+Previous labels relied on arrow direction alone to indicate position type. Adding explicit Long/Short text improves UI clarity and reduces confusion when reviewing trade history.
+
+---
+
 ## [2025-01-24] Agent Usage Logging System
 
 ### Added

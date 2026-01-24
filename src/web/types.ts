@@ -246,10 +246,10 @@ export function isCloseTrade(trade: Trade): boolean {
  */
 export function getTradeActionLabel(action: TradeAction): string {
   const labels: Record<TradeAction, string> = {
-    'OPEN_LONG': 'Open ↑',
-    'CLOSE_LONG': 'Close ↑',
-    'OPEN_SHORT': 'Open ↓',
-    'CLOSE_SHORT': 'Close ↓',
+    'OPEN_LONG': 'Open Long ↑',
+    'CLOSE_LONG': 'Close Long ↑',
+    'OPEN_SHORT': 'Open Short ↓',
+    'CLOSE_SHORT': 'Close Short ↓',
   };
   return labels[action];
 }

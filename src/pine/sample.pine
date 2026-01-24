@@ -1,0 +1,123 @@
+//@version=6
+strategy("GPT LONG ULTIMATE", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=10, process_orders_on_close=true)
+
+// === MA Filters ===
+ma60 = ta.sma(close, 60)
+ema120 = ta.ema(close, 120)
+plot(ma60, color=color.orange, title="MA 60")
+plot(ema120, color=color.blue, title="EMA 120")
+
+// === BB% RSI ===
+rsi = ta.rsi(close, 14)
+basis = ta.sma(rsi, 20)
+dev = ta.stdev(rsi, 20)
+upper = basis + dev
+lower = basis - dev
+bbPercent = (rsi - lower) / (upper - lower)
+
+// === KVO ===
+fastKVO = 34
+slowKVO = 55
+signalKVO = 13
+dm = close > close[1] ? 1 : close < close[1] ? -1 : 0
+volumeForce = dm * volume
+kvo = ta.ema(volumeForce, fastKVO) - ta.ema(volumeForce, slowKVO)
+signal = ta.ema(kvo, signalKVO)
+kvoConfirm = kvo > signal
+
+// === Fractals ===
+fractalUp = high[2] > high[1] and high[2] > high[3] and high[2] > high[0] and high[2] > high[4]
+fractalDown = low[2] < low[1] and low[2] < low[3] and low[2] < low[0] and low[2] < low[4]
+
+// === Semi-Fractals ===
+semiFractalUp = high[1] > high[0] and high[1] > high[2]
+semiFractalDown = low[1] < low[0] and low[1] < low[2]
+
+// === Fractal Trend ===
+var float lastFractalUp = na
+var float lastFractalDown = na
+var int upCount = 0
+var int downCount = 0
+var string trend = "none"
+
+var line[] trendLines = array.new_line()
+
+if fractalUp
+    if not na(lastFractalUp)
+        array.push(trendLines, line.new(x1=bar_index[2], y1=lastFractalUp, x2=bar_index, y2=high[2], color=color.green))
+    lastFractalUp := high[2]
+    upCount += 1
+    downCount := 0
+    if upCount >= 3
+        trend := "up"
+
+if fractalDown
+    if not na(lastFractalDown)
+        array.push(trendLines, line.new(x1=bar_index[2], y1=lastFractalDown, x2=bar_index, y2=low[2], color=color.red))
+    lastFractalDown := low[2]
+    downCount += 1
+    upCount := 0
+    if downCount >= 3
+        trend := "down"
+
+// === MA Trend Filter ===
+bool isMAtrendDown = ma60 < ema120 and ma60 < ma60[1] and ema120 < ema120[1]
+
+// === Fractal/BB Conditions in Lookback ===
+lookbackBars = 120
+bool hasFractalAboveMA20 = false
+for i = 90 to lookbackBars by 1
+    aboveMA20 = high[i] > ta.sma(close, 20)[i]
+    fr = high[i-1] > high[i-2] and high[i-1] > high[i]
+    if aboveMA20 and fr
+        hasFractalAboveMA20 := true
+        break
+
+bool bbBuySignal = false
+for i = 90 to lookbackBars by 1
+    if bbPercent[i] > 0.5
+        bbBuySignal := true
+        break
+
+// === Breakout logic ===
+var float breakoutLevel = na
+var bool waitingForFractal = false
+
+if close > ma60 and trend == "up" and not isMAtrendDown
+    waitingForFractal := true
+
+if waitingForFractal and fractalUp and high[2] > ma60[2]
+    breakoutLevel := high[2] + 0.01
+    waitingForFractal := false
+
+if not na(breakoutLevel) and close > breakoutLevel and kvoConfirm and hasFractalAboveMA20 and bbBuySignal and not isMAtrendDown
+    strategy.entry("Fractal Breakout Long", strategy.long)
+    breakoutLevel := na
+
+// === CHoCH Logic ===
+var float chochHigh = na
+var float chochLow = na
+var float chochExitLevel = na
+
+if trend == "down" and not na(lastFractalUp) and close > lastFractalUp and not isMAtrendDown
+    chochHigh := lastFractalUp
+    strategy.entry("CHoCH Long", strategy.long, stop=chochHigh + 0.01)
+
+if strategy.opentrades > 0 and not na(chochHigh) and not na(lastFractalDown)
+    chochExitLevel := lastFractalDown - 0.01
+    strategy.exit("CHoCH Exit", from_entry="CHoCH Long", stop=chochExitLevel)
+
+// === Dynamic Fractal-Based Exit (3rd closest fractalDown) ===
+var float[] recentFractalDowns = array.new_float()
+if fractalDown
+    array.unshift(recentFractalDowns, low[2])
+    if array.size(recentFractalDowns) > 5
+        array.pop(recentFractalDowns)
+
+if strategy.position_size > 0 and array.size(recentFractalDowns) >= 3
+    thirdFractal = array.get(recentFractalDowns, 2)
+    strategy.exit("3rd Fractal Exit", from_entry="Fractal Breakout Long", stop=thirdFractal - 0.01)
+
+// === Visuals ===
+plotshape(fractalUp, location=location.abovebar, style=shape.triangleup, color=color.green, title="Fractal Up", size=size.small)
+plotshape(fractalDown, location=location.belowbar, style=shape.triangledown, color=color.red, title="Fractal Down", size=size.small)

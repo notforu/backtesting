@@ -15,12 +15,16 @@ ALWAYS: Task tool → subagent_type: "orchestrator"
 
 The orchestrator will:
 - Break down the task
-- Delegate to specialized agents (fe-dev, be-dev, etc.)
+- **MUST delegate to specialized agents** (fe-dev, be-dev, etc.) - orchestrator does NOT write code itself
 - Ensure proper logging
 - Call docs-writer for changelogs
 
-**Only exceptions:**
-- Trivial single-line fixes you can do yourself
+**STRICT ENFORCEMENT:**
+- Orchestrator must ALWAYS delegate code changes to fe-dev/be-dev/fullstack-dev
+- Orchestrator must NOT just analyze and return instructions
+- NO exceptions for "trivial" changes - all code changes go through proper delegation
+
+**Only exceptions (non-code tasks):**
 - Reading/exploring code (use Explore agent)
 - Committing (use commit agent)
 

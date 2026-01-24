@@ -33,3 +33,16 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2025-01-24 16:37] commit (manual) - Commit orchestrator delegation-only fix
 
 ---
+[2026-01-24 19:36] orchestrator (sonnet) - Fix trade action labels to show Long/Short
+[2026-01-24 19:37] docs-writer (haiku) - Create changelog for trade labels fix
+[2026-01-24 19:40] docs-writer (haiku) - Changelog for orchestrator strict enforcement rule
+[2026-01-24 19:41] runner (haiku) - Start development server
+[2026-01-24 19:41] runner (haiku) - Start dev server for testing
+[2026-01-24 19:46] orchestrator (sonnet) - Create GPT LONG ULTIMATE strategy from Pine Script
+[2026-01-24 19:51] be-dev (sonnet) - Implement GPT LONG ULTIMATE strategy with fractals, MA filters, BB% RSI, KVO
+[2026-01-24 20:01] be-dev (sonnet) - Implement GPT LONG ULTIMATE strategy from Pine Script
+[2026-01-24 20:04] docs-writer (haiku) - Create changelog for GPT LONG ULTIMATE strategy
+[2026-01-24 20:08] orchestrator (sonnet) - Investigate strategy not appearing in UI
+[2026-01-24 20:12] Explore (sonnet) - Investigate strategy loading mechanism
+[2026-01-24 20:15] be-dev (sonnet) - Fix StandardDeviation import error in gpt-long-ultimate strategy
+[2026-01-24 20:15] be-dev (sonnet) - Fix StandardDeviation import error in gpt-long-ultimate
