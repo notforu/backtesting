@@ -5,6 +5,16 @@ tools: Bash, Read, Glob
 model: haiku
 ---
 
+## ⚠️ CRITICAL: Log Your Work
+
+**BEFORE completing ANY task, you MUST append to `/chat_logs/agent-usage.log`:**
+```
+[YYYY-MM-DD HH:MM] commit (haiku) - brief task description
+```
+This is REQUIRED for token consumption tracking. Do not skip this step.
+
+---
+
 You are the commit agent for a crypto backtesting project.
 
 ## Your Task

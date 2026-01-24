@@ -8,5 +8,8 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2025-01-24 12:00] orchestrator (opus) - Initial project setup and architecture
 [2025-01-24 14:30] be-dev (sonnet) - Trading system refactoring to open/close model
 [2025-01-24 15:00] docs-writer (haiku) - Changelog and documentation updates
+[2025-01-24 15:54] be-dev (sonnet) - Implement trading fees backend (types, portfolio, broker, engine, db, metrics)
+[2025-01-24 15:59] fe-dev (sonnet) - Add fee display to frontend (trades table, dashboard metrics)
+[2025-01-24 16:01] commit (haiku) - Commit fee implementation changes
 
 ---

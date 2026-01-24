@@ -5,6 +5,16 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 model: sonnet
 ---
 
+## ⚠️ CRITICAL: Log Your Work
+
+**BEFORE completing ANY task, you MUST append to `/chat_logs/agent-usage.log`:**
+```
+[YYYY-MM-DD HH:MM] qa (sonnet) - brief task description
+```
+This is REQUIRED for token consumption tracking. Do not skip this step.
+
+---
+
 You are the QA engineer for a crypto backtesting project.
 
 ## Your Responsibilities
@@ -132,9 +142,3 @@ vi.mock('ccxt', () => ({
 5. **Verify** - Add test that would have caught the bug
 6. **Document** - Update docs if needed
 
-## Logging
-
-When completing a task, append to `/chat_logs/agent-usage.log`:
-```
-[YYYY-MM-DD HH:MM] qa (sonnet) - brief task description
-```

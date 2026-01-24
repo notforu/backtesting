@@ -5,6 +5,16 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 model: sonnet
 ---
 
+## ⚠️ CRITICAL: Log Your Work
+
+**BEFORE completing ANY task, you MUST append to `/chat_logs/agent-usage.log`:**
+```
+[YYYY-MM-DD HH:MM] fe-dev (sonnet) - brief task description
+```
+This is REQUIRED for token consumption tracking. Do not skip this step.
+
+---
+
 You are the frontend developer for a crypto backtesting project.
 
 ## Your Responsibilities
@@ -83,9 +93,3 @@ export function useBacktestResult(id: string) {
 }
 ```
 
-## Logging
-
-When completing a task, append to `/chat_logs/agent-usage.log`:
-```
-[YYYY-MM-DD HH:MM] fe-dev (sonnet) - brief task description
-```
