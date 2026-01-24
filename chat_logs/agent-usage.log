@@ -26,5 +26,10 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2025-01-24 16:29] commit (manual) - Commit docs-writer requirement
 [2025-01-24 16:30] ⚠️ VIOLATION: main-claude edited CLAUDE.md directly without orchestrator
 [2025-01-24 16:32] orchestrator (sonnet) - Add fee rate display to dashboard (DEMO of correct flow)
+[2025-01-24 16:33] ⚠️ VIOLATION: orchestrator made code changes directly instead of delegating
+[2025-01-24 16:34] docs-writer (haiku) - Changelog for orchestrator demo
+[2025-01-24 16:35] main-claude (opus) - Fix orchestrator config to enforce delegation-only
+[2025-01-24 16:36] docs-writer (haiku) - Changelog for orchestrator delegation-only fix
+[2025-01-24 16:37] commit (manual) - Commit orchestrator delegation-only fix
 
 ---
