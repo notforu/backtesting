@@ -11,5 +11,8 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2025-01-24 15:54] be-dev (sonnet) - Implement trading fees backend (types, portfolio, broker, engine, db, metrics)
 [2025-01-24 15:59] fe-dev (sonnet) - Add fee display to frontend (trades table, dashboard metrics)
 [2025-01-24 16:01] commit (haiku) - Commit fee implementation changes
+[2025-01-24 16:05] docs-writer (haiku) - Create changelog for trading fees implementation
+[2025-01-24 16:07] commit (haiku) - Commit agent logging and orchestrator improvements
+[2025-01-24 16:10] docs-writer (haiku) - Create changelog for agent system improvements
 
 ---
