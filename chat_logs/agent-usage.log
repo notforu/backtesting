@@ -20,5 +20,7 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2025-01-24 16:20] fe-dev (sonnet) - Update trade badge colors and default period/resolution
 [2025-01-24 16:22] main-claude (opus) - Fix trade action labels (arrows indicate position type)
 [2025-01-24 16:23] commit (manual) - Commit trade badge label fix
+[2025-01-24 16:25] main-claude (opus) - Enforce orchestrator-first rule in CLAUDE.md
+[2025-01-24 16:26] commit (manual) - Commit orchestrator-first rule
 
 ---

@@ -1,34 +1,55 @@
 # Backtesting System - Claude Code Instructions
 
 ---
-## ⚠️ MANDATORY: Logging & Documentation (READ FIRST)
+## ⚠️ MANDATORY RULES (READ FIRST - APPLIES TO EVERY PROMPT)
 
-**These rules apply to EVERY session and EVERY prompt:**
+### 🚨 RULE 1: ALWAYS USE ORCHESTRATOR
 
-### 1. Agent Usage Logging
-After invoking ANY agent (Task tool), IMMEDIATELY append to `/chat_logs/agent-usage.log`:
+**For ANY task involving code changes, IMMEDIATELY delegate to `orchestrator` agent.**
+
+```
+DO NOT call fe-dev, be-dev, or other agents directly.
+DO NOT make code changes yourself.
+ALWAYS: Task tool → subagent_type: "orchestrator"
+```
+
+The orchestrator will:
+- Break down the task
+- Delegate to specialized agents (fe-dev, be-dev, etc.)
+- Ensure proper logging
+- Call docs-writer for changelogs
+
+**Only exceptions:**
+- Trivial single-line fixes you can do yourself
+- Reading/exploring code (use Explore agent)
+- Committing (use commit agent)
+
+### 📝 RULE 2: Log Every Agent Call
+
+After invoking ANY agent, IMMEDIATELY append to `/chat_logs/agent-usage.log`:
 ```
 [YYYY-MM-DD HH:MM] agent-name (model) - brief task description
 ```
 
-### 2. Changelog for Code Changes
-After ANY code modification, EITHER:
-- Call `docs-writer` agent to create changelog, OR
-- Manually create `/chat_logs/YYYY-MM-DD-HHMMSS-brief-title.md`
+### 📄 RULE 3: Changelog for Code Changes
 
-### 3. Before Completing ANY Session
-Verify:
+After ANY code modification, create changelog:
+- Call `docs-writer` agent, OR
+- Create `/chat_logs/YYYY-MM-DD-HHMMSS-brief-title.md`
+
+### ✅ RULE 4: Session Completion Checklist
+
+Before completing ANY session, verify:
+- [ ] All tasks went through orchestrator
 - [ ] All agent calls logged to `agent-usage.log`
 - [ ] Changelog created for code changes
 - [ ] Changes committed (if requested)
 
-**DO NOT skip these steps. They are required for project tracking.**
+**DO NOT skip these rules. They are REQUIRED.**
 
 ---
 
 > **IMPORTANT**: Always read `/docs/ARCHITECTURE.md` and `/docs/PROJECT_GOALS.md` before starting any task.
-
-> **DELEGATION RULE**: For ANY non-trivial task, IMMEDIATELY delegate to the `orchestrator` agent using the Task tool. Do NOT do the work directly. The orchestrator will break down the task and delegate to specialized agents. This ensures proper logging and consistent patterns.
 
 ## Project Overview
 
