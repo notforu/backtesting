@@ -33,9 +33,10 @@ After invoking ANY agent, IMMEDIATELY append to `/chat_logs/agent-usage.log`:
 
 ### 📄 RULE 3: Changelog for Code Changes
 
-After ANY code modification, create changelog:
-- Call `docs-writer` agent, OR
-- Create `/chat_logs/YYYY-MM-DD-HHMMSS-brief-title.md`
+After ANY code modification, **ALWAYS call `docs-writer` agent** to create changelog.
+- DO NOT create changelogs manually
+- docs-writer creates: `/chat_logs/YYYY-MM-DD-HHMMSS-brief-title.md`
+- This ensures consistent logging and formatting
 
 ### ✅ RULE 4: Session Completion Checklist
 
