@@ -142,7 +142,7 @@ function AppContent() {
                             </td>
                             <td className="py-2 pr-4">
                               <span
-                                className={`px-2 py-0.5 rounded text-xs font-medium ${getTradeActionColor(trade)}`}
+                                className={`px-2 py-0.5 rounded text-xs font-medium ${getTradeActionColor(trade.action)}`}
                               >
                                 {getTradeActionLabel(trade.action)}
                               </span>

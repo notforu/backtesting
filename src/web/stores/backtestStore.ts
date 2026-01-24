@@ -100,11 +100,11 @@ interface ConfigStore {
   reset: () => void;
 }
 
-// Default dates: 1 year ago to today
+// Default dates: 1 month ago to today
 const getDefaultDates = () => {
   const end = new Date();
   const start = new Date();
-  start.setFullYear(start.getFullYear() - 1);
+  start.setMonth(start.getMonth() - 1);
 
   return {
     startDate: start.toISOString().split('T')[0],
