@@ -17,5 +17,8 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2025-01-24 16:11] commit (haiku) - Commit logging fix and changelog
 [2025-01-24 16:15] main-claude (opus) - Add mandatory logging rules to CLAUDE.md
 [2025-01-24 16:16] commit (manual) - Commit mandatory logging rules
+[2025-01-24 16:20] fe-dev (sonnet) - Update trade badge colors and default period/resolution
+[2025-01-24 16:22] main-claude (opus) - Fix trade action labels (arrows indicate position type)
+[2025-01-24 16:23] commit (manual) - Commit trade badge label fix
 
 ---

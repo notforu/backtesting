@@ -241,34 +241,31 @@ export function isCloseTrade(trade: Trade): boolean {
 }
 
 /**
- * Get display label for trade action
+ * Get display label for trade action with arrow indicator
+ * LONG = arrow up, SHORT = arrow down
  */
 export function getTradeActionLabel(action: TradeAction): string {
   const labels: Record<TradeAction, string> = {
-    'OPEN_LONG': 'Open Long',
-    'CLOSE_LONG': 'Close Long',
-    'OPEN_SHORT': 'Open Short',
-    'CLOSE_SHORT': 'Close Short',
+    'OPEN_LONG': 'Open ↑',
+    'CLOSE_LONG': 'Close ↑',
+    'OPEN_SHORT': 'Open ↓',
+    'CLOSE_SHORT': 'Close ↓',
   };
   return labels[action];
 }
 
 /**
  * Get badge color class for trade action
+ * OPEN = Green (entering a position)
+ * CLOSE = Red (exiting a position)
  */
-export function getTradeActionColor(trade: Trade): string {
-  switch (trade.action) {
+export function getTradeActionColor(action: TradeAction): string {
+  switch (action) {
     case 'OPEN_LONG':
-      return 'bg-blue-900/50 text-blue-400';
-    case 'CLOSE_LONG':
-      return (trade.pnl ?? 0) >= 0
-        ? 'bg-green-900/50 text-green-400'
-        : 'bg-red-900/50 text-red-400';
     case 'OPEN_SHORT':
-      return 'bg-orange-900/50 text-orange-400';
+      return 'bg-green-900/50 text-green-400';
+    case 'CLOSE_LONG':
     case 'CLOSE_SHORT':
-      return (trade.pnl ?? 0) >= 0
-        ? 'bg-green-900/50 text-green-400'
-        : 'bg-red-900/50 text-red-400';
+      return 'bg-red-900/50 text-red-400';
   }
 }
