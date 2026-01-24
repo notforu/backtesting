@@ -2,6 +2,8 @@
 
 > **IMPORTANT**: Always read `/docs/ARCHITECTURE.md` and `/docs/PROJECT_GOALS.md` before starting any task.
 
+> **DELEGATION RULE**: For ANY non-trivial task, IMMEDIATELY delegate to the `orchestrator` agent using the Task tool. Do NOT do the work directly. The orchestrator will break down the task and delegate to specialized agents. This ensures proper logging and consistent patterns.
+
 ## Project Overview
 
 A modular crypto backtesting platform for testing trading strategies across multiple exchanges. Built with TypeScript (full stack), designed for flexibility and future live trading integration.
