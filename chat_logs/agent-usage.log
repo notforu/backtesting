@@ -1,0 +1,12 @@
+# Agent Usage Log
+
+Track agent invocations to understand token consumption patterns.
+Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
+
+---
+
+[2025-01-24 12:00] orchestrator (opus) - Initial project setup and architecture
+[2025-01-24 14:30] be-dev (sonnet) - Trading system refactoring to open/close model
+[2025-01-24 15:00] docs-writer (haiku) - Changelog and documentation updates
+
+---
