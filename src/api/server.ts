@@ -1,0 +1,88 @@
+/**
+ * Backtesting API Server
+ * Entry point for the REST API
+ */
+
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import { backtestRoutes } from './routes/backtest.js';
+import { strategyRoutes } from './routes/strategies.js';
+import { candleRoutes } from './routes/candles.js';
+import { getDb, closeDb } from '../data/db.js';
+
+const fastify = Fastify({
+  logger: {
+    level: process.env.LOG_LEVEL || 'info',
+  },
+});
+
+// Register CORS
+await fastify.register(cors, {
+  origin: true,
+});
+
+// Initialize database connection
+getDb();
+
+// Health check endpoint
+fastify.get('/api/health', async () => {
+  return {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+  };
+});
+
+// Register routes
+await fastify.register(backtestRoutes);
+await fastify.register(strategyRoutes);
+await fastify.register(candleRoutes);
+
+// Graceful shutdown
+const shutdown = async () => {
+  console.log('\nShutting down gracefully...');
+  closeDb();
+  await fastify.close();
+  process.exit(0);
+};
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
+// Start server
+const start = async () => {
+  try {
+    const port = parseInt(process.env.PORT || '3000', 10);
+    const host = process.env.HOST || '0.0.0.0';
+
+    await fastify.listen({ port, host });
+
+    console.log(`
+╔════════════════════════════════════════════════════════╗
+║         Backtesting API Server Started                 ║
+╠════════════════════════════════════════════════════════╣
+║  URL:     http://localhost:${port}                       ║
+║  Health:  http://localhost:${port}/api/health            ║
+║  Docs:    See /docs/ARCHITECTURE.md                    ║
+╚════════════════════════════════════════════════════════╝
+
+Available endpoints:
+  POST   /api/backtest/run      - Run a new backtest
+  GET    /api/backtest/:id      - Get backtest result
+  GET    /api/backtest/history  - List all runs
+  DELETE /api/backtest/:id      - Delete a run
+
+  GET    /api/strategies        - List all strategies
+  GET    /api/strategies/:name  - Get strategy details
+
+  GET    /api/candles           - Get candle data
+  GET    /api/exchanges         - List exchanges
+  GET    /api/symbols           - List symbols
+`);
+  } catch (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+};
+
+start();

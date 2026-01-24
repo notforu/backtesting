@@ -1,0 +1,214 @@
+/**
+ * Backtest API routes
+ */
+
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { z, ZodError } from 'zod';
+import { v4 as uuidv4 } from 'uuid';
+import { runBacktest, BacktestConfigSchema } from '../../core/index.js';
+import {
+  getBacktestRun,
+  getBacktestHistory,
+  deleteBacktestRun,
+  getCandles,
+} from '../../data/index.js';
+
+// Request schema for running a backtest
+const RunBacktestRequestSchema = z.object({
+  strategyName: z.string().min(1),
+  params: z.record(z.string(), z.unknown()).optional().default({}),
+  symbol: z.string().min(1),
+  timeframe: z.enum(['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']).default('1h'),
+  startDate: z.number().or(z.string().transform((s) => new Date(s).getTime())),
+  endDate: z.number().or(z.string().transform((s) => new Date(s).getTime())),
+  initialCapital: z.number().positive().default(10000),
+  exchange: z.string().default('binance'),
+});
+
+type RunBacktestRequest = z.infer<typeof RunBacktestRequestSchema>;
+
+// Query params for history
+const HistoryQuerySchema = z.object({
+  limit: z.string().optional().transform((s) => (s ? parseInt(s, 10) : 50)),
+});
+
+export async function backtestRoutes(fastify: FastifyInstance) {
+  /**
+   * POST /api/backtest/run
+   * Execute a new backtest
+   */
+  fastify.post('/api/backtest/run', async (
+    request: FastifyRequest<{ Body: RunBacktestRequest }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      // Validate and parse request
+      const parsed = RunBacktestRequestSchema.parse(request.body);
+
+      // Create backtest config with generated ID
+      const config = BacktestConfigSchema.parse({
+        id: uuidv4(),
+        strategyName: parsed.strategyName,
+        params: parsed.params,
+        symbol: parsed.symbol,
+        timeframe: parsed.timeframe,
+        startDate: parsed.startDate,
+        endDate: parsed.endDate,
+        initialCapital: parsed.initialCapital,
+        exchange: parsed.exchange,
+      });
+
+      // Run the backtest and track duration
+      const startTime = Date.now();
+      const result = await runBacktest(config);
+      const duration = Date.now() - startTime;
+
+      // Fetch candles for the chart display
+      const candles = getCandles(
+        config.exchange,
+        config.symbol,
+        config.timeframe,
+        config.startDate,
+        config.endDate
+      );
+
+      // Return extended result with candles and duration
+      return reply.status(200).send({
+        ...result,
+        candles,
+        duration,
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.status(400).send({
+          error: 'Validation error',
+          details: error.issues,
+        });
+      }
+
+      if (error instanceof Error) {
+        return reply.status(500).send({
+          error: error.message,
+        });
+      }
+
+      return reply.status(500).send({
+        error: 'Unknown error occurred',
+      });
+    }
+  });
+
+  /**
+   * GET /api/backtest/:id
+   * Get a specific backtest result
+   */
+  fastify.get('/api/backtest/:id', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { id } = request.params;
+      const result = getBacktestRun(id);
+
+      if (!result) {
+        return reply.status(404).send({
+          error: `Backtest with id "${id}" not found`,
+        });
+      }
+
+      // Fetch candles for the chart display
+      const candles = getCandles(
+        result.config.exchange,
+        result.config.symbol,
+        result.config.timeframe,
+        result.config.startDate,
+        result.config.endDate
+      );
+
+      // Return extended result with candles (duration not available for historical)
+      return reply.status(200).send({
+        ...result,
+        candles,
+        duration: 0, // Not stored for historical runs
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        return reply.status(500).send({
+          error: error.message,
+        });
+      }
+      return reply.status(500).send({
+        error: 'Unknown error occurred',
+      });
+    }
+  });
+
+  /**
+   * GET /api/backtest/history
+   * List all backtest runs (returns summaries for efficiency)
+   */
+  fastify.get('/api/backtest/history', async (
+    request: FastifyRequest<{ Querystring: { limit?: string } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { limit } = HistoryQuerySchema.parse(request.query);
+      const history = getBacktestHistory(limit);
+
+      // Transform to summary format for frontend
+      const summaries = history.map((result) => ({
+        id: result.id,
+        strategyName: result.config.strategyName,
+        symbol: result.config.symbol,
+        timeframe: result.config.timeframe,
+        totalReturnPercent: result.metrics.totalReturnPercent,
+        sharpeRatio: result.metrics.sharpeRatio,
+        runAt: new Date(result.createdAt).toISOString(),
+      }));
+
+      return reply.status(200).send(summaries);
+    } catch (error) {
+      if (error instanceof Error) {
+        return reply.status(500).send({
+          error: error.message,
+        });
+      }
+      return reply.status(500).send({
+        error: 'Unknown error occurred',
+      });
+    }
+  });
+
+  /**
+   * DELETE /api/backtest/:id
+   * Delete a backtest run
+   */
+  fastify.delete('/api/backtest/:id', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { id } = request.params;
+      const deleted = deleteBacktestRun(id);
+
+      if (!deleted) {
+        return reply.status(404).send({
+          error: `Backtest with id "${id}" not found`,
+        });
+      }
+
+      return reply.status(200).send({
+        message: `Backtest "${id}" deleted successfully`,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        return reply.status(500).send({
+          error: error.message,
+        });
+      }
+      return reply.status(500).send({
+        error: 'Unknown error occurred',
+      });
+    }
+  });
+}

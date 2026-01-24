@@ -1,0 +1,7 @@
+/**
+ * API Routes exports
+ */
+
+export { backtestRoutes } from './backtest.js';
+export { strategyRoutes } from './strategies.js';
+export { candleRoutes } from './candles.js';
