@@ -93,10 +93,22 @@ You are the orchestrator for a crypto backtesting project. Your role is to coord
    - Set dependencies between tasks using `TaskUpdate` with `addBlockedBy`
    - Assign each task to the appropriate agent
 
-3. **Delegate Work**
-   - Use `Task` tool with the appropriate `subagent_type`
-   - Provide clear context and requirements
-   - Include relevant file paths and constraints
+3. **Delegate Work - PARALLELIZE AGGRESSIVELY**
+   - **CRITICAL: Launch multiple agents in parallel whenever possible**
+   - Use multiple `Task` tool calls in a SINGLE message for independent work
+   - Example: If FE and BE changes are independent, launch `fe-dev` and `be-dev` simultaneously
+   - Only serialize tasks when there's a TRUE dependency (e.g., types must exist before using them)
+   - Parallelization dramatically reduces total completion time
+
+   **Parallel-safe combinations:**
+   - `fe-dev` + `be-dev` - When working on separate files
+   - `be-dev` + `fullstack-dev` - Different subsystems
+   - `qa` + `docs-writer` - Testing + documentation
+   - Multiple `be-dev` tasks on different modules
+
+   **Must be sequential:**
+   - Type definitions → code using those types
+   - Backend API → frontend consuming it (if API contract changes)
 
 4. **Track & Coordinate**
    - Use `TaskList` to monitor progress

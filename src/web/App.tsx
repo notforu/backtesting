@@ -123,6 +123,7 @@ function AppContent() {
                         <th className="pb-2 pr-4">Amount</th>
                         <th className="pb-2 pr-4">P&L</th>
                         <th className="pb-2 pr-4">P&L %</th>
+                        <th className="pb-2 pr-4">Fee</th>
                         <th className="pb-2 pr-4">Balance</th>
                         <th className="pb-2">Time</th>
                       </tr>
@@ -177,6 +178,9 @@ function AppContent() {
                               {hasClosePnl
                                 ? `${(trade.pnlPercent ?? 0) >= 0 ? '+' : ''}${(trade.pnlPercent ?? 0).toFixed(2)}%`
                                 : '-'}
+                            </td>
+                            <td className="py-2 pr-4 text-gray-400">
+                              {trade.fee ? `$${trade.fee.toFixed(2)}` : '-'}
                             </td>
                             <td className="py-2 pr-4 text-gray-300">
                               ${trade.balanceAfter.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

@@ -169,6 +169,60 @@ export class BinanceProvider implements DataProvider {
       rateLimit: this.client.rateLimit ?? 0,
     };
   }
+
+  /**
+   * Fetch trading fees for a symbol
+   * Uses CCXT to get actual exchange fee rates
+   * @param symbol - Trading pair (e.g., 'BTC/USDT')
+   * @returns Maker and taker fee rates as decimals (0.001 = 0.1%)
+   */
+  async fetchTradingFees(symbol: string): Promise<{ maker: number; taker: number }> {
+    await this.rateLimiter.throttle();
+
+    try {
+      // Load markets to get fee information
+      await this.client.loadMarkets();
+
+      // Try to get fees from the market info
+      const market = this.client.market(symbol);
+      if (market && market.maker !== undefined && market.taker !== undefined) {
+        return {
+          maker: market.maker,
+          taker: market.taker,
+        };
+      }
+
+      // Try fetchTradingFees if available (requires API key for some exchanges)
+      if (this.client.has['fetchTradingFees']) {
+        try {
+          const fees = await this.client.fetchTradingFees();
+          if (fees && fees[symbol]) {
+            return {
+              maker: fees[symbol].maker ?? 0.001,
+              taker: fees[symbol].taker ?? 0.001,
+            };
+          }
+        } catch {
+          // fetchTradingFees may require authentication, fall through to defaults
+        }
+      }
+
+      // Default Binance fees (0.1% for both maker and taker)
+      return {
+        maker: 0.001,
+        taker: 0.001,
+      };
+    } catch (error) {
+      if (error instanceof ccxt.NetworkError) {
+        console.warn(`Failed to fetch fees for ${symbol}, using defaults: ${error.message}`);
+      }
+      // Return default Binance fees on error
+      return {
+        maker: 0.001,
+        taker: 0.001,
+      };
+    }
+  }
 }
 
 /**

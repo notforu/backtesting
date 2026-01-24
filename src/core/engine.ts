@@ -61,7 +61,8 @@ export interface EngineConfig {
 const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   broker: {
     slippagePercent: 0.05,
-    commissionPercent: 0.1,
+    commissionPercent: 0,
+    feeRate: 0, // Will be overridden by fetched exchange fees
   },
   saveResults: true,
   enableLogging: true,
@@ -126,9 +127,27 @@ export async function runBacktest(
 
   log(`Loaded ${candles.length} candles`, Date.now());
 
-  // 3. Initialize portfolio and broker
+  // 3. Fetch trading fees from exchange
+  log(`Fetching trading fees for ${validatedConfig.symbol}`, Date.now());
+  const provider = getProvider(validatedConfig.exchange);
+  let feeRate = options.broker?.feeRate ?? 0;
+
+  try {
+    const fees = await provider.fetchTradingFees(validatedConfig.symbol);
+    // Use taker fee for market orders (default order type)
+    feeRate = fees.taker;
+    log(`Using exchange fee rate: ${(feeRate * 100).toFixed(3)}% (taker)`, Date.now());
+  } catch {
+    log(`Could not fetch fees, using default: ${(feeRate * 100).toFixed(3)}%`, Date.now());
+  }
+
+  // 4. Initialize portfolio and broker with fetched fee rate
+  const brokerConfig: BrokerConfig = {
+    ...options.broker,
+    feeRate,
+  };
   const portfolio = new Portfolio(validatedConfig.initialCapital, validatedConfig.symbol);
-  const broker = new Broker(portfolio, options.broker);
+  const broker = new Broker(portfolio, brokerConfig);
 
   // 4. Track results
   const trades: Trade[] = [];

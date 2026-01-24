@@ -6,6 +6,14 @@
 import type { Candle, Timeframe } from '../../core/types.js';
 
 /**
+ * Trading fee rates
+ */
+export interface TradingFees {
+  maker: number; // Maker fee as decimal (0.001 = 0.1%)
+  taker: number; // Taker fee as decimal (0.001 = 0.1%)
+}
+
+/**
  * Data provider interface for fetching historical candle data
  */
 export interface DataProvider {
@@ -34,6 +42,13 @@ export interface DataProvider {
    * @returns Array of symbol strings (e.g., ['BTC/USDT', 'ETH/USDT'])
    */
   getAvailableSymbols(): Promise<string[]>;
+
+  /**
+   * Fetch trading fees for a symbol
+   * @param symbol - Trading pair (e.g., 'BTC/USDT')
+   * @returns Maker and taker fee rates as decimals
+   */
+  fetchTradingFees(symbol: string): Promise<TradingFees>;
 }
 
 /**

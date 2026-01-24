@@ -179,7 +179,7 @@ export function Dashboard({ metrics }: DashboardProps) {
       </div>
 
       {/* Trade statistics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <MetricCard
           label="Largest Win"
           value={formatCurrency(metrics.largestWin)}
@@ -191,6 +191,10 @@ export function Dashboard({ metrics }: DashboardProps) {
           value={formatCurrency(metrics.largestLoss)}
           colorize="profit"
           isPositive={false}
+        />
+        <MetricCard
+          label="Total Fees"
+          value={`$${(metrics.totalFees ?? 0).toFixed(2)}`}
         />
         <MetricCard
           label="Avg Trade Duration"

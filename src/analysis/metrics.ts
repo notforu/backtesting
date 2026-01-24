@@ -52,6 +52,7 @@ export function calculateMetrics(
       largestLoss: 0,
       avgTradeDuration: 0,
       exposureTime: 0,
+      totalFees: 0,
     };
   }
 
@@ -123,6 +124,9 @@ export function calculateMetrics(
   // Exposure time (percentage of time in the market)
   const exposureTime = calculateExposureTime(trades, equity);
 
+  // Total fees paid across all trades
+  const totalFees = trades.reduce((sum, t) => sum + (t.fee ?? 0), 0);
+
   return {
     totalReturn,
     totalReturnPercent,
@@ -145,6 +149,7 @@ export function calculateMetrics(
     largestLoss,
     avgTradeDuration,
     exposureTime,
+    totalFees,
   };
 }
 

@@ -129,9 +129,10 @@ export class Portfolio {
    * @param amount - Amount in base currency
    * @param price - Entry price
    * @param timestamp - Entry timestamp
+   * @param feeRate - Fee rate as decimal (0.001 = 0.1%), defaults to 0
    * @returns The trade record
    */
-  openLong(amount: number, price: number, timestamp: number): Trade {
+  openLong(amount: number, price: number, timestamp: number, feeRate: number = 0): Trade {
     if (this._longPosition) {
       throw new Error('Cannot open long: a long position is already open');
     }
@@ -144,16 +145,18 @@ export class Portfolio {
       throw new Error('Price must be positive');
     }
 
-    const cost = amount * price;
+    const tradeValue = amount * price;
+    const fee = tradeValue * feeRate;
+    const totalCost = tradeValue + fee;
 
-    if (cost > this._cash) {
+    if (totalCost > this._cash) {
       throw new Error(
-        `Insufficient funds: need ${cost.toFixed(2)}, have ${this._cash.toFixed(2)}`
+        `Insufficient funds: need ${totalCost.toFixed(2)} (including ${fee.toFixed(2)} fee), have ${this._cash.toFixed(2)}`
       );
     }
 
-    // Deduct cash for buying
-    this._cash -= cost;
+    // Deduct cash for buying plus fee
+    this._cash -= totalCost;
 
     const positionId = uuidv4();
 
@@ -177,6 +180,8 @@ export class Portfolio {
       amount,
       timestamp,
       balanceAfter: this._cash,
+      fee: fee > 0 ? fee : undefined,
+      feeRate: feeRate > 0 ? feeRate : undefined,
     };
 
     this._trades.push(trade);
@@ -188,9 +193,10 @@ export class Portfolio {
    * @param amount - Amount to close, or 'all' to close entire position
    * @param price - Exit price
    * @param timestamp - Exit timestamp
+   * @param feeRate - Fee rate as decimal (0.001 = 0.1%), defaults to 0
    * @returns The trade record
    */
-  closeLong(amount: number | 'all', price: number, timestamp: number): Trade {
+  closeLong(amount: number | 'all', price: number, timestamp: number, feeRate: number = 0): Trade {
     if (!this._longPosition) {
       throw new Error('Cannot close long: no long position is open');
     }
@@ -213,12 +219,17 @@ export class Portfolio {
 
     const { entryPrice, id: positionId } = this._longPosition;
 
-    // Calculate PnL for closed portion
-    const pnl = (price - entryPrice) * closeAmount;
+    // Calculate trade value and fee
+    const tradeValue = closeAmount * price;
+    const fee = tradeValue * feeRate;
+
+    // Calculate PnL for closed portion (after fee)
+    const grossPnl = (price - entryPrice) * closeAmount;
+    const pnl = grossPnl - fee;
     const pnlPercent = ((price - entryPrice) / entryPrice) * 100;
 
-    // Add proceeds from sale to cash
-    this._cash += closeAmount * price;
+    // Add proceeds from sale minus fee to cash
+    this._cash += tradeValue - fee;
 
     // Update or clear position
     if (closeAmount >= this._longPosition.amount) {
@@ -240,6 +251,8 @@ export class Portfolio {
       pnlPercent,
       closedPositionId: positionId,
       balanceAfter: this._cash,
+      fee: fee > 0 ? fee : undefined,
+      feeRate: feeRate > 0 ? feeRate : undefined,
     };
 
     this._trades.push(trade);
@@ -251,9 +264,10 @@ export class Portfolio {
    * @param amount - Amount in base currency
    * @param price - Entry price
    * @param timestamp - Entry timestamp
+   * @param feeRate - Fee rate as decimal (0.001 = 0.1%), defaults to 0
    * @returns The trade record
    */
-  openShort(amount: number, price: number, timestamp: number): Trade {
+  openShort(amount: number, price: number, timestamp: number, feeRate: number = 0): Trade {
     if (this._shortPosition) {
       throw new Error('Cannot open short: a short position is already open');
     }
@@ -266,8 +280,18 @@ export class Portfolio {
       throw new Error('Price must be positive');
     }
 
-    // For shorts, we don't deduct cash (borrowed shares)
-    // But we track the margin requirement implicitly through equity
+    // For shorts, we charge fee on the notional value
+    const tradeValue = amount * price;
+    const fee = tradeValue * feeRate;
+
+    if (fee > this._cash) {
+      throw new Error(
+        `Insufficient funds for fee: need ${fee.toFixed(2)}, have ${this._cash.toFixed(2)}`
+      );
+    }
+
+    // Deduct fee from cash
+    this._cash -= fee;
 
     const positionId = uuidv4();
 
@@ -291,6 +315,8 @@ export class Portfolio {
       amount,
       timestamp,
       balanceAfter: this._cash,
+      fee: fee > 0 ? fee : undefined,
+      feeRate: feeRate > 0 ? feeRate : undefined,
     };
 
     this._trades.push(trade);
@@ -302,9 +328,10 @@ export class Portfolio {
    * @param amount - Amount to close, or 'all' to close entire position
    * @param price - Exit price
    * @param timestamp - Exit timestamp
+   * @param feeRate - Fee rate as decimal (0.001 = 0.1%), defaults to 0
    * @returns The trade record
    */
-  closeShort(amount: number | 'all', price: number, timestamp: number): Trade {
+  closeShort(amount: number | 'all', price: number, timestamp: number, feeRate: number = 0): Trade {
     if (!this._shortPosition) {
       throw new Error('Cannot close short: no short position is open');
     }
@@ -327,12 +354,17 @@ export class Portfolio {
 
     const { entryPrice, id: positionId } = this._shortPosition;
 
-    // Calculate PnL for closed portion (profit when price goes down)
-    const pnl = (entryPrice - price) * closeAmount;
+    // Calculate trade value and fee
+    const tradeValue = closeAmount * price;
+    const fee = tradeValue * feeRate;
+
+    // Calculate PnL for closed portion (profit when price goes down, minus fee)
+    const grossPnl = (entryPrice - price) * closeAmount;
+    const pnl = grossPnl - fee;
     const pnlPercent = ((entryPrice - price) / entryPrice) * 100;
 
-    // Add PnL to cash (for shorts, we settle the difference)
-    this._cash += pnl;
+    // Add PnL to cash minus fee (for shorts, we settle the difference)
+    this._cash += grossPnl - fee;
 
     // Update or clear position
     if (closeAmount >= this._shortPosition.amount) {
@@ -354,6 +386,8 @@ export class Portfolio {
       pnlPercent,
       closedPositionId: positionId,
       balanceAfter: this._cash,
+      fee: fee > 0 ? fee : undefined,
+      feeRate: feeRate > 0 ? feeRate : undefined,
     };
 
     this._trades.push(trade);

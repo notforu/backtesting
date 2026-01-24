@@ -111,6 +111,8 @@ function initializeTables(database: Database.Database): void {
       pnl_percent REAL,
       closed_position_id TEXT,
       balance_after REAL NOT NULL,
+      fee REAL,
+      fee_rate REAL,
       FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
     );
 
@@ -124,6 +126,28 @@ function initializeTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_backtest_runs_created
       ON backtest_runs(created_at DESC);
   `);
+
+  // Run migrations for existing databases
+  runMigrations(database);
+}
+
+/**
+ * Run database migrations for schema updates
+ */
+function runMigrations(database: Database.Database): void {
+  // Check if fee columns exist in trades_v2
+  const tableInfo = database.prepare("PRAGMA table_info(trades_v2)").all() as { name: string }[];
+  const columnNames = tableInfo.map((col) => col.name);
+
+  // Add fee column if it doesn't exist
+  if (!columnNames.includes('fee')) {
+    database.exec('ALTER TABLE trades_v2 ADD COLUMN fee REAL');
+  }
+
+  // Add fee_rate column if it doesn't exist
+  if (!columnNames.includes('fee_rate')) {
+    database.exec('ALTER TABLE trades_v2 ADD COLUMN fee_rate REAL');
+  }
 }
 
 // ============================================================================
@@ -268,8 +292,8 @@ export function saveBacktestRun(result: BacktestResult): void {
   `);
 
   const insertTrade = database.prepare(`
-    INSERT INTO trades_v2 (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent, closed_position_id, balance_after)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO trades_v2 (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent, closed_position_id, balance_after, fee, fee_rate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const saveAll = database.transaction(() => {
@@ -296,7 +320,9 @@ export function saveBacktestRun(result: BacktestResult): void {
         trade.pnl ?? null,
         trade.pnlPercent ?? null,
         trade.closedPositionId ?? null,
-        trade.balanceAfter
+        trade.balanceAfter,
+        trade.fee ?? null,
+        trade.feeRate ?? null
       );
     }
   });
@@ -386,6 +412,8 @@ interface TradeV2Row {
   pnl_percent: number | null;
   closed_position_id: string | null;
   balance_after: number;
+  fee: number | null;
+  fee_rate: number | null;
 }
 
 interface LegacyTradeRow {
@@ -411,7 +439,7 @@ export function getTrades(backtestId: string): Trade[] {
 
   // Try new format first
   const selectV2 = database.prepare<[string], TradeV2Row>(`
-    SELECT id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent, closed_position_id, balance_after
+    SELECT id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent, closed_position_id, balance_after, fee, fee_rate
     FROM trades_v2
     WHERE backtest_id = ?
     ORDER BY timestamp ASC
@@ -431,6 +459,8 @@ export function getTrades(backtestId: string): Trade[] {
       pnlPercent: row.pnl_percent ?? undefined,
       closedPositionId: row.closed_position_id ?? undefined,
       balanceAfter: row.balance_after,
+      fee: row.fee ?? undefined,
+      feeRate: row.fee_rate ?? undefined,
     }));
   }
 
@@ -497,8 +527,8 @@ export function getTrades(backtestId: string): Trade[] {
 export function saveTrades(backtestId: string, trades: Trade[]): number {
   const database = getDb();
   const insert = database.prepare(`
-    INSERT INTO trades_v2 (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent, closed_position_id, balance_after)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO trades_v2 (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent, closed_position_id, balance_after, fee, fee_rate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertMany = database.transaction((tradeList: Trade[]) => {
@@ -515,7 +545,9 @@ export function saveTrades(backtestId: string, trades: Trade[]): number {
         trade.pnl ?? null,
         trade.pnlPercent ?? null,
         trade.closedPositionId ?? null,
-        trade.balanceAfter
+        trade.balanceAfter,
+        trade.fee ?? null,
+        trade.feeRate ?? null
       );
       count++;
     }

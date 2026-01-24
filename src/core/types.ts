@@ -85,6 +85,10 @@ export const TradeSchema = z.object({
 
   // Balance tracking
   balanceAfter: z.number(),
+
+  // Fee tracking
+  fee: z.number().optional(), // Fee amount in quote currency
+  feeRate: z.number().optional(), // Fee rate as decimal (0.001 = 0.1%)
 });
 
 export type Trade = z.infer<typeof TradeSchema>;
@@ -168,6 +172,7 @@ export const PerformanceMetricsSchema = z.object({
   largestLoss: z.number(),
   avgTradeDuration: z.number(),
   exposureTime: z.number(),
+  totalFees: z.number(), // Sum of all fees paid
 });
 
 export type PerformanceMetrics = z.infer<typeof PerformanceMetricsSchema>;

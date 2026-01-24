@@ -38,8 +38,16 @@ export interface BrokerConfig {
   /**
    * Commission per trade as a percentage (e.g., 0.1 for 0.1%)
    * Applied to both entry and exit
+   * @deprecated Use feeRate instead for more accurate exchange fee modeling
    */
   commissionPercent?: number;
+
+  /**
+   * Trading fee rate as a decimal (e.g., 0.001 for 0.1%)
+   * This is the actual exchange fee rate (taker fee for market orders)
+   * Applied to trade value and deducted from cash
+   */
+  feeRate?: number;
 }
 
 /**
@@ -48,6 +56,7 @@ export interface BrokerConfig {
 const DEFAULT_CONFIG: BrokerConfig = {
   slippagePercent: 0,
   commissionPercent: 0,
+  feeRate: 0,
 };
 
 /**
@@ -145,8 +154,11 @@ export class Broker {
       return { filled: false, order, trade: null };
     }
 
-    // Apply commission
+    // Apply commission to fill price (legacy behavior)
     fillPrice = this.applyCommission(fillPrice, order.side);
+
+    // Get the fee rate for portfolio operations
+    const feeRate = this.config.feeRate ?? 0;
 
     // Execute the order based on action
     let trade: Trade | null = null;
@@ -154,19 +166,19 @@ export class Broker {
     try {
       switch (order.action) {
         case 'OPEN_LONG':
-          trade = this.portfolio.openLong(order.amount, fillPrice, candle.timestamp);
+          trade = this.portfolio.openLong(order.amount, fillPrice, candle.timestamp, feeRate);
           break;
 
         case 'CLOSE_LONG':
-          trade = this.portfolio.closeLong(order.amount, fillPrice, candle.timestamp);
+          trade = this.portfolio.closeLong(order.amount, fillPrice, candle.timestamp, feeRate);
           break;
 
         case 'OPEN_SHORT':
-          trade = this.portfolio.openShort(order.amount, fillPrice, candle.timestamp);
+          trade = this.portfolio.openShort(order.amount, fillPrice, candle.timestamp, feeRate);
           break;
 
         case 'CLOSE_SHORT':
-          trade = this.portfolio.closeShort(order.amount, fillPrice, candle.timestamp);
+          trade = this.portfolio.closeShort(order.amount, fillPrice, candle.timestamp, feeRate);
           break;
       }
 

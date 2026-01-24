@@ -78,6 +78,10 @@ export interface Trade {
 
   // Balance tracking
   balanceAfter: number;
+
+  // Fee information
+  fee?: number;      // Fee amount in quote currency
+  feeRate?: number;  // Fee rate as decimal (e.g., 0.001 = 0.1%)
 }
 
 export interface EquityPoint {
@@ -153,6 +157,7 @@ export interface PerformanceMetrics {
   largestLoss: number;
   avgTradeDuration: number;
   exposureTime: number;
+  totalFees: number;
 }
 
 export interface BacktestResult {
