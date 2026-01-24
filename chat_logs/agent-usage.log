@@ -15,5 +15,7 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2025-01-24 16:07] commit (haiku) - Commit agent logging and orchestrator improvements
 [2025-01-24 16:10] docs-writer (haiku) - Create changelog for agent system improvements
 [2025-01-24 16:11] commit (haiku) - Commit logging fix and changelog
+[2025-01-24 16:15] main-claude (opus) - Add mandatory logging rules to CLAUDE.md
+[2025-01-24 16:16] commit (manual) - Commit mandatory logging rules
 
 ---
