@@ -24,5 +24,6 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2025-01-24 16:26] commit (manual) - Commit orchestrator-first rule
 [2025-01-24 16:28] docs-writer (haiku) - Changelog for docs-writer requirement rule
 [2025-01-24 16:29] commit (manual) - Commit docs-writer requirement
+[2025-01-24 16:30] ⚠️ VIOLATION: main-claude edited CLAUDE.md directly without orchestrator
 
 ---
