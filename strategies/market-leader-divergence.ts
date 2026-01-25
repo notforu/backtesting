@@ -223,10 +223,10 @@ const marketLeaderDivergence: Strategy = {
       return;
     }
 
-    // Get data up to current candle
-    const candlesUpToCurrent = candles.slice(0, currentIndex + 1);
-    const closes = candlesUpToCurrent.map((c) => c.close);
-    const volumes = candlesUpToCurrent.map((c) => c.volume);
+    // Get data up to current candle (use candleView for efficiency)
+    const closes = context.candleView.closes();
+    const volumes = context.candleView.volumes();
+    const candlesUpToCurrent = context.candleView.slice();
 
     // Calculate EMAs
     const fastEMAValues = calculateEMA(closes, fastEMA);

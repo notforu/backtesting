@@ -117,10 +117,11 @@ export async function runOptimization(
   let bestResult: { params: Record<string, unknown>; metrics: PerformanceMetrics } | null = null;
   let bestMetricValue = -Infinity;
 
-  // Engine config for backtests (no saving, no logging for speed)
+  // Engine config for backtests (no saving, no logging, skip fee fetch for speed)
   const engineConfig: EngineConfig = {
     saveResults: false,
     enableLogging: false,
+    skipFeeFetch: true, // Use default fees to avoid API calls
   };
 
   // Process combinations in batches
@@ -182,6 +183,9 @@ export async function runOptimization(
           : undefined,
       });
     }
+
+    // Allow GC between batches to prevent memory buildup
+    await new Promise(resolve => setImmediate(resolve));
   }
 
   if (!bestResult) {
@@ -215,7 +219,8 @@ export async function runOptimization(
 // ============================================================================
 
 /**
- * Generate all parameter combinations for grid search
+ * Generate parameter combinations for grid search (memory-efficient)
+ * Uses indexed sampling to avoid generating all combinations upfront
  */
 function generateParameterCombinations(
   paramDefs: Array<{ name: string; type: string; default: unknown; min?: number; max?: number; step?: number }>,
@@ -252,23 +257,27 @@ function generateParameterCombinations(
     }
   }
 
-  // Generate all combinations using cartesian product
-  const combinations = cartesianProduct(parameterValues);
-
-  // Limit combinations if needed
-  if (combinations.length > maxCombinations) {
-    console.warn(
-      `Generated ${combinations.length} combinations, limiting to ${maxCombinations}. Consider reducing parameter ranges.`
-    );
-    // Sample evenly across the space
-    return sampleCombinations(combinations, maxCombinations);
+  // Calculate total combinations without generating them
+  const keys = Object.keys(parameterValues);
+  let totalCombinations = 1;
+  for (const key of keys) {
+    totalCombinations *= parameterValues[key].length;
   }
 
-  return combinations;
+  // If within limit, generate all
+  if (totalCombinations <= maxCombinations) {
+    return cartesianProduct(parameterValues);
+  }
+
+  // Otherwise, sample evenly using indexed access (memory-efficient)
+  console.warn(
+    `${totalCombinations.toLocaleString()} possible combinations, sampling ${maxCombinations}. Consider reducing parameter ranges.`
+  );
+  return sampleCombinationsIndexed(parameterValues, keys, totalCombinations, maxCombinations);
 }
 
 /**
- * Generate cartesian product of parameter values
+ * Generate cartesian product of parameter values (only for small sets)
  */
 function cartesianProduct(
   parameterValues: Record<string, unknown[]>
@@ -298,23 +307,54 @@ function cartesianProduct(
 }
 
 /**
- * Sample combinations evenly to stay within limit
+ * Sample combinations by index without generating all (memory-efficient)
+ * Converts an index into a specific combination using modular arithmetic
  */
-function sampleCombinations(
-  combinations: Array<Record<string, unknown>>,
+function sampleCombinationsIndexed(
+  parameterValues: Record<string, unknown[]>,
+  keys: string[],
+  totalCombinations: number,
   maxCount: number
 ): Array<Record<string, unknown>> {
-  if (combinations.length <= maxCount) return combinations;
-
-  const step = combinations.length / maxCount;
   const sampled: Array<Record<string, unknown>> = [];
+  const step = totalCombinations / maxCount;
+
+  // Precompute the size of each parameter array for index conversion
+  const sizes = keys.map(key => parameterValues[key].length);
 
   for (let i = 0; i < maxCount; i++) {
-    const index = Math.floor(i * step);
-    sampled.push(combinations[index]);
+    const targetIndex = Math.floor(i * step);
+    const combination = indexToCombination(targetIndex, keys, parameterValues, sizes);
+    sampled.push(combination);
   }
 
   return sampled;
+}
+
+/**
+ * Convert a flat index into a specific parameter combination
+ * Works like converting a number to a mixed-radix representation
+ */
+function indexToCombination(
+  index: number,
+  keys: string[],
+  parameterValues: Record<string, unknown[]>,
+  sizes: number[]
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  let remaining = index;
+
+  // Work backwards through the keys
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const key = keys[i];
+    const values = parameterValues[key];
+    const size = sizes[i];
+    const valueIndex = remaining % size;
+    result[key] = values[valueIndex];
+    remaining = Math.floor(remaining / size);
+  }
+
+  return result;
 }
 
 // ============================================================================

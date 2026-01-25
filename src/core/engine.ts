@@ -17,10 +17,67 @@ import { BacktestConfigSchema } from './types.js';
 import { Portfolio } from './portfolio.js';
 import { Broker, type BrokerConfig } from './broker.js';
 import { loadStrategy } from '../strategy/loader.js';
-import { validateStrategyParams, type StrategyContext, type LogEntry } from '../strategy/base.js';
+import { validateStrategyParams, type StrategyContext, type LogEntry, type CandleView } from '../strategy/base.js';
 import { calculateMetrics, generateEquityCurve } from '../analysis/metrics.js';
 import { getProvider } from '../data/providers/index.js';
 import { getCandles, saveCandles, saveBacktestRun, getCandleDateRange } from '../data/db.js';
+
+/**
+ * Memory-efficient view into candle array without copying
+ */
+class CandleViewImpl implements CandleView {
+  constructor(
+    private readonly candles: Candle[],
+    private readonly endIndex: number
+  ) {}
+
+  get length(): number {
+    return this.endIndex + 1;
+  }
+
+  at(index: number): Candle | undefined {
+    if (index < 0 || index > this.endIndex) return undefined;
+    return this.candles[index];
+  }
+
+  slice(start?: number, end?: number): Candle[] {
+    const s = start ?? 0;
+    const e = Math.min(end ?? this.length, this.length);
+    return this.candles.slice(s, e);
+  }
+
+  closes(): number[] {
+    const result = new Array(this.length);
+    for (let i = 0; i <= this.endIndex; i++) {
+      result[i] = this.candles[i].close;
+    }
+    return result;
+  }
+
+  volumes(): number[] {
+    const result = new Array(this.length);
+    for (let i = 0; i <= this.endIndex; i++) {
+      result[i] = this.candles[i].volume;
+    }
+    return result;
+  }
+
+  highs(): number[] {
+    const result = new Array(this.length);
+    for (let i = 0; i <= this.endIndex; i++) {
+      result[i] = this.candles[i].high;
+    }
+    return result;
+  }
+
+  lows(): number[] {
+    const result = new Array(this.length);
+    for (let i = 0; i <= this.endIndex; i++) {
+      result[i] = this.candles[i].low;
+    }
+    return result;
+  }
+}
 
 /**
  * Pending action from strategy
@@ -48,6 +105,12 @@ export interface EngineConfig {
    * Whether to log strategy messages
    */
   enableLogging?: boolean;
+
+  /**
+   * Skip fetching trading fees from exchange (use default/provided feeRate)
+   * Useful for optimization to avoid API calls
+   */
+  skipFeeFetch?: boolean;
 
   /**
    * Progress callback for long-running backtests
@@ -127,18 +190,20 @@ export async function runBacktest(
 
   log(`Loaded ${candles.length} candles`, Date.now());
 
-  // 3. Fetch trading fees from exchange
-  log(`Fetching trading fees for ${validatedConfig.symbol}`, Date.now());
-  const provider = getProvider(validatedConfig.exchange);
-  let feeRate = options.broker?.feeRate ?? 0;
+  // 3. Get trading fees (skip API call if skipFeeFetch is set)
+  let feeRate = options.broker?.feeRate ?? 0.001; // Default 0.1% taker fee
 
-  try {
-    const fees = await provider.fetchTradingFees(validatedConfig.symbol);
-    // Use taker fee for market orders (default order type)
-    feeRate = fees.taker;
-    log(`Using exchange fee rate: ${(feeRate * 100).toFixed(3)}% (taker)`, Date.now());
-  } catch {
-    log(`Could not fetch fees, using default: ${(feeRate * 100).toFixed(3)}%`, Date.now());
+  if (!options.skipFeeFetch) {
+    log(`Fetching trading fees for ${validatedConfig.symbol}`, Date.now());
+    const provider = getProvider(validatedConfig.exchange);
+    try {
+      const fees = await provider.fetchTradingFees(validatedConfig.symbol);
+      // Use taker fee for market orders (default order type)
+      feeRate = fees.taker;
+      log(`Using exchange fee rate: ${(feeRate * 100).toFixed(3)}% (taker)`, Date.now());
+    } catch {
+      log(`Could not fetch fees, using default: ${(feeRate * 100).toFixed(3)}%`, Date.now());
+    }
   }
 
   // 4. Initialize portfolio and broker with fetched fee rate
@@ -163,9 +228,14 @@ export async function runBacktest(
     const currentCandle = candles[currentIndex];
     const portfolioState = portfolio.getState();
 
-    return {
-      // Market data
-      candles: candles.slice(0, currentIndex + 1),
+    // Create context with lazy candles array getter
+    const context: StrategyContext = {
+      // Market data - candleView is memory efficient
+      get candles(): Candle[] {
+        // Only allocate array if explicitly accessed (legacy strategies)
+        return candles.slice(0, currentIndex + 1);
+      },
+      candleView: new CandleViewImpl(candles, currentIndex),
       currentIndex,
       currentCandle,
       params,
@@ -217,6 +287,8 @@ export async function runBacktest(
         log(`[Strategy] ${message}`, currentCandle.timestamp);
       },
     };
+
+    return context;
   };
 
   // 6. Call strategy init

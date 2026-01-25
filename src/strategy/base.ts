@@ -6,6 +6,28 @@
 import type { Candle, Position, Order } from '../core/types.js';
 
 // ============================================================================
+// Memory-Efficient Candle View
+// ============================================================================
+
+/** Memory-efficient view into candle data without copying arrays */
+export interface CandleView {
+  /** Number of candles visible in this view */
+  readonly length: number;
+  /** Get candle at index (0 = oldest, length-1 = current) */
+  at(index: number): Candle | undefined;
+  /** Get a slice of candles (allocates new array - use sparingly) */
+  slice(start?: number, end?: number): Candle[];
+  /** Get all close prices up to current bar */
+  closes(): number[];
+  /** Get all volumes up to current bar */
+  volumes(): number[];
+  /** Get all high prices up to current bar */
+  highs(): number[];
+  /** Get all low prices up to current bar */
+  lows(): number[];
+}
+
+// ============================================================================
 // Strategy Parameter Schema
 // ============================================================================
 
@@ -124,6 +146,11 @@ export interface StrategyContext {
    * All candles up to and including current bar
    */
   candles: Candle[];
+
+  /**
+   * Memory-efficient view into candle data (use this for performance)
+   */
+  candleView: CandleView;
 
   /**
    * Index of the current candle in the candles array

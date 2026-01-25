@@ -511,11 +511,11 @@ const gptLongUltimate: Strategy = {
       return;
     }
 
-    // Get historical data up to current candle
-    const historicalCandles = candles.slice(0, currentIndex + 1);
-    const closes = historicalCandles.map((c) => c.close);
-    const highs = historicalCandles.map((c) => c.high);
-    const lows = historicalCandles.map((c) => c.low);
+    // Get historical data up to current candle (use candleView for efficiency)
+    const closes = context.candleView.closes();
+    const highs = context.candleView.highs();
+    const lows = context.candleView.lows();
+    const historicalCandles = context.candleView.slice();
 
     // ========================================================================
     // Calculate Indicators

@@ -12,19 +12,32 @@ import { BinanceProvider } from './binance.js';
 export type SupportedExchange = 'binance';
 
 /**
- * Registry of available providers
+ * Registry of provider factories
  */
 const providerRegistry: Record<SupportedExchange, () => DataProvider> = {
   binance: () => new BinanceProvider(),
 };
 
 /**
+ * Cache of provider instances (singleton pattern)
+ * CCXT clients are heavy and should be reused
+ */
+const providerCache = new Map<string, DataProvider>();
+
+/**
  * Get a data provider for the specified exchange
+ * Uses cached instance to avoid creating multiple CCXT clients
  * @param exchange - Exchange identifier (e.g., 'binance')
- * @returns DataProvider instance
+ * @returns DataProvider instance (cached/singleton)
  * @throws Error if exchange is not supported
  */
 export function getProvider(exchange: string): DataProvider {
+  // Check cache first
+  const cached = providerCache.get(exchange);
+  if (cached) {
+    return cached;
+  }
+
   const factory = providerRegistry[exchange as SupportedExchange];
 
   if (!factory) {
@@ -34,7 +47,10 @@ export function getProvider(exchange: string): DataProvider {
     );
   }
 
-  return factory();
+  // Create and cache the provider
+  const provider = factory();
+  providerCache.set(exchange, provider);
+  return provider;
 }
 
 /**

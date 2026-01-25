@@ -116,7 +116,7 @@ function initializeTables(database: Database.Database): void {
       FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
     );
 
-    -- Optimization results
+    -- Optimization results (legacy table)
     CREATE TABLE IF NOT EXISTS optimization_results (
       id TEXT PRIMARY KEY,
       strategy_name TEXT NOT NULL,
@@ -127,6 +127,20 @@ function initializeTables(database: Database.Database): void {
       config JSON NOT NULL,
       all_results JSON NOT NULL,
       created_at INTEGER NOT NULL,
+      UNIQUE(strategy_name, symbol)
+    );
+
+    -- Optimized parameters (used by optimizer)
+    CREATE TABLE IF NOT EXISTS optimized_params (
+      id TEXT PRIMARY KEY,
+      strategy_name TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      params JSON NOT NULL,
+      metrics JSON NOT NULL,
+      optimized_at INTEGER NOT NULL,
+      config JSON NOT NULL,
+      total_combinations INTEGER NOT NULL,
+      tested_combinations INTEGER NOT NULL,
       UNIQUE(strategy_name, symbol)
     );
 
@@ -141,6 +155,8 @@ function initializeTables(database: Database.Database): void {
       ON backtest_runs(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_optimization_results_lookup
       ON optimization_results(strategy_name, symbol);
+    CREATE INDEX IF NOT EXISTS idx_optimized_params_lookup
+      ON optimized_params(strategy_name, symbol);
   `);
 
   // Run migrations for existing databases

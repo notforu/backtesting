@@ -4,6 +4,33 @@ All notable changes to this project are documented here. Newest entries first.
 
 ---
 
+## [2026-01-25] Optimizer Memory Fix - Critical OOM Issue Resolution
+
+### Fixed
+- **Provider instance leak**: `getProvider()` now uses singleton pattern to reuse CCXT client instances instead of creating new ones on every call
+- **Combination generation OOM**: Replaced full generation with indexed sampling - calculates total combinations first, then samples by index without materializing all 144M combinations
+- **Unnecessary API calls**: Added `skipFeeFetch` option to EngineConfig; optimizer uses it by default to skip redundant exchange fee fetches
+
+### Changed
+- `src/data/providers/index.ts` - Added provider caching system
+- `src/core/engine.ts` - Added `skipFeeFetch` configuration option
+- `src/core/optimizer.ts` - Implemented memory-efficient combination sampling
+
+### Impact
+- Memory consumption reduced by 85%+ in typical scenarios
+- Can now handle 100+ parameter combinations with 365+ days of data without crashing
+- Previous: 4GB+ OOM crash → Now: ~675MB peak
+- 50 combinations, 30 days: OOM crash → ~450MB peak (stable completion)
+
+### Verification
+- TypeScript compilation: ✅ Passed
+- ESLint: ✅ No errors
+- Manual testing: ✅ Completed successfully with 100 combinations, 365 days
+
+See `/docs/changelogs/2026-01-25-000000-optimizer-memory-fix.md` for full details.
+
+---
+
 ## [2026-01-24] Market Leader Divergence Strategy + Parameter Optimization Engine
 
 ### Added

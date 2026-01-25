@@ -107,8 +107,8 @@ const smaCrossover: Strategy = {
       return;
     }
 
-    // Get close prices up to current candle
-    const closes = candles.slice(0, currentIndex + 1).map((c) => c.close);
+    // Get close prices up to current candle (use candleView for efficiency)
+    const closes = context.candleView.closes();
 
     // Calculate SMAs
     const fastSMA = calculateSMA(closes, fastPeriod);
