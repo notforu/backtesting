@@ -39,8 +39,18 @@ After invoking ANY agent, IMMEDIATELY append to `/chat_logs/agent-usage.log`:
 
 After ANY code modification, **ALWAYS call `docs-writer` agent** to create changelog.
 - DO NOT create changelogs manually
-- docs-writer creates: `/chat_logs/YYYY-MM-DD-HHMMSS-brief-title.md`
+- docs-writer creates: `/docs/changelogs/YYYY-MM-DD-HHMMSS-brief-title.md`
+- **ALWAYS use local timezone** for datetime in filenames
 - This ensures consistent logging and formatting
+
+### 📁 RULE 5: Documentation Location
+
+**ALL documentation files MUST be saved in `/docs/` folder:**
+- Changelogs → `/docs/changelogs/`
+- Architecture docs → `/docs/`
+- Session notes → `/docs/sessions/`
+- **NEVER create .md files in project root or random locations**
+- **ALWAYS include datetime in local timezone in filename**: `YYYY-MM-DD-HHMMSS-title.md`
 
 ### ✅ RULE 4: Session Completion Checklist
 
@@ -193,9 +203,11 @@ The risk module is critical for capital preservation:
 **After ANY significant code change, create a changelog file:**
 
 1. Call `docs-writer` agent with summary of changes
-2. Or manually create `/chat_logs/YYYY-MM-DD-HHMMSS-brief-title.md`
+2. Or manually create `/docs/changelogs/YYYY-MM-DD-HHMMSS-brief-title.md`
 
-Example: `chat_logs/2025-01-24-143052-add-short-selling.md`
+Example: `docs/changelogs/2025-01-24-143052-add-short-selling.md`
+
+**Filename format:** `YYYY-MM-DD-HHMMSS-brief-title.md` (use LOCAL timezone)
 
 Significant changes include:
 - New features or refactoring
@@ -212,3 +224,18 @@ After each session, update `/chat_logs/` with:
 - Decisions made and rationale
 - Open questions or blockers
 - Next steps
+
+## ⚠️ Known Issues & Gotchas
+
+### Docker Development Issue (CRITICAL)
+**When Claude runs inside Docker but user views UI on host machine:**
+- Dev server running inside Docker may not properly expose changes to host
+- User may see stale/cached content or errors even when API works inside container
+- **WORKAROUND**: Run `npm run dev` on **host machine**, not inside Docker container
+- This needs proper fix in docker-compose networking/port forwarding
+- **TODO**: Investigate and fix Docker-to-host communication for dev server
+
+### Playwright in Docker
+- Requires `cap_add: SYS_ADMIN` and `security_opt: seccomp=unconfined` in docker-compose.yml
+- Chrome symlink needed at `/opt/google/chrome/chrome`
+- Pre-install Playwright browsers in Dockerfile for faster startup

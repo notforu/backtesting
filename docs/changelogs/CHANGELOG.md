@@ -4,6 +4,43 @@ All notable changes to this project are documented here. Newest entries first.
 
 ---
 
+## [2026-01-24] Market Leader Divergence Strategy + Parameter Optimization Engine
+
+### Added
+- `strategies/marketLeaderDivergence.ts` - Trend-following divergence strategy with EMA crossovers, volume spike detection, and mean reversion
+- `src/core/optimizer.ts` - Grid search parameter optimization engine with parallel execution
+- `src/api/routes/optimize.ts` - REST API endpoints for optimization (POST, GET, DELETE)
+- `src/web/hooks/useOptimization.ts` - React hooks for optimization UI integration
+- CLI scripts: `run-optimization.ts`, `run-optimization-fast.ts`, `run-optimization-minimal.ts`, `check-db.ts`
+- Database schema: `optimized_params` table with CRUD operations
+
+### Changed
+- `src/data/db.ts` - Added optimization result storage and retrieval functions
+- `src/web/components/StrategyConfig/StrategyConfig.tsx` - Added optimization UI with progress tracking
+- `src/web/stores/backtestStore.ts` - Added `useOptimizationStore` for state management
+
+### Key Features
+- **Optimization**: Grid search algorithm, parallel backtest execution, progress tracking
+- **Metric Selection**: Optimize for Sharpe Ratio, Total Return %, Profit Factor, or Win Rate
+- **Result Persistence**: All optimizations saved to database with full configuration
+- **Strategy**: Trend detection (EMA), volume analysis, divergence entry, configurable stops
+- **Performance**: ~30-45 minutes for 2,000 combinations with batch processing
+
+### Known Limitations
+- Network API timeouts on extended optimizations (>1000 combinations) - use CLI scripts instead
+- High memory usage with very large parameter grids - keep ranges conservative
+- Optimization metric reliability varies (Sharpe Ratio less stable with low trade counts)
+
+### Files Modified
+- `src/data/db.ts` - Database schema and operations
+- `src/web/components/StrategyConfig/StrategyConfig.tsx` - UI integration
+- `src/web/stores/backtestStore.ts` - State management
+- `src/api/server.ts` - Route registration (assumed)
+
+See `/chat_logs/2026-01-24-141500-market-leader-divergence-and-optimizer.md` for comprehensive documentation.
+
+---
+
 ## [2026-01-24] Add GPT LONG ULTIMATE Strategy
 
 ### Added
