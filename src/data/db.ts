@@ -4,8 +4,6 @@
  */
 
 import Database from 'better-sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import type {
   Candle,
   Timeframe,
@@ -17,8 +15,8 @@ import type {
   TradeAction,
 } from '../core/types.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Use /tmp for database to avoid FUSE filesystem issues with SQLite locking
+// Can override with DB_PATH environment variable
 const DB_PATH = process.env.DB_PATH || '/tmp/backtesting.db';
 
 // ============================================================================

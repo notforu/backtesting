@@ -104,9 +104,9 @@ export async function runOptimization(
 
   // Pre-fetch candles to avoid fetching during backtests
   console.log('Pre-fetching candle data...');
+  const provider = getProvider(exchange);
   const cachedRange = getCandleDateRange(exchange, symbol, timeframe);
   if (!cachedRange.start || !cachedRange.end || cachedRange.start > startDate || cachedRange.end < endDate) {
-    const provider = getProvider(exchange);
     const candles = await provider.fetchCandles(symbol, timeframe, new Date(startDate), new Date(endDate));
     if (candles.length > 0) {
       saveCandles(candles, exchange, symbol, timeframe);
@@ -116,15 +116,28 @@ export async function runOptimization(
     console.log('Using existing cached candles');
   }
 
+  // Pre-fetch trading fees once (cache for all backtest runs)
+  let cachedFeeRate = 0.001; // Default 0.1% taker fee
+  try {
+    const fees = await provider.fetchTradingFees(symbol);
+    cachedFeeRate = fees.taker;
+    console.log(`Using exchange fee rate: ${(cachedFeeRate * 100).toFixed(3)}% (taker)`);
+  } catch {
+    console.log(`Could not fetch fees, using default: ${(cachedFeeRate * 100).toFixed(3)}%`);
+  }
+
   // Track best result only (don't store all results to save memory)
   let bestResult: { params: Record<string, unknown>; metrics: PerformanceMetrics } | null = null;
   let bestMetricValue = -Infinity;
 
-  // Engine config for backtests (no saving, no logging, skip fee fetch for speed)
+  // Engine config for backtests (no saving, no logging, use cached fee rate)
   const engineConfig: EngineConfig = {
     saveResults: false,
     enableLogging: false,
-    skipFeeFetch: true, // Use default fees to avoid API calls
+    skipFeeFetch: true, // Skip API calls, use cached fee rate below
+    broker: {
+      feeRate: cachedFeeRate, // Pre-fetched fee rate
+    },
   };
 
   // Process combinations in batches
