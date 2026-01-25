@@ -12,6 +12,8 @@ import type {
   StrategyDetails,
   StrategyInfo,
   ApiError,
+  OptimizationRequest,
+  OptimizationResult,
 } from '../types';
 
 const API_BASE = '/api';
@@ -164,6 +166,56 @@ export async function getSymbols(exchange: string): Promise<string[]> {
  */
 export async function getExchanges(): Promise<string[]> {
   return apiFetch<string[]>('/exchanges');
+}
+
+// ============================================================================
+// Optimization Endpoints
+// ============================================================================
+
+/**
+ * Run parameter optimization for a strategy
+ */
+export async function runOptimization(
+  config: OptimizationRequest
+): Promise<OptimizationResult> {
+  return apiFetch<OptimizationResult>('/optimize', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+/**
+ * Get saved optimized parameters for a strategy and symbol
+ */
+export async function getOptimizedParams(
+  strategyName: string,
+  symbol: string
+): Promise<OptimizationResult> {
+  return apiFetch<OptimizationResult>(
+    `/optimize/${encodeURIComponent(strategyName)}/${encodeURIComponent(symbol)}`
+  );
+}
+
+/**
+ * Get all saved optimization results
+ */
+export async function getAllOptimizations(): Promise<OptimizationResult[]> {
+  return apiFetch<OptimizationResult[]>('/optimize/all');
+}
+
+/**
+ * Delete a saved optimization result
+ */
+export async function deleteOptimization(
+  strategyName: string,
+  symbol: string
+): Promise<void> {
+  return apiFetch<void>(
+    `/optimize/${encodeURIComponent(strategyName)}/${encodeURIComponent(symbol)}`,
+    {
+      method: 'DELETE',
+    }
+  );
 }
 
 // ============================================================================

@@ -5,7 +5,16 @@
 
 import { useEffect } from 'react';
 import { useStrategies, useStrategy, useRunBacktest } from '../../hooks/useBacktest';
-import { useConfigStore, useBacktestStore } from '../../stores/backtestStore';
+import {
+  useOptimizedParams,
+  useRunOptimization,
+  useDeleteOptimization,
+} from '../../hooks/useOptimization';
+import {
+  useConfigStore,
+  useBacktestStore,
+  useOptimizationStore,
+} from '../../stores/backtestStore';
 import type { StrategyParam, Timeframe } from '../../types';
 
 // Available timeframes
@@ -161,6 +170,22 @@ export function StrategyConfig() {
   const { isRunning, error } = useBacktestStore();
   const runBacktestMutation = useRunBacktest();
 
+  // Optimization hooks
+  const { data: optimizedParams, isError: optimizedParamsError } =
+    useOptimizedParams(strategy, symbol);
+  const runOptimizationMutation = useRunOptimization();
+  const deleteOptimizationMutation = useDeleteOptimization();
+
+  const {
+    isOptimizing,
+    optimizationError,
+    usingOptimizedParams,
+    setOptimizing,
+    setOptimizationError,
+    setUsingOptimizedParams,
+    clearOptimization,
+  } = useOptimizationStore();
+
   // Initialize params with defaults when strategy changes
   useEffect(() => {
     if (strategyDetails?.params) {
@@ -169,8 +194,19 @@ export function StrategyConfig() {
         defaultParams[p.name] = p.default;
       });
       setParams(defaultParams);
+      setUsingOptimizedParams(false);
     }
-  }, [strategyDetails, setParams]);
+  }, [strategyDetails, setParams, setUsingOptimizedParams]);
+
+  // Auto-apply optimized params when available
+  useEffect(() => {
+    if (optimizedParams && !optimizedParamsError && strategy && symbol) {
+      setParams(optimizedParams.bestParams);
+      setUsingOptimizedParams(true);
+    } else if (optimizedParamsError) {
+      setUsingOptimizedParams(false);
+    }
+  }, [optimizedParams, optimizedParamsError, strategy, symbol, setParams, setUsingOptimizedParams]);
 
   const handleRunBacktest = () => {
     if (!strategy) return;
@@ -181,7 +217,63 @@ export function StrategyConfig() {
     });
   };
 
-  const canRun = strategy && symbol && startDate && endDate && !isRunning;
+  const handleRunOptimization = () => {
+    if (!strategy || !symbol) return;
+
+    setOptimizing(true);
+    clearOptimization();
+
+    const config = getConfig();
+    runOptimizationMutation.mutate(
+      {
+        strategyName: config.strategyName,
+        symbol: config.symbol,
+        timeframe: config.timeframe,
+        startDate: config.startDate,
+        endDate: config.endDate,
+        initialCapital: config.initialCapital,
+        exchange: config.exchange || 'binance',
+        optimizeFor: 'sharpeRatio',
+        maxCombinations: 100,
+        batchSize: 4,
+      },
+      {
+        onSuccess: (result) => {
+          setOptimizing(false);
+          setParams(result.bestParams);
+          setUsingOptimizedParams(true);
+        },
+        onError: (err) => {
+          setOptimizationError(err.message);
+          setOptimizing(false);
+        },
+      }
+    );
+  };
+
+  const handleClearOptimizedParams = () => {
+    if (!strategy || !symbol) return;
+
+    deleteOptimizationMutation.mutate(
+      { strategyName: strategy, symbol },
+      {
+        onSuccess: () => {
+          // Reset to default params
+          if (strategyDetails?.params) {
+            const defaultParams: Record<string, unknown> = {};
+            strategyDetails.params.forEach((p) => {
+              defaultParams[p.name] = p.default;
+            });
+            setParams(defaultParams);
+          }
+          setUsingOptimizedParams(false);
+        },
+      }
+    );
+  };
+
+  const canRun = strategy && symbol && startDate && endDate && !isRunning && !isOptimizing;
+  const canOptimize = strategy && symbol && startDate && endDate && !isRunning && !isOptimizing;
 
   const inputClass =
     'w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent';
@@ -305,10 +397,68 @@ export function StrategyConfig() {
         />
       </div>
 
+      {/* Optimized Params Badge */}
+      {usingOptimizedParams && optimizedParams && (
+        <div className="bg-green-900/30 border border-green-700 rounded p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg
+                className="w-5 h-5 text-green-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span className="text-sm text-green-300">
+                Using optimized parameters (Sharpe:{' '}
+                {optimizedParams.bestMetrics.sharpeRatio.toFixed(2)})
+              </span>
+            </div>
+            <button
+              onClick={handleClearOptimizedParams}
+              className="text-xs text-green-400 hover:text-green-300 underline"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Error Display */}
       {error && (
         <div className="bg-red-900/50 border border-red-700 rounded p-3 text-sm text-red-300">
           {error}
+        </div>
+      )}
+
+      {/* Optimization Error Display */}
+      {optimizationError && (
+        <div className="bg-red-900/50 border border-red-700 rounded p-3 text-sm text-red-300">
+          {optimizationError}
+        </div>
+      )}
+
+      {/* Optimization Progress */}
+      {isOptimizing && (
+        <div className="bg-purple-900/30 border border-purple-700 rounded p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-purple-300">Optimizing parameters...</span>
+            <span className="text-xs text-purple-400">
+              This may take several minutes
+            </span>
+          </div>
+          <div className="w-full bg-gray-700 rounded-full h-2">
+            <div
+              className="bg-purple-500 h-2 rounded-full transition-all duration-300 animate-pulse"
+              style={{ width: '100%' }}
+            />
+          </div>
         </div>
       )}
 
@@ -353,6 +503,50 @@ export function StrategyConfig() {
           'Run Backtest'
         )}
       </button>
+
+      {/* Optimize Button */}
+      {strategy && (
+        <button
+          onClick={handleRunOptimization}
+          disabled={!canOptimize}
+          className={`
+            w-full py-3 rounded font-medium text-white transition-colors
+            ${
+              canOptimize
+                ? 'bg-purple-600 hover:bg-purple-500'
+                : 'bg-gray-600 cursor-not-allowed'
+            }
+          `}
+        >
+          {isOptimizing ? (
+            <span className="flex items-center justify-center gap-2">
+              <svg
+                className="animate-spin h-5 w-5"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+              Optimizing...
+            </span>
+          ) : (
+            'Optimize Parameters'
+          )}
+        </button>
+      )}
     </div>
   );
 }

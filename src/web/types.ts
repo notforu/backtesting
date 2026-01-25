@@ -211,6 +211,38 @@ export interface ApiError {
 }
 
 // ============================================================================
+// Optimization Types
+// ============================================================================
+
+export interface OptimizationRequest {
+  strategyName: string;
+  symbol: string;
+  timeframe: Timeframe;
+  startDate: string | number;
+  endDate: string | number;
+  initialCapital?: number;
+  exchange?: string;
+  optimizeFor?: 'sharpeRatio' | 'totalReturnPercent' | 'profitFactor' | 'winRate';
+  maxCombinations?: number;
+  batchSize?: number;
+}
+
+export interface OptimizationResult {
+  id: string;
+  strategyName: string;
+  symbol: string;
+  bestParams: Record<string, unknown>;
+  bestMetrics: PerformanceMetrics;
+  totalCombinations: number;
+  testedCombinations: number;
+  optimizedAt: number;
+  allResults?: Array<{
+    params: Record<string, unknown>;
+    metrics: PerformanceMetrics;
+  }>;
+}
+
+// ============================================================================
 // UI State Types
 // ============================================================================
 
