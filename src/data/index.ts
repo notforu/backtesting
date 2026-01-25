@@ -13,9 +13,16 @@ export {
   saveBacktestRun,
   getBacktestRun,
   getBacktestHistory,
+  getBacktestSummaries,
   deleteBacktestRun,
   getTrades,
   saveTrades,
+  saveOptimizedParams,
+  getOptimizedParams,
+  getAllOptimizedParams,
+  deleteOptimizedParams,
+  type OptimizationResult,
+  type BacktestSummary,
 } from './db.js';
 
 // Providers

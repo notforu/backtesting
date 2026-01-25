@@ -116,6 +116,20 @@ function initializeTables(database: Database.Database): void {
       FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
     );
 
+    -- Optimization results
+    CREATE TABLE IF NOT EXISTS optimization_results (
+      id TEXT PRIMARY KEY,
+      strategy_name TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      best_params JSON NOT NULL,
+      best_metric_value REAL NOT NULL,
+      metric_name TEXT NOT NULL,
+      config JSON NOT NULL,
+      all_results JSON NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(strategy_name, symbol)
+    );
+
     -- Indexes for efficient lookups
     CREATE INDEX IF NOT EXISTS idx_candles_lookup
       ON candles(exchange, symbol, timeframe, timestamp);
@@ -125,6 +139,8 @@ function initializeTables(database: Database.Database): void {
       ON trades_v2(backtest_id);
     CREATE INDEX IF NOT EXISTS idx_backtest_runs_created
       ON backtest_runs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_optimization_results_lookup
+      ON optimization_results(strategy_name, symbol);
   `);
 
   // Run migrations for existing databases
@@ -359,6 +375,58 @@ export function getBacktestRun(id: string): BacktestResult | null {
 }
 
 /**
+ * BacktestSummary type for efficient history listing
+ * Contains only essential fields without trades and equity arrays
+ */
+export interface BacktestSummary {
+  id: string;
+  config: {
+    strategyName: string;
+    symbol: string;
+    timeframe: string;
+  };
+  metrics: {
+    totalReturnPercent: number;
+    sharpeRatio: number;
+  };
+  createdAt: number;
+}
+
+/**
+ * Get backtest summaries (optimized for history list)
+ * Only loads essential fields without trades and equity arrays
+ */
+export function getBacktestSummaries(limit: number = 50): BacktestSummary[] {
+  const database = getDb();
+  const select = database.prepare<[number], BacktestRunRow>(`
+    SELECT id, config, metrics, created_at
+    FROM backtest_runs
+    ORDER BY created_at DESC
+    LIMIT ?
+  `);
+
+  const rows = select.all(limit);
+  return rows.map((row) => {
+    const fullConfig = JSON.parse(row.config) as BacktestConfig;
+    const fullMetrics = JSON.parse(row.metrics) as PerformanceMetrics;
+
+    return {
+      id: row.id,
+      config: {
+        strategyName: fullConfig.strategyName,
+        symbol: fullConfig.symbol,
+        timeframe: fullConfig.timeframe,
+      },
+      metrics: {
+        totalReturnPercent: fullMetrics.totalReturnPercent,
+        sharpeRatio: fullMetrics.sharpeRatio,
+      },
+      createdAt: row.created_at,
+    };
+  });
+}
+
+/**
  * Get backtest history (most recent first)
  */
 export function getBacktestHistory(limit: number = 50): BacktestResult[] {
@@ -555,4 +623,138 @@ export function saveTrades(backtestId: string, trades: Trade[]): number {
   });
 
   return insertMany(trades);
+}
+
+// ============================================================================
+// Optimized Parameters Operations
+// ============================================================================
+
+interface OptimizedParamsRow {
+  id: string;
+  strategy_name: string;
+  symbol: string;
+  params: string;
+  metrics: string;
+  optimized_at: number;
+  config: string;
+  total_combinations: number;
+  tested_combinations: number;
+}
+
+/**
+ * OptimizationResult type
+ * Represents the result of a parameter optimization run
+ */
+export interface OptimizationResult {
+  id: string;
+  strategyName: string;
+  symbol: string;
+  bestParams: Record<string, unknown>;
+  bestMetrics: PerformanceMetrics;
+  totalCombinations: number;
+  testedCombinations: number;
+  optimizedAt: number;
+  allResults?: Array<{
+    params: Record<string, unknown>;
+    metrics: PerformanceMetrics;
+  }>;
+}
+
+/**
+ * Save optimized parameters to the database
+ */
+export function saveOptimizedParams(result: OptimizationResult): void {
+  const database = getDb();
+
+  const insert = database.prepare(`
+    INSERT OR REPLACE INTO optimized_params
+    (id, strategy_name, symbol, params, metrics, optimized_at, config, total_combinations, tested_combinations)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insert.run(
+    result.id,
+    result.strategyName,
+    result.symbol,
+    JSON.stringify(result.bestParams),
+    JSON.stringify(result.bestMetrics),
+    result.optimizedAt,
+    JSON.stringify(result.allResults ?? []),
+    result.totalCombinations,
+    result.testedCombinations
+  );
+}
+
+/**
+ * Get optimized parameters by strategy name and symbol
+ */
+export function getOptimizedParams(
+  strategyName: string,
+  symbol: string
+): OptimizationResult | null {
+  const database = getDb();
+  const select = database.prepare<[string, string], OptimizedParamsRow>(`
+    SELECT id, strategy_name, symbol, params, metrics, optimized_at, config, total_combinations, tested_combinations
+    FROM optimized_params
+    WHERE strategy_name = ? AND symbol = ?
+  `);
+
+  const row = select.get(strategyName, symbol);
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    strategyName: row.strategy_name,
+    symbol: row.symbol,
+    bestParams: JSON.parse(row.params) as Record<string, unknown>,
+    bestMetrics: JSON.parse(row.metrics) as PerformanceMetrics,
+    optimizedAt: row.optimized_at,
+    totalCombinations: row.total_combinations,
+    testedCombinations: row.tested_combinations,
+    allResults: JSON.parse(row.config) as Array<{
+      params: Record<string, unknown>;
+      metrics: PerformanceMetrics;
+    }>,
+  };
+}
+
+/**
+ * Get all optimized parameters
+ */
+export function getAllOptimizedParams(): OptimizationResult[] {
+  const database = getDb();
+  const select = database.prepare<[], OptimizedParamsRow>(`
+    SELECT id, strategy_name, symbol, params, metrics, optimized_at, config, total_combinations, tested_combinations
+    FROM optimized_params
+    ORDER BY optimized_at DESC
+  `);
+
+  const rows = select.all();
+  return rows.map((row) => ({
+    id: row.id,
+    strategyName: row.strategy_name,
+    symbol: row.symbol,
+    bestParams: JSON.parse(row.params) as Record<string, unknown>,
+    bestMetrics: JSON.parse(row.metrics) as PerformanceMetrics,
+    optimizedAt: row.optimized_at,
+    totalCombinations: row.total_combinations,
+    testedCombinations: row.tested_combinations,
+    allResults: JSON.parse(row.config) as Array<{
+      params: Record<string, unknown>;
+      metrics: PerformanceMetrics;
+    }>,
+  }));
+}
+
+/**
+ * Delete optimized parameters
+ */
+export function deleteOptimizedParams(strategyName: string, symbol: string): boolean {
+  const database = getDb();
+  const result = database
+    .prepare('DELETE FROM optimized_params WHERE strategy_name = ? AND symbol = ?')
+    .run(strategyName, symbol);
+  return result.changes > 0;
 }

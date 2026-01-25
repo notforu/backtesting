@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { runBacktest, BacktestConfigSchema } from '../../core/index.js';
 import {
   getBacktestRun,
-  getBacktestHistory,
+  getBacktestSummaries,
   deleteBacktestRun,
   getCandles,
 } from '../../data/index.js';
@@ -152,25 +152,35 @@ export async function backtestRoutes(fastify: FastifyInstance) {
     reply: FastifyReply
   ) => {
     try {
+      fastify.log.info('GET /api/backtest/history called');
       const { limit } = HistoryQuerySchema.parse(request.query);
-      const history = getBacktestHistory(limit);
+      const summaries = getBacktestSummaries(limit);
 
-      // Transform to summary format for frontend
-      const summaries = history.map((result) => ({
-        id: result.id,
-        strategyName: result.config.strategyName,
-        symbol: result.config.symbol,
-        timeframe: result.config.timeframe,
-        totalReturnPercent: result.metrics.totalReturnPercent,
-        sharpeRatio: result.metrics.sharpeRatio,
-        runAt: new Date(result.createdAt).toISOString(),
+      // Transform to frontend format
+      const results = summaries.map((summary) => ({
+        id: summary.id,
+        strategyName: summary.config.strategyName,
+        symbol: summary.config.symbol,
+        timeframe: summary.config.timeframe,
+        totalReturnPercent: summary.metrics.totalReturnPercent,
+        sharpeRatio: summary.metrics.sharpeRatio,
+        runAt: new Date(summary.createdAt).toISOString(),
       }));
 
-      return reply.status(200).send(summaries);
+      fastify.log.info(`Returning ${results.length} backtest summaries`);
+      return reply.status(200).send(results);
     } catch (error) {
+      // Log full error with stack trace
+      fastify.log.error({
+        err: error,
+        msg: 'Error in /api/backtest/history',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
       if (error instanceof Error) {
         return reply.status(500).send({
           error: error.message,
+          stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined,
         });
       }
       return reply.status(500).send({
