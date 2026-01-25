@@ -25,3 +25,9 @@ yarn-error.log*
 
 # Test coverage
 /coverage/
+
+# Local settings
+.claude/settings.local.json
+
+# Playwright MCP output
+.playwright-mcp/
