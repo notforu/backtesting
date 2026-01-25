@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  claude:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: claude-sandbox
+
+    # Mount project folder as /workspace
+    volumes:
+      - ${PROJECT_DIR:-./../..}:/workspace
+      # Persist Claude credentials between runs (login once, reuse)
+      - claude-credentials:/home/claude/.claude
+
+    # Pass API key from host environment (optional if using OAuth)
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+
+    # Interactive terminal
+    stdin_open: true
+    tty: true
+
+    # Security options for Chrome/Playwright sandboxing
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp=unconfined
+
+    # Expose development server ports
+    ports:
+      - "3000:3000"  # API server
+      - "5173:5173"  # Vite frontend
+      - "5174:5174"  # Vite fallback port
+      - "9222:9222"  # Chrome DevTools Protocol
+
+    # Optional: limit resources for extra safety
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+
+    # Network isolation (optional - uncomment to disable network)
+    # network_mode: none
+
+volumes:
+  claude-credentials:
