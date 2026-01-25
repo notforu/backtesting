@@ -28,9 +28,10 @@ export interface OptimizationConfig {
 
   // Optimization specific
   paramRanges?: Record<string, { min: number; max: number; step: number }>;
-  optimizeFor: 'sharpeRatio' | 'totalReturnPercent' | 'profitFactor' | 'winRate';
+  optimizeFor: 'sharpeRatio' | 'totalReturnPercent' | 'profitFactor' | 'winRate' | 'composite';
   maxCombinations?: number; // Limit grid size
   batchSize?: number; // Parallel execution batch size
+  minTrades?: number; // Minimum trades required for valid result (default: 10)
 }
 
 /**
@@ -40,6 +41,7 @@ export interface OptimizationResult {
   id: string;
   strategyName: string;
   symbol: string;
+  timeframe: Timeframe;
   bestParams: Record<string, unknown>;
   bestMetrics: PerformanceMetrics;
   totalCombinations: number;
@@ -82,8 +84,9 @@ export async function runOptimization(
     exchange,
     paramRanges,
     optimizeFor,
-    maxCombinations = 1000,
+    maxCombinations = 500,
     batchSize = 4,
+    minTrades = 10,
   } = config;
 
   // Load strategy to get parameter definitions
@@ -164,8 +167,20 @@ export async function runOptimization(
 
       testedCount++;
 
+      // Skip results with insufficient trades
+      if (result.metrics.totalTrades < minTrades) {
+        console.warn(`Skipping params - only ${result.metrics.totalTrades} trades (min: ${minTrades})`);
+        continue;
+      }
+
       // Check if this is the best result so far
-      const metricValue = result.metrics[optimizeFor];
+      let metricValue: number;
+      if (optimizeFor === 'composite') {
+        metricValue = calculateCompositeScore(result.metrics);
+      } else {
+        metricValue = result.metrics[optimizeFor];
+      }
+
       if (metricValue > bestMetricValue) {
         bestMetricValue = metricValue;
         bestResult = result;
@@ -189,7 +204,7 @@ export async function runOptimization(
   }
 
   if (!bestResult) {
-    throw new Error('No successful backtest runs. All parameter combinations failed.');
+    throw new Error(`No parameter combination produced at least ${minTrades} trades. Try widening parameter ranges or using a longer time period.`);
   }
 
   // Create optimization result (no allResults to save memory)
@@ -197,6 +212,7 @@ export async function runOptimization(
     id: uuidv4(),
     strategyName,
     symbol,
+    timeframe,
     bestParams: bestResult.params,
     bestMetrics: bestResult.metrics,
     totalCombinations,
@@ -309,6 +325,7 @@ function cartesianProduct(
 /**
  * Sample combinations by index without generating all (memory-efficient)
  * Converts an index into a specific combination using modular arithmetic
+ * Adds jitter to avoid systematic gaps in sampling
  */
 function sampleCombinationsIndexed(
   parameterValues: Record<string, unknown[]>,
@@ -323,7 +340,9 @@ function sampleCombinationsIndexed(
   const sizes = keys.map(key => parameterValues[key].length);
 
   for (let i = 0; i < maxCount; i++) {
-    const targetIndex = Math.floor(i * step);
+    // Add jitter to sampling to avoid systematic gaps
+    const jitter = Math.random() * step * 0.5;
+    const targetIndex = Math.floor(i * step + jitter) % totalCombinations;
     const combination = indexToCombination(targetIndex, keys, parameterValues, sizes);
     sampled.push(combination);
   }
@@ -355,6 +374,63 @@ function indexToCombination(
   }
 
   return result;
+}
+
+// ============================================================================
+// Composite Scoring
+// ============================================================================
+
+/**
+ * Calculate composite optimization score
+ * Balances multiple metrics for more robust optimization
+ *
+ * This approach addresses the limitation of single-metric optimization by combining:
+ * - Sharpe Ratio: Risk-adjusted returns
+ * - Total Return: Absolute profitability
+ * - Profit Factor: Win/loss ratio
+ * - Win Rate: Consistency
+ * - Max Drawdown: Downside protection
+ *
+ * @param metrics - Performance metrics from a backtest
+ * @returns Normalized composite score (0-1 range, higher is better)
+ */
+function calculateCompositeScore(metrics: PerformanceMetrics): number {
+  // Weights for different metrics (must sum to 1.0)
+  const weights = {
+    sharpeRatio: 0.25,
+    totalReturnPercent: 0.30,
+    profitFactor: 0.20,
+    winRate: 0.15,
+    maxDrawdownPenalty: 0.10,
+  };
+
+  // Normalize metrics to 0-1 range
+  // Sharpe: typically -2 to 3, normalize assuming range of -1 to 3
+  const sharpeNorm = Math.max(0, Math.min(1, (metrics.sharpeRatio + 1) / 4));
+
+  // Return: typically -50% to 50%, normalize to 0-1 (0% = 0.5, 50% = 1.0, -50% = 0.0)
+  const returnNorm = Math.max(0, Math.min(1, (metrics.totalReturnPercent + 50) / 100));
+
+  // Profit factor: typically 0 to 5, normalize to 0-1 (PF of 4+ is excellent)
+  const pfNorm = Math.max(0, Math.min(1, metrics.profitFactor / 4));
+
+  // Win rate: 0-100%, normalize to 0-1
+  const wrNorm = metrics.winRate / 100;
+
+  // Drawdown penalty: lower drawdown is better, so invert
+  // Typical drawdowns are 5-30%, normalize assuming 30% is worst acceptable
+  const ddPenalty = Math.max(0, 1 - metrics.maxDrawdownPercent / 30);
+
+  // Calculate weighted sum
+  const compositeScore = (
+    weights.sharpeRatio * sharpeNorm +
+    weights.totalReturnPercent * returnNorm +
+    weights.profitFactor * pfNorm +
+    weights.winRate * wrNorm +
+    weights.maxDrawdownPenalty * ddPenalty
+  );
+
+  return compositeScore;
 }
 
 // ============================================================================

@@ -80,3 +80,30 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-01-25 10:26] docs-writer (haiku) - Create changelog for Playwright/Docker/logging fixes
 [2026-01-25 12:07] main-claude (opus) - Fixed Playwright in Docker, verified History 500 error fix via UI test
 [2026-01-25 12:08] docs-writer (haiku) - Create changelog for Playwright/Docker comprehensive fix
+[2026-01-25 21:27] Explore (sonnet) - Investigate strategy loading issue in optimize endpoint
+[2026-01-25 21:33] be-dev (manual) - Fix missing optimized_params table in database schema
+[2026-01-25 21:34] docs-writer (haiku) - Create changelog for optimization endpoint fix
+[2026-01-25 12:51] orchestrator (sonnet) - Memory optimization task breakdown and delegation
+[2026-01-25 12:56] be-dev (sonnet) - Implement CandleView pattern to fix O(n²) memory issue
+[2026-01-25 12:57] be-dev (sonnet) - Implemented CandleView pattern to fix memory issue (base.ts, engine.ts, optimizer.ts, 3 strategies)
+[2026-01-25 13:00] docs-writer (haiku) - Create changelog for CandleView memory optimization
+[2026-01-25 12:58] docs-writer (haiku) - Created changelog for CandleView memory optimization
+[2026-01-25 14:08] main-claude (opus) - Fixed optimizer OOM: provider caching, indexed combination sampling, skipFeeFetch option
+[2026-01-25 14:09] docs-writer (haiku) - Create changelog for optimizer memory fix (provider caching, combination sampling, skipFeeFetch)
+[2026-01-25 14:09] docs-writer (haiku) - Created changelog for optimizer memory fix
+[2026-01-25 14:13] orchestrator (sonnet) - Reviewed optimization params storage and UI display - already implemented
+[2026-01-25 14:16] ui-tester (opus) - Verified optimized params display in UI for market-leader-divergence
+[2026-01-25 14:18] commit (haiku) - Commit optimizer memory fix and symbol format changes
+[2026-01-25 14:28] orchestrator (sonnet) - Fix parameter optimizer quality issues (minTrades filter, timeframe storage, sampling improvement)
+[2026-01-25 14:28] fullstack-dev (sonnet) - Add timeframe column to optimized_params table with migration
+[2026-01-25 14:28] be-dev (sonnet) - Fix parameter optimizer quality issues (minTrades filter, timeframe storage, sampling improvement)
+[2026-01-25 14:33] orchestrator (sonnet) - Update frontend for optimizer timeframe support (types, API client, hooks, components)
+[2026-01-25 14:33] fe-dev (sonnet) - Update frontend optimizer timeframe support (types, API client, hooks, components)
+[2026-01-25 14:35] docs-writer (haiku) - Create changelog for frontend optimizer timeframe support
+[2026-01-25 14:43] orchestrator (sonnet) - Add "Apply Optimized Params" button to StrategyConfig component
+[2026-01-25 14:45] fe-dev (sonnet) - Add "Apply Optimized Params" button to StrategyConfig component
+[2026-01-25 15:04] ui-tester (sonnet) - Test optimizer UI banner behavior
+[2026-01-25 16:39] orchestrator (sonnet) - Improve optimizer with higher maxCombinations and composite scoring
+[2026-01-25 16:39] be-dev (sonnet) - Implement composite scoring and increase maxCombinations in optimizer
+[2026-01-25 16:40] be-dev (sonnet) - Completed optimizer improvements - typecheck and lint passed
+[2026-01-25 16:50] main-claude (opus) - Fixed DB FUSE issue (/tmp), tuned optimizer defaults (totalReturnPercent, minTrades=15)

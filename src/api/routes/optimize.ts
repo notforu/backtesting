@@ -20,9 +20,10 @@ const OptimizeRequestSchema = z.object({
   endDate: z.number().or(z.string().transform((s) => new Date(s).getTime())),
   initialCapital: z.number().positive().default(10000),
   exchange: z.string().default('binance'),
-  optimizeFor: z.enum(['sharpeRatio', 'totalReturnPercent', 'profitFactor', 'winRate']).default('sharpeRatio'),
-  maxCombinations: z.number().positive().optional().default(100),
+  optimizeFor: z.enum(['sharpeRatio', 'totalReturnPercent', 'profitFactor', 'winRate', 'composite']).default('totalReturnPercent'),
+  maxCombinations: z.number().positive().optional().default(500),
   batchSize: z.number().positive().optional().default(4),
+  minTrades: z.number().positive().optional().default(15),
 });
 
 type OptimizeRequest = z.infer<typeof OptimizeRequestSchema>;
@@ -53,6 +54,7 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
         optimizeFor: parsed.optimizeFor,
         maxCombinations: parsed.maxCombinations,
         batchSize: parsed.batchSize,
+        minTrades: parsed.minTrades,
       });
       const duration = Date.now() - startTime;
 
@@ -84,20 +86,20 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
   });
 
   /**
-   * GET /api/optimize/:strategyName/:symbol
-   * Get saved optimized parameters for a strategy and symbol
+   * GET /api/optimize/:strategyName/:symbol/:timeframe
+   * Get saved optimized parameters for a strategy, symbol, and timeframe
    */
-  fastify.get('/api/optimize/:strategyName/:symbol', async (
-    request: FastifyRequest<{ Params: { strategyName: string; symbol: string } }>,
+  fastify.get('/api/optimize/:strategyName/:symbol/:timeframe', async (
+    request: FastifyRequest<{ Params: { strategyName: string; symbol: string; timeframe: string } }>,
     reply: FastifyReply
   ) => {
     try {
-      const { strategyName, symbol } = request.params;
-      const result = getOptimizedParams(strategyName, symbol);
+      const { strategyName, symbol, timeframe } = request.params;
+      const result = getOptimizedParams(strategyName, symbol, timeframe);
 
       if (!result) {
         return reply.status(404).send({
-          error: `Optimization result for strategy "${strategyName}" and symbol "${symbol}" not found`,
+          error: `Optimization result for strategy "${strategyName}", symbol "${symbol}", and timeframe "${timeframe}" not found`,
         });
       }
 
@@ -138,25 +140,25 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
   });
 
   /**
-   * DELETE /api/optimize/:strategyName/:symbol
+   * DELETE /api/optimize/:strategyName/:symbol/:timeframe
    * Delete a saved optimization result
    */
-  fastify.delete('/api/optimize/:strategyName/:symbol', async (
-    request: FastifyRequest<{ Params: { strategyName: string; symbol: string } }>,
+  fastify.delete('/api/optimize/:strategyName/:symbol/:timeframe', async (
+    request: FastifyRequest<{ Params: { strategyName: string; symbol: string; timeframe: string } }>,
     reply: FastifyReply
   ) => {
     try {
-      const { strategyName, symbol } = request.params;
-      const deleted = deleteOptimizedParams(strategyName, symbol);
+      const { strategyName, symbol, timeframe } = request.params;
+      const deleted = deleteOptimizedParams(strategyName, symbol, timeframe);
 
       if (!deleted) {
         return reply.status(404).send({
-          error: `Optimization result for strategy "${strategyName}" and symbol "${symbol}" not found`,
+          error: `Optimization result for strategy "${strategyName}", symbol "${symbol}", and timeframe "${timeframe}" not found`,
         });
       }
 
       return reply.status(200).send({
-        message: `Optimization result for "${strategyName}" on "${symbol}" deleted successfully`,
+        message: `Optimization result for "${strategyName}" on "${symbol}" at "${timeframe}" deleted successfully`,
       });
     } catch (error) {
       if (error instanceof Error) {

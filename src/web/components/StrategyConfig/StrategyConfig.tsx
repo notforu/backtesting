@@ -172,7 +172,7 @@ export function StrategyConfig() {
 
   // Optimization hooks
   const { data: optimizedParams, isError: optimizedParamsError } =
-    useOptimizedParams(strategy, symbol);
+    useOptimizedParams(strategy, symbol, timeframe);
   const runOptimizationMutation = useRunOptimization();
   const deleteOptimizationMutation = useDeleteOptimization();
 
@@ -200,13 +200,13 @@ export function StrategyConfig() {
 
   // Auto-apply optimized params when available
   useEffect(() => {
-    if (optimizedParams && !optimizedParamsError && strategy && symbol) {
+    if (optimizedParams && !optimizedParamsError && strategy && symbol && timeframe) {
       setParams(optimizedParams.bestParams);
       setUsingOptimizedParams(true);
     } else if (optimizedParamsError) {
       setUsingOptimizedParams(false);
     }
-  }, [optimizedParams, optimizedParamsError, strategy, symbol, setParams, setUsingOptimizedParams]);
+  }, [optimizedParams, optimizedParamsError, strategy, symbol, timeframe, setParams, setUsingOptimizedParams]);
 
   const handleRunBacktest = () => {
     if (!strategy) return;
@@ -251,25 +251,37 @@ export function StrategyConfig() {
     );
   };
 
-  const handleClearOptimizedParams = () => {
-    if (!strategy || !symbol) return;
+  // Reset to strategy defaults (keeps optimization in DB)
+  const handleResetToDefaults = () => {
+    if (strategyDetails?.params) {
+      const defaultParams: Record<string, unknown> = {};
+      strategyDetails.params.forEach((p) => {
+        defaultParams[p.name] = p.default;
+      });
+      setParams(defaultParams);
+    }
+    setUsingOptimizedParams(false);
+  };
+
+  // Delete optimization from DB permanently
+  const handleDeleteOptimization = () => {
+    if (!strategy || !symbol || !timeframe) return;
 
     deleteOptimizationMutation.mutate(
-      { strategyName: strategy, symbol },
+      { strategyName: strategy, symbol, timeframe },
       {
         onSuccess: () => {
-          // Reset to default params
-          if (strategyDetails?.params) {
-            const defaultParams: Record<string, unknown> = {};
-            strategyDetails.params.forEach((p) => {
-              defaultParams[p.name] = p.default;
-            });
-            setParams(defaultParams);
-          }
-          setUsingOptimizedParams(false);
+          handleResetToDefaults();
         },
       }
     );
+  };
+
+  const handleApplyOptimizedParams = () => {
+    if (optimizedParams?.bestParams) {
+      setParams(optimizedParams.bestParams);
+      setUsingOptimizedParams(true);
+    }
   };
 
   const canRun = strategy && symbol && startDate && endDate && !isRunning && !isOptimizing;
@@ -319,7 +331,10 @@ export function StrategyConfig() {
                 key={param.name}
                 param={param}
                 value={params[param.name]}
-                onChange={(value) => updateParam(param.name, value)}
+                onChange={(value) => {
+                  updateParam(param.name, value);
+                  setUsingOptimizedParams(false);
+                }}
               />
             ))
           )}
@@ -397,7 +412,41 @@ export function StrategyConfig() {
         />
       </div>
 
-      {/* Optimized Params Badge */}
+      {/* Optimized Params Available - Show Apply Button */}
+      {optimizedParams && !usingOptimizedParams && (
+        <div className="bg-blue-900/30 border border-blue-700 rounded p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg
+                className="w-5 h-5 text-blue-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
+              </svg>
+              <span className="text-sm text-blue-300">
+                Optimized params available for {optimizedParams.timeframe} (Sharpe:{' '}
+                {optimizedParams.bestMetrics.sharpeRatio.toFixed(2)},{' '}
+                {optimizedParams.bestMetrics.totalTrades} trades)
+              </span>
+            </div>
+            <button
+              onClick={handleApplyOptimizedParams}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded font-medium"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Currently Using Optimized Params */}
       {usingOptimizedParams && optimizedParams && (
         <div className="bg-green-900/30 border border-green-700 rounded p-3">
           <div className="flex items-center justify-between">
@@ -416,16 +465,26 @@ export function StrategyConfig() {
                 />
               </svg>
               <span className="text-sm text-green-300">
-                Using optimized parameters (Sharpe:{' '}
-                {optimizedParams.bestMetrics.sharpeRatio.toFixed(2)})
+                Using optimized params for {optimizedParams.timeframe} (Sharpe:{' '}
+                {optimizedParams.bestMetrics.sharpeRatio.toFixed(2)}, {optimizedParams.bestMetrics.totalTrades} trades)
               </span>
             </div>
-            <button
-              onClick={handleClearOptimizedParams}
-              className="text-xs text-green-400 hover:text-green-300 underline"
-            >
-              Clear
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleResetToDefaults}
+                className="text-xs text-green-400 hover:text-green-300 underline"
+                title="Reset to strategy defaults (keeps optimization saved)"
+              >
+                Reset
+              </button>
+              <button
+                onClick={handleDeleteOptimization}
+                className="text-xs text-red-400 hover:text-red-300 underline"
+                title="Delete optimization permanently"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}

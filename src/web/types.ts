@@ -231,6 +231,7 @@ export interface OptimizationResult {
   id: string;
   strategyName: string;
   symbol: string;
+  timeframe: string;
   bestParams: Record<string, unknown>;
   bestMetrics: PerformanceMetrics;
   totalCombinations: number;

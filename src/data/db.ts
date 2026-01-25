@@ -18,7 +18,8 @@ import type {
 } from '../core/types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.resolve(__dirname, '../../data/backtesting.db');
+// Use /tmp for database to avoid FUSE filesystem issues with SQLite locking
+const DB_PATH = process.env.DB_PATH || '/tmp/backtesting.db';
 
 // ============================================================================
 // Database Connection
@@ -135,13 +136,14 @@ function initializeTables(database: Database.Database): void {
       id TEXT PRIMARY KEY,
       strategy_name TEXT NOT NULL,
       symbol TEXT NOT NULL,
+      timeframe TEXT NOT NULL,
       params JSON NOT NULL,
       metrics JSON NOT NULL,
       optimized_at INTEGER NOT NULL,
       config JSON NOT NULL,
       total_combinations INTEGER NOT NULL,
       tested_combinations INTEGER NOT NULL,
-      UNIQUE(strategy_name, symbol)
+      UNIQUE(strategy_name, symbol, timeframe)
     );
 
     -- Indexes for efficient lookups
@@ -156,7 +158,7 @@ function initializeTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_optimization_results_lookup
       ON optimization_results(strategy_name, symbol);
     CREATE INDEX IF NOT EXISTS idx_optimized_params_lookup
-      ON optimized_params(strategy_name, symbol);
+      ON optimized_params(strategy_name, symbol, timeframe);
   `);
 
   // Run migrations for existing databases
@@ -179,6 +181,18 @@ function runMigrations(database: Database.Database): void {
   // Add fee_rate column if it doesn't exist
   if (!columnNames.includes('fee_rate')) {
     database.exec('ALTER TABLE trades_v2 ADD COLUMN fee_rate REAL');
+  }
+
+  // Check if timeframe column exists in optimized_params
+  const optimizedParamsInfo = database.prepare("PRAGMA table_info(optimized_params)").all() as { name: string }[];
+  const optimizedColumns = optimizedParamsInfo.map((col) => col.name);
+
+  if (!optimizedColumns.includes('timeframe')) {
+    // Add timeframe column, default to '1h' for existing records
+    database.exec("ALTER TABLE optimized_params ADD COLUMN timeframe TEXT NOT NULL DEFAULT '1h'");
+    // Recreate index with timeframe
+    database.exec("DROP INDEX IF EXISTS idx_optimized_params_lookup");
+    database.exec("CREATE INDEX idx_optimized_params_lookup ON optimized_params(strategy_name, symbol, timeframe)");
   }
 }
 
@@ -649,6 +663,7 @@ interface OptimizedParamsRow {
   id: string;
   strategy_name: string;
   symbol: string;
+  timeframe: string;
   params: string;
   metrics: string;
   optimized_at: number;
@@ -665,6 +680,7 @@ export interface OptimizationResult {
   id: string;
   strategyName: string;
   symbol: string;
+  timeframe: string;
   bestParams: Record<string, unknown>;
   bestMetrics: PerformanceMetrics;
   totalCombinations: number;
@@ -684,14 +700,15 @@ export function saveOptimizedParams(result: OptimizationResult): void {
 
   const insert = database.prepare(`
     INSERT OR REPLACE INTO optimized_params
-    (id, strategy_name, symbol, params, metrics, optimized_at, config, total_combinations, tested_combinations)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   insert.run(
     result.id,
     result.strategyName,
     result.symbol,
+    result.timeframe,
     JSON.stringify(result.bestParams),
     JSON.stringify(result.bestMetrics),
     result.optimizedAt,
@@ -702,20 +719,21 @@ export function saveOptimizedParams(result: OptimizationResult): void {
 }
 
 /**
- * Get optimized parameters by strategy name and symbol
+ * Get optimized parameters by strategy name, symbol, and timeframe
  */
 export function getOptimizedParams(
   strategyName: string,
-  symbol: string
+  symbol: string,
+  timeframe: string
 ): OptimizationResult | null {
   const database = getDb();
-  const select = database.prepare<[string, string], OptimizedParamsRow>(`
-    SELECT id, strategy_name, symbol, params, metrics, optimized_at, config, total_combinations, tested_combinations
+  const select = database.prepare<[string, string, string], OptimizedParamsRow>(`
+    SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations
     FROM optimized_params
-    WHERE strategy_name = ? AND symbol = ?
+    WHERE strategy_name = ? AND symbol = ? AND timeframe = ?
   `);
 
-  const row = select.get(strategyName, symbol);
+  const row = select.get(strategyName, symbol, timeframe);
   if (!row) {
     return null;
   }
@@ -724,6 +742,7 @@ export function getOptimizedParams(
     id: row.id,
     strategyName: row.strategy_name,
     symbol: row.symbol,
+    timeframe: row.timeframe,
     bestParams: JSON.parse(row.params) as Record<string, unknown>,
     bestMetrics: JSON.parse(row.metrics) as PerformanceMetrics,
     optimizedAt: row.optimized_at,
@@ -742,7 +761,7 @@ export function getOptimizedParams(
 export function getAllOptimizedParams(): OptimizationResult[] {
   const database = getDb();
   const select = database.prepare<[], OptimizedParamsRow>(`
-    SELECT id, strategy_name, symbol, params, metrics, optimized_at, config, total_combinations, tested_combinations
+    SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations
     FROM optimized_params
     ORDER BY optimized_at DESC
   `);
@@ -752,6 +771,7 @@ export function getAllOptimizedParams(): OptimizationResult[] {
     id: row.id,
     strategyName: row.strategy_name,
     symbol: row.symbol,
+    timeframe: row.timeframe,
     bestParams: JSON.parse(row.params) as Record<string, unknown>,
     bestMetrics: JSON.parse(row.metrics) as PerformanceMetrics,
     optimizedAt: row.optimized_at,
@@ -767,10 +787,10 @@ export function getAllOptimizedParams(): OptimizationResult[] {
 /**
  * Delete optimized parameters
  */
-export function deleteOptimizedParams(strategyName: string, symbol: string): boolean {
+export function deleteOptimizedParams(strategyName: string, symbol: string, timeframe: string): boolean {
   const database = getDb();
   const result = database
-    .prepare('DELETE FROM optimized_params WHERE strategy_name = ? AND symbol = ?')
-    .run(strategyName, symbol);
+    .prepare('DELETE FROM optimized_params WHERE strategy_name = ? AND symbol = ? AND timeframe = ?')
+    .run(strategyName, symbol, timeframe);
   return result.changes > 0;
 }

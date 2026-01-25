@@ -189,10 +189,11 @@ export async function runOptimization(
  */
 export async function getOptimizedParams(
   strategyName: string,
-  symbol: string
+  symbol: string,
+  timeframe: string
 ): Promise<OptimizationResult> {
   return apiFetch<OptimizationResult>(
-    `/optimize/${encodeURIComponent(strategyName)}/${encodeURIComponent(symbol)}`
+    `/optimize/${encodeURIComponent(strategyName)}/${encodeURIComponent(symbol)}/${encodeURIComponent(timeframe)}`
   );
 }
 
@@ -208,10 +209,11 @@ export async function getAllOptimizations(): Promise<OptimizationResult[]> {
  */
 export async function deleteOptimization(
   strategyName: string,
-  symbol: string
+  symbol: string,
+  timeframe: string
 ): Promise<void> {
   return apiFetch<void>(
-    `/optimize/${encodeURIComponent(strategyName)}/${encodeURIComponent(symbol)}`,
+    `/optimize/${encodeURIComponent(strategyName)}/${encodeURIComponent(symbol)}/${encodeURIComponent(timeframe)}`,
     {
       method: 'DELETE',
     }

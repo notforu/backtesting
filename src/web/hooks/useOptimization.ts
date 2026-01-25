@@ -18,8 +18,8 @@ import type {
 // Query keys for cache management
 export const optimizationQueryKeys = {
   all: ['optimizations'] as const,
-  optimized: (strategyName: string, symbol: string) =>
-    ['optimization', strategyName, symbol] as const,
+  optimized: (strategyName: string, symbol: string, timeframe: string) =>
+    ['optimization', strategyName, symbol, timeframe] as const,
 };
 
 // ============================================================================
@@ -29,11 +29,11 @@ export const optimizationQueryKeys = {
 /**
  * Fetch optimized parameters for a specific strategy and symbol
  */
-export function useOptimizedParams(strategyName: string, symbol: string) {
+export function useOptimizedParams(strategyName: string, symbol: string, timeframe: string) {
   return useQuery<OptimizationResult, Error>({
-    queryKey: optimizationQueryKeys.optimized(strategyName, symbol),
-    queryFn: () => getOptimizedParams(strategyName, symbol),
-    enabled: !!strategyName && !!symbol,
+    queryKey: optimizationQueryKeys.optimized(strategyName, symbol, timeframe),
+    queryFn: () => getOptimizedParams(strategyName, symbol, timeframe),
+    enabled: !!strategyName && !!symbol && !!timeframe,
     staleTime: 1000 * 60 * 60, // 1 hour - optimized params don't change often
     retry: false, // Don't retry on 404
   });
@@ -68,7 +68,7 @@ export function useRunOptimization() {
 
       // Cache the new result
       queryClient.setQueryData(
-        optimizationQueryKeys.optimized(result.strategyName, result.symbol),
+        optimizationQueryKeys.optimized(result.strategyName, result.symbol, result.timeframe),
         result
       );
     },
@@ -81,15 +81,15 @@ export function useRunOptimization() {
 export function useDeleteOptimization() {
   const queryClient = useQueryClient();
 
-  return useMutation<void, Error, { strategyName: string; symbol: string }>({
-    mutationFn: ({ strategyName, symbol }) => deleteOptimization(strategyName, symbol),
-    onSuccess: (_, { strategyName, symbol }) => {
+  return useMutation<void, Error, { strategyName: string; symbol: string; timeframe: string }>({
+    mutationFn: ({ strategyName, symbol, timeframe }) => deleteOptimization(strategyName, symbol, timeframe),
+    onSuccess: (_, { strategyName, symbol, timeframe }) => {
       // Invalidate all optimizations list
       queryClient.invalidateQueries({ queryKey: optimizationQueryKeys.all });
 
       // Remove from cache
       queryClient.removeQueries({
-        queryKey: optimizationQueryKeys.optimized(strategyName, symbol),
+        queryKey: optimizationQueryKeys.optimized(strategyName, symbol, timeframe),
       });
     },
   });
