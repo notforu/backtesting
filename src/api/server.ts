@@ -8,6 +8,7 @@ import cors from '@fastify/cors';
 import { backtestRoutes } from './routes/backtest.js';
 import { strategyRoutes } from './routes/strategies.js';
 import { candleRoutes } from './routes/candles.js';
+import { optimizeRoutes } from './routes/optimize.js';
 import { getDb, closeDb } from '../data/db.js';
 
 const fastify = Fastify({
@@ -37,6 +38,7 @@ fastify.get('/api/health', async () => {
 await fastify.register(backtestRoutes);
 await fastify.register(strategyRoutes);
 await fastify.register(candleRoutes);
+await fastify.register(optimizeRoutes);
 
 // Graceful shutdown
 const shutdown = async () => {
@@ -78,6 +80,11 @@ Available endpoints:
   GET    /api/candles           - Get candle data
   GET    /api/exchanges         - List exchanges
   GET    /api/symbols           - List symbols
+
+  POST   /api/optimize          - Start optimization job
+  GET    /api/optimize/:strategyName/:symbol - Get optimized params
+  GET    /api/optimize/all      - List all optimizations
+  DELETE /api/optimize/:strategyName/:symbol - Delete optimization
 `);
   } catch (err) {
     fastify.log.error(err);
