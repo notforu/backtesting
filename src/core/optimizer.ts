@@ -138,6 +138,8 @@ export async function runOptimization(
     enableLogging: false,
     skipFeeFetch: true, // Skip API calls, use cached fee rate below
     broker: {
+      slippagePercent: 0, // No slippage (consistent with default engine config)
+      commissionPercent: 0, // No commission (fees handled via feeRate)
       feeRate: cachedFeeRate, // Pre-fetched fee rate
     },
   };

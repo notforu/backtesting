@@ -123,7 +123,7 @@ export interface EngineConfig {
  */
 const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   broker: {
-    slippagePercent: 0.05,
+    slippagePercent: 0, // No slippage by default (matches optimizer behavior)
     commissionPercent: 0,
     feeRate: 0, // Will be overridden by fetched exchange fees
   },
