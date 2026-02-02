@@ -37,11 +37,12 @@ RUN apt-get update && apt-get install -y \
     fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI globally
-RUN npm install -g @anthropic-ai/claude-code
-
 # Create non-root user first (needed for ownership)
 RUN useradd -m -s /bin/bash claude
+
+# Install Claude Code CLI globally and fix ownership for auto-update
+RUN npm install -g @anthropic-ai/claude-code && \
+    chown -R claude:claude /usr/local/lib/node_modules/@anthropic-ai
 
 # Install Playwright globally and download Chromium browser
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers

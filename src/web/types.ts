@@ -237,6 +237,8 @@ export interface OptimizationResult {
   totalCombinations: number;
   testedCombinations: number;
   optimizedAt: number;
+  startDate?: number;
+  endDate?: number;
   allResults?: Array<{
     params: Record<string, unknown>;
     metrics: PerformanceMetrics;

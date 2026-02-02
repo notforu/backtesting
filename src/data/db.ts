@@ -192,6 +192,14 @@ function runMigrations(database: Database.Database): void {
     database.exec("DROP INDEX IF EXISTS idx_optimized_params_lookup");
     database.exec("CREATE INDEX idx_optimized_params_lookup ON optimized_params(strategy_name, symbol, timeframe)");
   }
+
+  // Add start_date and end_date columns if they don't exist
+  if (!optimizedColumns.includes('start_date')) {
+    database.exec("ALTER TABLE optimized_params ADD COLUMN start_date INTEGER");
+  }
+  if (!optimizedColumns.includes('end_date')) {
+    database.exec("ALTER TABLE optimized_params ADD COLUMN end_date INTEGER");
+  }
 }
 
 // ============================================================================
@@ -668,6 +676,8 @@ interface OptimizedParamsRow {
   config: string;
   total_combinations: number;
   tested_combinations: number;
+  start_date: number | null;
+  end_date: number | null;
 }
 
 /**
@@ -684,6 +694,8 @@ export interface OptimizationResult {
   totalCombinations: number;
   testedCombinations: number;
   optimizedAt: number;
+  startDate?: number;
+  endDate?: number;
   allResults?: Array<{
     params: Record<string, unknown>;
     metrics: PerformanceMetrics;
@@ -698,8 +710,8 @@ export function saveOptimizedParams(result: OptimizationResult): void {
 
   const insert = database.prepare(`
     INSERT OR REPLACE INTO optimized_params
-    (id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   insert.run(
@@ -712,7 +724,9 @@ export function saveOptimizedParams(result: OptimizationResult): void {
     result.optimizedAt,
     JSON.stringify(result.allResults ?? []),
     result.totalCombinations,
-    result.testedCombinations
+    result.testedCombinations,
+    result.startDate ?? null,
+    result.endDate ?? null
   );
 }
 
@@ -726,7 +740,7 @@ export function getOptimizedParams(
 ): OptimizationResult | null {
   const database = getDb();
   const select = database.prepare<[string, string, string], OptimizedParamsRow>(`
-    SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations
+    SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date
     FROM optimized_params
     WHERE strategy_name = ? AND symbol = ? AND timeframe = ?
   `);
@@ -746,6 +760,8 @@ export function getOptimizedParams(
     optimizedAt: row.optimized_at,
     totalCombinations: row.total_combinations,
     testedCombinations: row.tested_combinations,
+    startDate: row.start_date ?? undefined,
+    endDate: row.end_date ?? undefined,
     allResults: JSON.parse(row.config) as Array<{
       params: Record<string, unknown>;
       metrics: PerformanceMetrics;
@@ -759,7 +775,7 @@ export function getOptimizedParams(
 export function getAllOptimizedParams(): OptimizationResult[] {
   const database = getDb();
   const select = database.prepare<[], OptimizedParamsRow>(`
-    SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations
+    SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date
     FROM optimized_params
     ORDER BY optimized_at DESC
   `);
@@ -775,6 +791,8 @@ export function getAllOptimizedParams(): OptimizationResult[] {
     optimizedAt: row.optimized_at,
     totalCombinations: row.total_combinations,
     testedCombinations: row.tested_combinations,
+    startDate: row.start_date ?? undefined,
+    endDate: row.end_date ?? undefined,
     allResults: JSON.parse(row.config) as Array<{
       params: Record<string, unknown>;
       metrics: PerformanceMetrics;

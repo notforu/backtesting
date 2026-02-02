@@ -221,3 +221,21 @@ export const useOptimizationStore = create<OptimizationStore>((set) => ({
       optimizationError: null,
     }),
 }));
+
+// ============================================================================
+// Optimizer Modal Store
+// ============================================================================
+
+interface OptimizerModalStore {
+  isOptimizerModalOpen: boolean;
+  optimizerModalTab: 'setup' | 'history';
+  setOptimizerModalOpen: (open: boolean) => void;
+  setOptimizerModalTab: (tab: 'setup' | 'history') => void;
+}
+
+export const useOptimizerModalStore = create<OptimizerModalStore>((set) => ({
+  isOptimizerModalOpen: false,
+  optimizerModalTab: 'setup',
+  setOptimizerModalOpen: (open) => set({ isOptimizerModalOpen: open }),
+  setOptimizerModalTab: (tab) => set({ optimizerModalTab: tab }),
+}));

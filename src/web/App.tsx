@@ -8,6 +8,7 @@ import { Chart } from './components/Chart';
 import { Dashboard } from './components/Dashboard';
 import { StrategyConfig } from './components/StrategyConfig';
 import { History } from './components/History';
+import { OptimizerModal } from './components/OptimizerModal';
 import { useBacktestStore } from './stores/backtestStore';
 import { getTradeActionLabel, getTradeActionColor, isCloseTrade } from './types';
 
@@ -226,6 +227,7 @@ function AppContent() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <OptimizerModal />
       <AppContent />
     </QueryClientProvider>
   );

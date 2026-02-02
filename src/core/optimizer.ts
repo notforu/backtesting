@@ -47,6 +47,8 @@ export interface OptimizationResult {
   totalCombinations: number;
   testedCombinations: number;
   optimizedAt: number;
+  startDate?: number;
+  endDate?: number;
   allResults?: Array<{ params: Record<string, unknown>; metrics: PerformanceMetrics }>;
 }
 
@@ -231,6 +233,8 @@ export async function runOptimization(
     totalCombinations,
     testedCombinations: testedCount,
     optimizedAt: Date.now(),
+    startDate,
+    endDate,
   };
 
   // Save to database

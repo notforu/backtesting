@@ -3,17 +3,16 @@
  * Provides form inputs for configuring and running backtests.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useStrategies, useStrategy, useRunBacktest } from '../../hooks/useBacktest';
 import {
   useOptimizedParams,
-  useRunOptimization,
-  useDeleteOptimization,
 } from '../../hooks/useOptimization';
 import {
   useConfigStore,
   useBacktestStore,
   useOptimizationStore,
+  useOptimizerModalStore,
 } from '../../stores/backtestStore';
 import type { StrategyParam, Timeframe } from '../../types';
 
@@ -173,18 +172,17 @@ export function StrategyConfig() {
   // Optimization hooks
   const { data: optimizedParams, isError: optimizedParamsError } =
     useOptimizedParams(strategy, symbol, timeframe);
-  const runOptimizationMutation = useRunOptimization();
-  const deleteOptimizationMutation = useDeleteOptimization();
 
   const {
     isOptimizing,
-    optimizationError,
     usingOptimizedParams,
-    setOptimizing,
-    setOptimizationError,
     setUsingOptimizedParams,
-    clearOptimization,
   } = useOptimizationStore();
+
+  const { setOptimizerModalOpen } = useOptimizerModalStore();
+
+  // Collapsible params state
+  const [paramsExpanded, setParamsExpanded] = useState(true);
 
   // Initialize params with defaults when strategy changes
   useEffect(() => {
@@ -195,6 +193,8 @@ export function StrategyConfig() {
       });
       setParams(defaultParams);
       setUsingOptimizedParams(false);
+      // Auto-expand if 4 or more params
+      setParamsExpanded((strategyDetails.params.length || 0) < 4);
     }
   }, [strategyDetails, setParams, setUsingOptimizedParams]);
 
@@ -217,40 +217,6 @@ export function StrategyConfig() {
     });
   };
 
-  const handleRunOptimization = () => {
-    if (!strategy || !symbol) return;
-
-    setOptimizing(true);
-    clearOptimization();
-
-    const config = getConfig();
-    runOptimizationMutation.mutate(
-      {
-        strategyName: config.strategyName,
-        symbol: config.symbol,
-        timeframe: config.timeframe,
-        startDate: config.startDate,
-        endDate: config.endDate,
-        initialCapital: config.initialCapital,
-        exchange: config.exchange || 'binance',
-        optimizeFor: 'sharpeRatio',
-        maxCombinations: 100,
-        batchSize: 4,
-      },
-      {
-        onSuccess: (result) => {
-          setOptimizing(false);
-          setParams(result.bestParams);
-          setUsingOptimizedParams(true);
-        },
-        onError: (err) => {
-          setOptimizationError(err.message);
-          setOptimizing(false);
-        },
-      }
-    );
-  };
-
   // Reset to strategy defaults (keeps optimization in DB)
   const handleResetToDefaults = () => {
     if (strategyDetails?.params) {
@@ -263,35 +229,13 @@ export function StrategyConfig() {
     setUsingOptimizedParams(false);
   };
 
-  // Delete optimization from DB permanently
-  const handleDeleteOptimization = () => {
-    if (!strategy || !symbol || !timeframe) return;
-
-    deleteOptimizationMutation.mutate(
-      { strategyName: strategy, symbol, timeframe },
-      {
-        onSuccess: () => {
-          handleResetToDefaults();
-        },
-      }
-    );
-  };
-
-  const handleApplyOptimizedParams = () => {
-    if (optimizedParams?.bestParams) {
-      setParams(optimizedParams.bestParams);
-      setUsingOptimizedParams(true);
-    }
-  };
-
   const canRun = strategy && symbol && startDate && endDate && !isRunning && !isOptimizing;
-  const canOptimize = strategy && symbol && startDate && endDate && !isRunning && !isOptimizing;
 
   const inputClass =
     'w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent';
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 space-y-4">
+    <div className="bg-gray-800 rounded-lg border border-gray-700 p-3 space-y-3">
       <h2 className="text-lg font-semibold text-white">Configuration</h2>
 
       {/* Strategy Selection */}
@@ -317,65 +261,41 @@ export function StrategyConfig() {
         )}
       </div>
 
-      {/* Strategy Parameters */}
-      {strategyDetails?.params && strategyDetails.params.length > 0 && (
-        <div className="space-y-3 pt-2 border-t border-gray-700">
-          <h3 className="text-sm font-medium text-gray-300">
-            Strategy Parameters
-          </h3>
-          {loadingDetails ? (
-            <div className="text-sm text-gray-500">Loading parameters...</div>
-          ) : (
-            strategyDetails.params.map((param) => (
-              <ParamInput
-                key={param.name}
-                param={param}
-                value={params[param.name]}
-                onChange={(value) => {
-                  updateParam(param.name, value);
-                  setUsingOptimizedParams(false);
-                }}
-              />
-            ))
-          )}
+      {/* Symbol & Timeframe (2-column) */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Symbol</label>
+          <input
+            type="text"
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+            placeholder="BTCUSDT"
+            className={inputClass}
+            list="symbols"
+          />
+          <datalist id="symbols">
+            {COMMON_SYMBOLS.map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
         </div>
-      )}
-
-      {/* Symbol */}
-      <div>
-        <label className="block text-sm text-gray-400 mb-1">Symbol</label>
-        <input
-          type="text"
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-          placeholder="BTCUSDT"
-          className={inputClass}
-          list="symbols"
-        />
-        <datalist id="symbols">
-          {COMMON_SYMBOLS.map((s) => (
-            <option key={s} value={s} />
-          ))}
-        </datalist>
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Timeframe</label>
+          <select
+            value={timeframe}
+            onChange={(e) => setTimeframe(e.target.value as Timeframe)}
+            className={inputClass}
+          >
+            {TIMEFRAMES.map((tf) => (
+              <option key={tf.value} value={tf.value}>
+                {tf.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {/* Timeframe */}
-      <div>
-        <label className="block text-sm text-gray-400 mb-1">Timeframe</label>
-        <select
-          value={timeframe}
-          onChange={(e) => setTimeframe(e.target.value as Timeframe)}
-          className={inputClass}
-        >
-          {TIMEFRAMES.map((tf) => (
-            <option key={tf.value} value={tf.value}>
-              {tf.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Date Range */}
+      {/* Date Range (2-column) */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm text-gray-400 mb-1">Start Date</label>
@@ -412,175 +332,24 @@ export function StrategyConfig() {
         />
       </div>
 
-      {/* Optimized Params Available - Show Apply Button */}
-      {optimizedParams && !usingOptimizedParams && (
-        <div className="bg-blue-900/30 border border-blue-700 rounded p-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <svg
-                className="w-5 h-5 text-blue-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-              <span className="text-sm text-blue-300">
-                Optimized params available for {optimizedParams.timeframe} (Sharpe:{' '}
-                {optimizedParams.bestMetrics.sharpeRatio.toFixed(2)},{' '}
-                {optimizedParams.bestMetrics.totalTrades} trades)
-              </span>
-            </div>
-            <button
-              onClick={handleApplyOptimizedParams}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded font-medium"
-            >
-              Apply
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Currently Using Optimized Params */}
-      {usingOptimizedParams && optimizedParams && (
-        <div className="bg-green-900/30 border border-green-700 rounded p-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <svg
-                className="w-5 h-5 text-green-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <span className="text-sm text-green-300">
-                Using optimized params for {optimizedParams.timeframe} (Sharpe:{' '}
-                {optimizedParams.bestMetrics.sharpeRatio.toFixed(2)}, {optimizedParams.bestMetrics.totalTrades} trades)
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleResetToDefaults}
-                className="text-xs text-green-400 hover:text-green-300 underline"
-                title="Reset to strategy defaults (keeps optimization saved)"
-              >
-                Reset
-              </button>
-              <button
-                onClick={handleDeleteOptimization}
-                className="text-xs text-red-400 hover:text-red-300 underline"
-                title="Delete optimization permanently"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Error Display */}
-      {error && (
-        <div className="bg-red-900/50 border border-red-700 rounded p-3 text-sm text-red-300">
-          {error}
-        </div>
-      )}
-
-      {/* Optimization Error Display */}
-      {optimizationError && (
-        <div className="bg-red-900/50 border border-red-700 rounded p-3 text-sm text-red-300">
-          {optimizationError}
-        </div>
-      )}
-
-      {/* Optimization Progress */}
-      {isOptimizing && (
-        <div className="bg-purple-900/30 border border-purple-700 rounded p-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-purple-300">Optimizing parameters...</span>
-            <span className="text-xs text-purple-400">
-              This may take several minutes
-            </span>
-          </div>
-          <div className="w-full bg-gray-700 rounded-full h-2">
-            <div
-              className="bg-purple-500 h-2 rounded-full transition-all duration-300 animate-pulse"
-              style={{ width: '100%' }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Run Button */}
-      <button
-        onClick={handleRunBacktest}
-        disabled={!canRun}
-        className={`
-          w-full py-3 rounded font-medium text-white transition-colors
-          ${
-            canRun
-              ? 'bg-primary-600 hover:bg-primary-500'
-              : 'bg-gray-600 cursor-not-allowed'
-          }
-        `}
-      >
-        {isRunning ? (
-          <span className="flex items-center justify-center gap-2">
-            <svg
-              className="animate-spin h-5 w-5"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-            Running Backtest...
-          </span>
-        ) : (
-          'Run Backtest'
-        )}
-      </button>
-
-      {/* Optimize Button */}
-      {strategy && (
+      {/* Action Buttons - Moved up */}
+      <div className="grid grid-cols-2 gap-2 pt-1">
         <button
-          onClick={handleRunOptimization}
-          disabled={!canOptimize}
+          onClick={handleRunBacktest}
+          disabled={!canRun}
           className={`
-            w-full py-3 rounded font-medium text-white transition-colors
+            py-2.5 rounded font-medium text-white transition-colors text-sm
             ${
-              canOptimize
-                ? 'bg-purple-600 hover:bg-purple-500'
+              canRun
+                ? 'bg-primary-600 hover:bg-primary-500'
                 : 'bg-gray-600 cursor-not-allowed'
             }
           `}
         >
-          {isOptimizing ? (
+          {isRunning ? (
             <span className="flex items-center justify-center gap-2">
               <svg
-                className="animate-spin h-5 w-5"
+                className="animate-spin h-4 w-4"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
@@ -599,12 +368,95 @@ export function StrategyConfig() {
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 />
               </svg>
-              Optimizing...
+              Running...
             </span>
           ) : (
-            'Optimize Parameters'
+            'Run Backtest'
           )}
         </button>
+
+        {strategy && (
+          <button
+            onClick={() => setOptimizerModalOpen(true)}
+            disabled={isOptimizing}
+            className={`
+              py-2.5 rounded font-medium text-white transition-colors text-sm
+              ${
+                !isOptimizing
+                  ? 'bg-purple-600 hover:bg-purple-500'
+                  : 'bg-gray-600 cursor-not-allowed'
+              }
+            `}
+          >
+            {isOptimizing ? 'Optimizing...' : 'Optimizer'}
+          </button>
+        )}
+      </div>
+
+      {/* Strategy Parameters - Collapsible */}
+      {strategyDetails?.params && strategyDetails.params.length > 0 && (
+        <div className="pt-2 border-t border-gray-700">
+          <button
+            onClick={() => setParamsExpanded(!paramsExpanded)}
+            className="flex items-center justify-between w-full text-sm font-medium text-gray-300 hover:text-white transition-colors"
+          >
+            <span>Strategy Parameters</span>
+            <svg
+              className={`w-4 h-4 transition-transform ${paramsExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {paramsExpanded && (
+            <div className="mt-3 space-y-3 grid grid-cols-2 gap-3">
+              {loadingDetails ? (
+                <div className="col-span-2 text-sm text-gray-500">Loading parameters...</div>
+              ) : (
+                strategyDetails.params.map((param) => (
+                  <div key={param.name} className={param.type === 'boolean' ? 'col-span-2' : ''}>
+                    <ParamInput
+                      param={param}
+                      value={params[param.name]}
+                      onChange={(value) => {
+                        updateParam(param.name, value);
+                        setUsingOptimizedParams(false);
+                      }}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Compact Optimized Params Indicator */}
+      {usingOptimizedParams && optimizedParams && (
+        <div className="flex items-center justify-between text-xs bg-green-900/20 border border-green-700/50 rounded px-2 py-1.5">
+          <span className="text-green-400 flex items-center gap-1">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z" />
+            </svg>
+            Optimized (Sharpe: {optimizedParams.bestMetrics.sharpeRatio.toFixed(2)})
+          </span>
+          <button
+            onClick={handleResetToDefaults}
+            className="text-green-400 hover:text-green-300 underline"
+          >
+            reset
+          </button>
+        </div>
+      )}
+
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-900/50 border border-red-700 rounded p-2 text-sm text-red-300">
+          {error}
+        </div>
       )}
     </div>
   );
