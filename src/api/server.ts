@@ -82,9 +82,11 @@ Available endpoints:
   GET    /api/symbols           - List symbols
 
   POST   /api/optimize          - Start optimization job
-  GET    /api/optimize/:strategyName/:symbol - Get optimized params
+  GET    /api/optimize/:strategyName/:symbol/:timeframe - Get optimization history
+  GET    /api/optimize/:strategyName/:symbol/:timeframe/latest - Get latest optimization
   GET    /api/optimize/all      - List all optimizations
-  DELETE /api/optimize/:strategyName/:symbol - Delete optimization
+  DELETE /api/optimize/:strategyName/:symbol/:timeframe - Delete all runs
+  DELETE /api/optimize/id/:id    - Delete specific run
 `);
   } catch (err) {
     fastify.log.error(err);

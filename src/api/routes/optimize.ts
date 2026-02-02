@@ -7,8 +7,10 @@ import { z, ZodError } from 'zod';
 import { runOptimization } from '../../core/optimizer.js';
 import {
   getOptimizedParams,
+  getOptimizationHistory,
   getAllOptimizedParams,
   deleteOptimizedParams,
+  deleteOptimizationById,
 } from '../../data/db.js';
 
 // Request schema for optimization
@@ -31,7 +33,7 @@ type OptimizeRequest = z.infer<typeof OptimizeRequestSchema>;
 export async function optimizeRoutes(fastify: FastifyInstance) {
   /**
    * POST /api/optimize
-   * Start an optimization job
+   * Start an optimization job with Server-Sent Events (SSE) for progress updates
    */
   fastify.post('/api/optimize', async (
     request: FastifyRequest<{ Body: OptimizeRequest }>,
@@ -41,44 +43,103 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
       // Validate and parse request
       const parsed = OptimizeRequestSchema.parse(request.body);
 
-      // Run the optimization
+      // Set up SSE headers
+      reply.raw.setHeader('Content-Type', 'text/event-stream');
+      reply.raw.setHeader('Cache-Control', 'no-cache');
+      reply.raw.setHeader('Connection', 'keep-alive');
+
+      // Send initial status
+      reply.raw.write(`data: ${JSON.stringify({ type: 'start', message: 'Starting optimization...' })}\n\n`);
+
+      // Run the optimization with progress callback
       const startTime = Date.now();
-      const result = await runOptimization({
-        strategyName: parsed.strategyName,
-        symbol: parsed.symbol,
-        timeframe: parsed.timeframe,
-        startDate: parsed.startDate,
-        endDate: parsed.endDate,
-        initialCapital: parsed.initialCapital,
-        exchange: parsed.exchange,
-        optimizeFor: parsed.optimizeFor,
-        maxCombinations: parsed.maxCombinations,
-        batchSize: parsed.batchSize,
-        minTrades: parsed.minTrades,
-      });
+      const result = await runOptimization(
+        {
+          strategyName: parsed.strategyName,
+          symbol: parsed.symbol,
+          timeframe: parsed.timeframe,
+          startDate: parsed.startDate,
+          endDate: parsed.endDate,
+          initialCapital: parsed.initialCapital,
+          exchange: parsed.exchange,
+          optimizeFor: parsed.optimizeFor,
+          maxCombinations: parsed.maxCombinations,
+          batchSize: parsed.batchSize,
+          minTrades: parsed.minTrades,
+        },
+        // Progress callback - send SSE events
+        (progress) => {
+          try {
+            reply.raw.write(`data: ${JSON.stringify({ type: 'progress', ...progress })}\n\n`);
+          } catch (err) {
+            console.error('Error sending progress update:', err);
+          }
+        }
+      );
       const duration = Date.now() - startTime;
 
-      // Result is already saved to database by runOptimization
+      // Send completion event with final result
+      reply.raw.write(`data: ${JSON.stringify({
+        type: 'complete',
+        result: { ...result, duration }
+      })}\n\n`);
 
-      // Return the result with duration
-      return reply.status(200).send({
-        ...result,
-        duration,
-      });
+      // Close the connection
+      reply.raw.end();
     } catch (error) {
-      if (error instanceof ZodError) {
-        return reply.status(400).send({
-          error: 'Validation error',
-          details: error.issues,
+      // Send error event via SSE if connection is still open
+      try {
+        if (error instanceof ZodError) {
+          reply.raw.write(`data: ${JSON.stringify({
+            type: 'error',
+            error: 'Validation error',
+            details: error.issues
+          })}\n\n`);
+        } else if (error instanceof Error) {
+          reply.raw.write(`data: ${JSON.stringify({
+            type: 'error',
+            error: error.message
+          })}\n\n`);
+        } else {
+          reply.raw.write(`data: ${JSON.stringify({
+            type: 'error',
+            error: 'Unknown error occurred'
+          })}\n\n`);
+        }
+        reply.raw.end();
+      } catch {
+        // If we can't send error via SSE, connection might be closed
+        console.error('Error during optimization:', error);
+      }
+    }
+  });
+
+  /**
+   * GET /api/optimize/:strategyName/:symbol/:timeframe
+   * Get all optimization runs for a strategy, symbol, and timeframe
+   * Returns an array of optimization results sorted by most recent first
+   */
+  fastify.get('/api/optimize/:strategyName/:symbol/:timeframe', async (
+    request: FastifyRequest<{ Params: { strategyName: string; symbol: string; timeframe: string } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { strategyName, symbol, timeframe } = request.params;
+      const results = getOptimizationHistory(strategyName, symbol, timeframe);
+
+      if (results.length === 0) {
+        return reply.status(404).send({
+          error: `No optimization results found for strategy "${strategyName}", symbol "${symbol}", and timeframe "${timeframe}"`,
         });
       }
 
+      return reply.status(200).send(results);
+    } catch (error) {
       if (error instanceof Error) {
         return reply.status(500).send({
           error: error.message,
         });
       }
-
       return reply.status(500).send({
         error: 'Unknown error occurred',
       });
@@ -86,10 +147,10 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
   });
 
   /**
-   * GET /api/optimize/:strategyName/:symbol/:timeframe
-   * Get saved optimized parameters for a strategy, symbol, and timeframe
+   * GET /api/optimize/:strategyName/:symbol/:timeframe/latest
+   * Get the most recent optimization run for a strategy, symbol, and timeframe
    */
-  fastify.get('/api/optimize/:strategyName/:symbol/:timeframe', async (
+  fastify.get('/api/optimize/:strategyName/:symbol/:timeframe/latest', async (
     request: FastifyRequest<{ Params: { strategyName: string; symbol: string; timeframe: string } }>,
     reply: FastifyReply
   ) => {
@@ -99,7 +160,7 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
 
       if (!result) {
         return reply.status(404).send({
-          error: `Optimization result for strategy "${strategyName}", symbol "${symbol}", and timeframe "${timeframe}" not found`,
+          error: `No optimization results found for strategy "${strategyName}", symbol "${symbol}", and timeframe "${timeframe}"`,
         });
       }
 
@@ -141,7 +202,7 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
 
   /**
    * DELETE /api/optimize/:strategyName/:symbol/:timeframe
-   * Delete a saved optimization result
+   * Delete all optimization runs for a strategy, symbol, and timeframe
    */
   fastify.delete('/api/optimize/:strategyName/:symbol/:timeframe', async (
     request: FastifyRequest<{ Params: { strategyName: string; symbol: string; timeframe: string } }>,
@@ -153,12 +214,45 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
 
       if (!deleted) {
         return reply.status(404).send({
-          error: `Optimization result for strategy "${strategyName}", symbol "${symbol}", and timeframe "${timeframe}" not found`,
+          error: `No optimization results found for strategy "${strategyName}", symbol "${symbol}", and timeframe "${timeframe}"`,
         });
       }
 
       return reply.status(200).send({
-        message: `Optimization result for "${strategyName}" on "${symbol}" at "${timeframe}" deleted successfully`,
+        message: `All optimization results for "${strategyName}" on "${symbol}" at "${timeframe}" deleted successfully`,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        return reply.status(500).send({
+          error: error.message,
+        });
+      }
+      return reply.status(500).send({
+        error: 'Unknown error occurred',
+      });
+    }
+  });
+
+  /**
+   * DELETE /api/optimize/id/:id
+   * Delete a specific optimization run by ID
+   */
+  fastify.delete('/api/optimize/id/:id', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { id } = request.params;
+      const deleted = deleteOptimizationById(id);
+
+      if (!deleted) {
+        return reply.status(404).send({
+          error: `Optimization result with id "${id}" not found`,
+        });
+      }
+
+      return reply.status(200).send({
+        message: `Optimization result deleted successfully`,
       });
     } catch (error) {
       if (error instanceof Error) {

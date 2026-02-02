@@ -140,8 +140,7 @@ function initializeTables(database: Database.Database): void {
       optimized_at INTEGER NOT NULL,
       config JSON NOT NULL,
       total_combinations INTEGER NOT NULL,
-      tested_combinations INTEGER NOT NULL,
-      UNIQUE(strategy_name, symbol, timeframe)
+      tested_combinations INTEGER NOT NULL
     );
 
     -- Indexes for efficient lookups
@@ -199,6 +198,48 @@ function runMigrations(database: Database.Database): void {
   }
   if (!optimizedColumns.includes('end_date')) {
     database.exec("ALTER TABLE optimized_params ADD COLUMN end_date INTEGER");
+  }
+
+  // Migration: Remove UNIQUE constraint from optimized_params table
+  // SQLite doesn't support DROP CONSTRAINT, so we need to recreate the table
+  // Check if the constraint exists by looking at the table's SQL
+  const tableSchema = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='optimized_params'").get() as { sql: string } | undefined;
+  if (tableSchema?.sql.includes('UNIQUE(strategy_name, symbol, timeframe)')) {
+    console.log('Migrating optimized_params table to remove UNIQUE constraint...');
+
+    // Create new table without UNIQUE constraint
+    database.exec(`
+      CREATE TABLE optimized_params_new (
+        id TEXT PRIMARY KEY,
+        strategy_name TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        timeframe TEXT NOT NULL,
+        params JSON NOT NULL,
+        metrics JSON NOT NULL,
+        optimized_at INTEGER NOT NULL,
+        config JSON NOT NULL,
+        total_combinations INTEGER NOT NULL,
+        tested_combinations INTEGER NOT NULL,
+        start_date INTEGER,
+        end_date INTEGER
+      );
+
+      -- Copy data from old table
+      INSERT INTO optimized_params_new
+      SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date
+      FROM optimized_params;
+
+      -- Drop old table
+      DROP TABLE optimized_params;
+
+      -- Rename new table
+      ALTER TABLE optimized_params_new RENAME TO optimized_params;
+
+      -- Recreate index
+      CREATE INDEX idx_optimized_params_lookup ON optimized_params(strategy_name, symbol, timeframe);
+    `);
+
+    console.log('Migration completed successfully.');
   }
 }
 
@@ -704,12 +745,13 @@ export interface OptimizationResult {
 
 /**
  * Save optimized parameters to the database
+ * Creates a new record for each optimization run (does not replace existing)
  */
 export function saveOptimizedParams(result: OptimizationResult): void {
   const database = getDb();
 
   const insert = database.prepare(`
-    INSERT OR REPLACE INTO optimized_params
+    INSERT INTO optimized_params
     (id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
@@ -732,6 +774,8 @@ export function saveOptimizedParams(result: OptimizationResult): void {
 
 /**
  * Get optimized parameters by strategy name, symbol, and timeframe
+ * Returns the most recent optimization run
+ * @deprecated Use getOptimizationHistory() to get all runs
  */
 export function getOptimizedParams(
   strategyName: string,
@@ -743,6 +787,8 @@ export function getOptimizedParams(
     SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date
     FROM optimized_params
     WHERE strategy_name = ? AND symbol = ? AND timeframe = ?
+    ORDER BY optimized_at DESC
+    LIMIT 1
   `);
 
   const row = select.get(strategyName, symbol, timeframe);
@@ -767,6 +813,43 @@ export function getOptimizedParams(
       metrics: PerformanceMetrics;
     }>,
   };
+}
+
+/**
+ * Get all optimization runs for a strategy/symbol/timeframe combination
+ * Sorted by most recent first
+ */
+export function getOptimizationHistory(
+  strategyName: string,
+  symbol: string,
+  timeframe: string
+): OptimizationResult[] {
+  const database = getDb();
+  const select = database.prepare<[string, string, string], OptimizedParamsRow>(`
+    SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date
+    FROM optimized_params
+    WHERE strategy_name = ? AND symbol = ? AND timeframe = ?
+    ORDER BY optimized_at DESC
+  `);
+
+  const rows = select.all(strategyName, symbol, timeframe);
+  return rows.map((row) => ({
+    id: row.id,
+    strategyName: row.strategy_name,
+    symbol: row.symbol,
+    timeframe: row.timeframe,
+    bestParams: JSON.parse(row.params) as Record<string, unknown>,
+    bestMetrics: JSON.parse(row.metrics) as PerformanceMetrics,
+    optimizedAt: row.optimized_at,
+    totalCombinations: row.total_combinations,
+    testedCombinations: row.tested_combinations,
+    startDate: row.start_date ?? undefined,
+    endDate: row.end_date ?? undefined,
+    allResults: JSON.parse(row.config) as Array<{
+      params: Record<string, unknown>;
+      metrics: PerformanceMetrics;
+    }>,
+  }));
 }
 
 /**
@@ -801,12 +884,24 @@ export function getAllOptimizedParams(): OptimizationResult[] {
 }
 
 /**
- * Delete optimized parameters
+ * Delete optimized parameters by strategy/symbol/timeframe
+ * Deletes ALL optimization runs for this combination
  */
 export function deleteOptimizedParams(strategyName: string, symbol: string, timeframe: string): boolean {
   const database = getDb();
   const result = database
     .prepare('DELETE FROM optimized_params WHERE strategy_name = ? AND symbol = ? AND timeframe = ?')
     .run(strategyName, symbol, timeframe);
+  return result.changes > 0;
+}
+
+/**
+ * Delete a specific optimization run by ID
+ */
+export function deleteOptimizationById(id: string): boolean {
+  const database = getDb();
+  const result = database
+    .prepare('DELETE FROM optimized_params WHERE id = ?')
+    .run(id);
   return result.changes > 0;
 }

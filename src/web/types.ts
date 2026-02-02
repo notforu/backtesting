@@ -214,6 +214,12 @@ export interface ApiError {
 // Optimization Types
 // ============================================================================
 
+export interface ParamRange {
+  min: number;
+  max: number;
+  step: number;
+}
+
 export interface OptimizationRequest {
   strategyName: string;
   symbol: string;
@@ -222,7 +228,9 @@ export interface OptimizationRequest {
   endDate: string | number;
   initialCapital?: number;
   exchange?: string;
-  optimizeFor?: 'sharpeRatio' | 'totalReturnPercent' | 'profitFactor' | 'winRate';
+  paramRanges?: Record<string, ParamRange>;
+  optimizeFor?: 'sharpeRatio' | 'totalReturnPercent' | 'profitFactor' | 'winRate' | 'sortinoRatio' | 'maxDrawdownPercent' | 'composite';
+  minTrades?: number;
   maxCombinations?: number;
   batchSize?: number;
 }

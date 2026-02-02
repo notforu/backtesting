@@ -173,27 +173,152 @@ export async function getExchanges(): Promise<string[]> {
 // ============================================================================
 
 /**
- * Run parameter optimization for a strategy
+ * Progress update callback for optimization
+ */
+export interface OptimizationProgressCallback {
+  onProgress?: (progress: { current: number; total: number; percent: number }) => void;
+  onComplete?: (result: OptimizationResult & { duration: number }) => void;
+  onError?: (error: string) => void;
+}
+
+/**
+ * Run parameter optimization for a strategy with SSE progress updates
  */
 export async function runOptimization(
-  config: OptimizationRequest
+  config: OptimizationRequest,
+  callbacks?: OptimizationProgressCallback
 ): Promise<OptimizationResult> {
-  return apiFetch<OptimizationResult>('/optimize', {
-    method: 'POST',
-    body: JSON.stringify(config),
+  const url = `${API_BASE}/optimize`;
+
+  return new Promise((resolve, reject) => {
+    // Use IIFE to handle async operations
+    (async () => {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(config),
+        });
+
+        if (!response.ok) {
+          throw new ApiClientError(
+            `API request failed: ${response.status} ${response.statusText}`,
+            response.status
+          );
+        }
+
+        if (!response.body) {
+          throw new ApiClientError('Response body is null', 500);
+        }
+
+        // Read the SSE stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            break;
+          }
+
+          // Decode chunk and add to buffer
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete messages (SSE format: "data: {...}\n\n")
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() || ''; // Keep incomplete message in buffer
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+
+            const dataStr = line.substring(6); // Remove "data: " prefix
+            try {
+              const data = JSON.parse(dataStr);
+
+              switch (data.type) {
+                case 'start':
+                  // Optimization started
+                  break;
+
+                case 'progress':
+                  // Progress update
+                  if (callbacks?.onProgress) {
+                    callbacks.onProgress({
+                      current: data.current,
+                      total: data.total,
+                      percent: data.percent,
+                    });
+                  }
+                  break;
+
+                case 'complete':
+                  // Optimization complete
+                  if (callbacks?.onComplete) {
+                    callbacks.onComplete(data.result);
+                  }
+                  resolve(data.result);
+                  return;
+
+                case 'error': {
+                  // Error occurred
+                  const errorMessage = data.error || 'Unknown error occurred';
+                  if (callbacks?.onError) {
+                    callbacks.onError(errorMessage);
+                  }
+                  reject(new ApiClientError(errorMessage, 500, data.details));
+                  return;
+                }
+
+                default:
+                  console.warn('Unknown SSE event type:', data.type);
+              }
+            } catch (err) {
+              console.error('Error parsing SSE data:', err);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error during optimization:', err);
+        if (err instanceof ApiClientError) {
+          reject(err);
+        } else if (err instanceof Error) {
+          reject(new ApiClientError(err.message, 500));
+        } else {
+          reject(new ApiClientError('Unknown error occurred', 500));
+        }
+      }
+    })();
   });
 }
 
 /**
- * Get saved optimized parameters for a strategy and symbol
+ * Get all optimization runs for a strategy, symbol, and timeframe
+ * Returns an array of results sorted by most recent first
  */
 export async function getOptimizedParams(
   strategyName: string,
   symbol: string,
   timeframe: string
+): Promise<OptimizationResult[]> {
+  return apiFetch<OptimizationResult[]>(
+    `/optimize/${encodeURIComponent(strategyName)}/${encodeURIComponent(symbol)}/${encodeURIComponent(timeframe)}`
+  );
+}
+
+/**
+ * Get the most recent optimization run for a strategy, symbol, and timeframe
+ */
+export async function getLatestOptimizedParams(
+  strategyName: string,
+  symbol: string,
+  timeframe: string
 ): Promise<OptimizationResult> {
   return apiFetch<OptimizationResult>(
-    `/optimize/${encodeURIComponent(strategyName)}/${encodeURIComponent(symbol)}/${encodeURIComponent(timeframe)}`
+    `/optimize/${encodeURIComponent(strategyName)}/${encodeURIComponent(symbol)}/${encodeURIComponent(timeframe)}/latest`
   );
 }
 
@@ -205,7 +330,7 @@ export async function getAllOptimizations(): Promise<OptimizationResult[]> {
 }
 
 /**
- * Delete a saved optimization result
+ * Delete all optimization runs for a strategy, symbol, and timeframe
  */
 export async function deleteOptimization(
   strategyName: string,
@@ -214,6 +339,18 @@ export async function deleteOptimization(
 ): Promise<void> {
   return apiFetch<void>(
     `/optimize/${encodeURIComponent(strategyName)}/${encodeURIComponent(symbol)}/${encodeURIComponent(timeframe)}`,
+    {
+      method: 'DELETE',
+    }
+  );
+}
+
+/**
+ * Delete a specific optimization run by ID
+ */
+export async function deleteOptimizationById(id: string): Promise<void> {
+  return apiFetch<void>(
+    `/optimize/id/${encodeURIComponent(id)}`,
     {
       method: 'DELETE',
     }
