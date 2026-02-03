@@ -185,3 +185,10 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-03 11:30] be-dev (sonnet) - Implement Volatility Squeeze Breakout strategy with BB/KC squeeze detection, momentum filter, ATR stops
 [2026-02-03 12:50] be-dev (sonnet) - Implement Volatility Squeeze Breakout strategy (initial implementation)
 [2026-02-03 13:10] main-claude (opus) - Fix KeltnerChannels bug (NaN), debug strategy, optimize to O(n) streaming, run grid search + walk-forward
+[2026-02-03 13:30] quant-lead (opus) - Research and design Adaptive RSI Mean Reversion with Regime Filter strategy
+[2026-02-03 13:12] be-dev (sonnet) - Implement Adaptive RSI Mean Reversion with Regime Filter strategy
+[2026-02-03 14:00] docs-writer (haiku) - Create changelog for adaptive RSI mean reversion strategy
+[2026-02-03 14:30] general-purpose (opus) - Research 2 new high-frequency trading strategies
+[2026-02-03 14:35] be-dev (sonnet) - Implement Donchian ATR trend breakout strategy
+[2026-02-03 14:35] be-dev (sonnet) - Implement EMA-MACD trend momentum strategy
+[2026-02-03 15:10] docs-writer (haiku) - Create changelogs for EMA-MACD and Donchian strategies
