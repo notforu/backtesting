@@ -104,6 +104,14 @@ Use orchestrator agent for any task that:
 - `docs-writer` - Documentation updates
 - `ui-tester` - Visual UI testing with Playwright
 
+**Strategy Research:**
+- `quant-lead` - Strategy research lead (opus). Researches real strategies via web search
+  and Claude's quant knowledge. Creates detailed specs in docs/strategies/ that may
+  require system improvements. NOT limited to current system capabilities.
+- `quant` - Strategy implementation coordinator (sonnet). Reads strategy specs, delegates
+  code writing to be-dev, then runs validation, grid search, backtesting, and walk-forward
+  via CLI tools. Grid search results automatically appear in the optimizer modal.
+
 **Architecture & Research:**
 - `architect` - Deep system design, asks clarifying questions (opus model - use for complex problems)
 - `Explore` - Codebase exploration and search
@@ -127,6 +135,26 @@ Example:
 [2025-01-24 14:30] be-dev (sonnet) - Implement short selling support
 [2025-01-24 14:45] docs-writer (haiku) - Update changelog
 ```
+
+### Strategy Discovery Workflow
+
+When user requests strategy research:
+1. Orchestrator delegates to `quant-lead` agent
+2. quant-lead reads docs/QUANT_KNOWLEDGE.md, researches via web search
+3. quant-lead creates N strategy specs in docs/strategies/
+4. User reviews specs and system gaps
+5. If gaps exist: use prompts to improve backtesting system first
+6. Spawn `quant` agents to implement strategies from specs
+7. Each quant agent workflow:
+   a. Read strategy spec
+   b. Delegate code writing to `be-dev`
+   c. Validate → quick backtest → iterate with be-dev if needed (max 3 tries)
+   d. Grid search via CLI → results saved to DB → visible in optimizer modal
+   e. Update strategy defaults with best params (via be-dev)
+   f. Walk-forward test for robustness
+   g. Return results
+8. User opens dashboard → optimized params are the defaults
+9. User opens optimizer modal → sees grid search history
 
 ## Workflows
 
@@ -180,6 +208,13 @@ npm run typecheck    # Check TypeScript
 npm run lint         # Check code style
 npm run test         # Run tests
 npm run backtest     # CLI backtest runner
+
+# Quant Agent CLI Tools
+npm run quant:validate -- strategies/my-strategy.ts    # Validate strategy file
+npm run quant:backtest -- --strategy=NAME --symbol=BTC/USDT --from=2024-01-01 --to=2024-06-01
+npm run quant:walk-forward -- --strategy=NAME --symbol=BTC/USDT --from=2024-01-01 --to=2024-12-01
+npm run quant:optimize -- --strategy=NAME --symbol=BTC/USDT --from=2024-01-01 --to=2024-06-01
+npm run quant:score -- --walk-forward-file=results.json
 ```
 
 ## Style Guidelines

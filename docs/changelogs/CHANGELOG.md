@@ -4,6 +4,40 @@ All notable changes to this project are documented here. Newest entries first.
 
 ---
 
+## [2026-02-03] Quant Agent System - Autonomous Trading Strategy Discovery
+
+### Added
+- **Quant Agent Lab**: Complete autonomous strategy discovery system with parallel agent execution
+- **Validation Framework**: Walk-forward testing (70/30 split) with OOS degradation detection
+- **Multi-Asset Validation**: Robustness testing across 5+ crypto assets (BTC, ETH, SOL, XRP, ADA)
+- **Strategy Generation**: Code generator creating executable TypeScript strategies from hypotheses
+- **Robustness Scoring**: Multi-weighted formula (30% Sharpe, 20% OOS degrade, 20% multi-asset, 15% return, 15% drawdown)
+- **5 Strategy Templates**: Trend-following, mean-reversion, momentum, breakout, volatility
+- **Indicator Registry**: 15+ technical indicators mapped to trading styles
+- **REST API**: 7 endpoints with SSE progress streaming for real-time monitoring
+- **React Dashboard**: Session configuration, real-time progress, strategy results with promotion
+
+### Changed
+- `src/data/db.ts` - Added quant_sessions and quant_strategies tables
+- `src/api/server.ts` - Registered quant routes
+- `src/web/App.tsx` - Added Quant Lab route and navigation
+
+### Core Modules
+- `src/core/walk-forward.ts` - Walk-forward testing with OOS degradation
+- `src/core/multi-asset-validation.ts` - Cross-asset robustness validation
+- `src/quant/indicators.ts` - Indicator registry
+- `src/quant/generator.ts` - Strategy code generator
+- `src/quant/scoring.ts` - Robustness scoring formula
+- `src/quant/session.ts` - Session management
+- `src/quant/executor.ts` - Parallel agent execution
+
+### Context
+Addresses critical gap in strategy development: discovering robust, generalizable strategies. The system automates hypothesis generation, rigorous validation, robustness scoring, and parallel discovery with real-time feedback. All generated strategies undergo walk-forward and multi-asset validation to prevent curve-fitting.
+
+See `/docs/changelogs/2026-02-03-040000-quant-agent-system.md` for full details.
+
+---
+
 ## [2026-01-25] Optimizer Memory Fix - Critical OOM Issue Resolution
 
 ### Fixed

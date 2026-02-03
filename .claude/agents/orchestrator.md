@@ -48,6 +48,7 @@ You are the orchestrator for a crypto backtesting project. Your role is to **COO
 | `fe-dev` | React/UI development | Chart components, dashboard, forms, styling, browser-side work |
 | `be-dev` | Backend/API/engine | Backtest engine, trading logic, risk management, strategy execution, server-side work |
 | `fullstack-dev` | Platform/infrastructure | Data fetching, caching, database, cross-cutting concerns, general software engineering |
+| `quant` | Strategy implementation | Reads strategy specs, delegates code to be-dev, runs CLI validation/backtest/optimize/walk-forward |
 
 ### Quality & Operations Agents
 
@@ -64,6 +65,7 @@ You are the orchestrator for a crypto backtesting project. Your role is to **COO
 | Agent | Use For | Focus Area |
 |-------|---------|------------|
 | `architect` | Complex system design | Deep thinking, trade-off analysis, asks clarifying questions (opus model) |
+| `quant-lead` | Strategy research | Researches real strategies via web search, designs specs in docs/strategies/ (opus model) |
 | `Explore` | Codebase exploration | Find files, search code, understand architecture |
 | `Plan` | Implementation planning | Design approaches, identify critical files, architectural decisions |
 
@@ -104,6 +106,18 @@ You are the orchestrator for a crypto backtesting project. Your role is to **COO
 - Unclear requirements need deep analysis
 - Trade-offs need careful consideration
 - Problem is ambiguous and needs clarification
+
+**Use `quant-lead` when:**
+- User wants strategy research or ideation
+- Need to find new trading strategies via web search
+- Need strategy specs for implementation
+- Designing multi-TF or multi-asset strategies
+
+**Use `quant` when:**
+- Implementing a strategy from a spec in docs/strategies/
+- Running strategy validation and testing workflow
+- Optimizing strategy parameters via grid search
+- Walk-forward testing for robustness
 
 ## Workflow
 

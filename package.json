@@ -12,7 +12,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "vitest",
-    "backtest": "tsx src/cli/backtest.ts"
+    "backtest": "tsx src/cli/backtest.ts",
+    "quant:validate": "tsx src/cli/quant-validate.ts",
+    "quant:backtest": "tsx src/cli/quant-backtest.ts",
+    "quant:walk-forward": "tsx src/cli/quant-walk-forward.ts",
+    "quant:optimize": "tsx src/cli/quant-optimize.ts",
+    "quant:score": "tsx src/cli/quant-score.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
