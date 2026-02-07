@@ -192,3 +192,14 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-03 14:35] be-dev (sonnet) - Implement Donchian ATR trend breakout strategy
 [2026-02-03 14:35] be-dev (sonnet) - Implement EMA-MACD trend momentum strategy
 [2026-02-03 15:10] docs-writer (haiku) - Create changelogs for EMA-MACD and Donchian strategies
+[2026-02-03 15:20] general-purpose (opus) - Research 2 new trading strategies (non-EMA, non-breakout)
+[2026-02-04 08:05] be-dev (sonnet) - Implement Stochastic Momentum Trend strategy
+[2026-02-04 08:05] be-dev (sonnet) - Implement CCI Momentum Breakout strategy
+[2026-02-04 08:08] orchestrator (sonnet) - Update CCI strategy defaults and delete Stochastic strategy
+[2026-02-04 08:09] be-dev (sonnet) - Update CCI strategy defaults and delete Stochastic strategy
+[2026-02-04 08:09] docs-writer (haiku) - Create changelog for CCI strategy update
+[2026-02-04 08:10] be-dev (sonnet) - Implement stochastic-momentum-trend strategy
+[2026-02-04 08:10] be-dev (sonnet) - Implement cci-momentum-breakout strategy
+[2026-02-04 08:15] be-dev (sonnet) - Update CCI defaults with optimized params, delete stochastic strategy
+[2026-02-07 00:10] runner (haiku) - Start development server in background
+[2026-02-07 00:15] runner (haiku) - Start dev server
