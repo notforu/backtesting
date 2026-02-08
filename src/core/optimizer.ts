@@ -4,8 +4,9 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import type { Timeframe, PerformanceMetrics } from './types.js';
+import type { Timeframe, PerformanceMetrics, PairsBacktestConfig } from './types.js';
 import { runBacktest, type EngineConfig } from './engine.js';
+import { runPairsBacktest } from './pairs-engine.js';
 import { loadStrategy } from '../strategy/loader.js';
 import { saveOptimizedParams, saveCandles, getCandleDateRange } from '../data/db.js';
 import { getProvider } from '../data/providers/index.js';
@@ -32,6 +33,10 @@ export interface OptimizationConfig {
   maxCombinations?: number; // Limit grid size
   batchSize?: number; // Parallel execution batch size
   minTrades?: number; // Minimum trades required for valid result (default: 10)
+
+  // Pairs trading specific (optional)
+  symbolB?: string; // Second symbol for pairs trading
+  leverage?: number; // Leverage for pairs trading (default: 1)
 }
 
 /**
@@ -94,6 +99,14 @@ export async function runOptimization(
   // Load strategy to get parameter definitions
   const strategy = await loadStrategy(strategyName);
 
+  // Check if this is a pairs strategy
+  const isPairsStrategy = (strategy as any).isPairs === true;
+
+  // Validate pairs configuration
+  if (isPairsStrategy && !config.symbolB) {
+    throw new Error('Pairs strategy requires symbolB parameter');
+  }
+
   // Generate parameter combinations
   const combinations = generateParameterCombinations(strategy.params, paramRanges, maxCombinations);
 
@@ -107,15 +120,31 @@ export async function runOptimization(
   // Pre-fetch candles to avoid fetching during backtests
   console.log('Pre-fetching candle data...');
   const provider = getProvider(exchange);
+
+  // Fetch candles for symbol A
   const cachedRange = getCandleDateRange(exchange, symbol, timeframe);
   if (!cachedRange.start || !cachedRange.end || cachedRange.start > startDate || cachedRange.end < endDate) {
     const candles = await provider.fetchCandles(symbol, timeframe, new Date(startDate), new Date(endDate));
     if (candles.length > 0) {
       saveCandles(candles, exchange, symbol, timeframe);
-      console.log(`Cached ${candles.length} candles`);
+      console.log(`Cached ${candles.length} candles for ${symbol}`);
     }
   } else {
-    console.log('Using existing cached candles');
+    console.log(`Using existing cached candles for ${symbol}`);
+  }
+
+  // If pairs strategy, also fetch candles for symbol B
+  if (isPairsStrategy && config.symbolB) {
+    const cachedRangeB = getCandleDateRange(exchange, config.symbolB, timeframe);
+    if (!cachedRangeB.start || !cachedRangeB.end || cachedRangeB.start > startDate || cachedRangeB.end < endDate) {
+      const candlesB = await provider.fetchCandles(config.symbolB, timeframe, new Date(startDate), new Date(endDate));
+      if (candlesB.length > 0) {
+        saveCandles(candlesB, exchange, config.symbolB, timeframe);
+        console.log(`Cached ${candlesB.length} candles for ${config.symbolB}`);
+      }
+    } else {
+      console.log(`Using existing cached candles for ${config.symbolB}`);
+    }
   }
 
   // Pre-fetch trading fees once (cache for all backtest runs)
@@ -153,22 +182,41 @@ export async function runOptimization(
     // Run batch in parallel
     const batchPromises = batch.map(async (params) => {
       try {
-        const result = await runBacktest(
-          {
+        if (isPairsStrategy) {
+          // Pairs strategy - use pairs backtest
+          const pairsConfig: PairsBacktestConfig = {
             id: uuidv4(),
             strategyName,
             params,
-            symbol,
+            symbolA: symbol,
+            symbolB: config.symbolB!,
             timeframe,
             startDate,
             endDate,
             initialCapital,
             exchange,
-          },
-          engineConfig
-        );
-
-        return { params, metrics: result.metrics };
+            leverage: config.leverage ?? 1,
+          };
+          const result = await runPairsBacktest(pairsConfig, engineConfig);
+          return { params, metrics: result.metrics };
+        } else {
+          // Single symbol strategy - use regular backtest
+          const result = await runBacktest(
+            {
+              id: uuidv4(),
+              strategyName,
+              params,
+              symbol,
+              timeframe,
+              startDate,
+              endDate,
+              initialCapital,
+              exchange,
+            },
+            engineConfig
+          );
+          return { params, metrics: result.metrics };
+        }
       } catch (error) {
         // Log error but continue with other combinations
         console.warn(`Failed to test params ${JSON.stringify(params)}:`, error);

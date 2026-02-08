@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import type { BacktestResult, RunBacktestRequest, Timeframe } from '../types';
+import type { BacktestResult, PairsBacktestResult, RunBacktestRequest, Timeframe } from '../types';
 
 // ============================================================================
 // Backtest Store
@@ -12,7 +12,7 @@ import type { BacktestResult, RunBacktestRequest, Timeframe } from '../types';
 
 interface BacktestStore {
   // Current backtest result
-  currentResult: BacktestResult | null;
+  currentResult: BacktestResult | PairsBacktestResult | null;
 
   // UI state
   isRunning: boolean;
@@ -22,7 +22,7 @@ interface BacktestStore {
   selectedBacktestId: string | null;
 
   // Actions
-  setResult: (result: BacktestResult) => void;
+  setResult: (result: BacktestResult | PairsBacktestResult) => void;
   setRunning: (running: boolean) => void;
   setError: (error: string | null) => void;
   setSelectedBacktestId: (id: string | null) => void;
@@ -80,22 +80,26 @@ interface ConfigStore {
   strategy: string;
   params: Record<string, unknown>;
   symbol: string;
+  symbolB: string;
   timeframe: Timeframe;
   startDate: string;
   endDate: string;
   initialCapital: number;
   exchange: string;
+  leverage: number;
 
   // Actions
   setStrategy: (strategy: string) => void;
   setParams: (params: Record<string, unknown>) => void;
   updateParam: (key: string, value: unknown) => void;
   setSymbol: (symbol: string) => void;
+  setSymbolB: (symbolB: string) => void;
   setTimeframe: (timeframe: Timeframe) => void;
   setStartDate: (date: string) => void;
   setEndDate: (date: string) => void;
   setInitialCapital: (capital: number) => void;
   setExchange: (exchange: string) => void;
+  setLeverage: (leverage: number) => void;
   getConfig: () => RunBacktestRequest;
   reset: () => void;
 }
@@ -118,11 +122,13 @@ const defaultConfigState = {
   strategy: '',
   params: {},
   symbol: 'BTCUSDT',
+  symbolB: '',
   timeframe: '1h' as Timeframe,
   startDate: defaultDates.startDate,
   endDate: defaultDates.endDate,
   initialCapital: 10000,
   exchange: 'binance',
+  leverage: 1,
 };
 
 export const useConfigStore = create<ConfigStore>((set, get) => ({
@@ -135,11 +141,13 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
       params: { ...state.params, [key]: value },
     })),
   setSymbol: (symbol) => set({ symbol }),
+  setSymbolB: (symbolB) => set({ symbolB }),
   setTimeframe: (timeframe) => set({ timeframe }),
   setStartDate: (startDate) => set({ startDate }),
   setEndDate: (endDate) => set({ endDate }),
   setInitialCapital: (initialCapital) => set({ initialCapital }),
   setExchange: (exchange) => set({ exchange }),
+  setLeverage: (leverage) => set({ leverage }),
 
   getConfig: () => {
     const state = get();

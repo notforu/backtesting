@@ -203,3 +203,23 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-04 08:15] be-dev (sonnet) - Update CCI defaults with optimized params, delete stochastic strategy
 [2026-02-07 00:10] runner (haiku) - Start development server in background
 [2026-02-07 00:15] runner (haiku) - Start dev server
+[2026-02-07 00:30] commit (haiku) - CCI Momentum Breakout strategy implementation with walk-forward validation and strategy specs
+[2026-02-07 18:08] orchestrator (sonnet) - Add rolling metrics backend for performance evolution charts
+[2026-02-07 18:08] fe-dev (sonnet) - Create Performance Evolution Charts component with tabbed metrics visualization
+[2026-02-07 18:09] be-dev (sonnet) - Implement Phase 1 - Leverage Support (LeveragedPortfolio, margin tracking, liquidation)
+[2026-02-07 18:10] be-dev (sonnet) - Add rolling metrics backend for performance evolution charts
+ default (sonnet) - Delegating Phase 2 Pairs Backtest Engine implementation to orchestrator
+[2026-02-07 18:05] orchestrator (sonnet) - Phase 1: Leverage Support orchestration (failed - no delegation)
+[2026-02-07 18:08] be-dev (sonnet) - Phase 1: Implement leverage support (LeveragedPortfolio, types, engine)
+[2026-02-07 18:05] orchestrator (sonnet) - Phase 4: Performance Charts orchestration (failed - no delegation)
+[2026-02-07 18:12] be-dev (sonnet) - Phase 4 backend: Rolling metrics computation (types, metrics, engine)
+[2026-02-07 18:12] fe-dev (sonnet) - Phase 4 frontend: PerformanceCharts component with 5 tabs
+[2026-02-07 18:20] be-dev (sonnet) - Phase 2: Pairs backtest engine (pairs-portfolio, pairs-engine, pairs-base, types, loader, routes)
+[2026-02-07 13:25] be-dev (sonnet) - Implement Pairs Backtest Engine
+[2026-02-07 13:45] be-dev (sonnet) - Phase 3: Pairs Z-Score Scalper strategy implementation
+[2026-02-07 13:45] fe-dev (sonnet) - Phase 5: Dual Chart UI for pairs (PairsChart, SpreadChart, StrategyConfig)
+[2026-02-07 13:45] be-dev (sonnet) - Phase 6: Optimizer/walk-forward/CLI pairs integration
+[2026-02-07 18:30] be-dev (sonnet) - Implement Pairs Z-Score Mean Reversion Scalper strategy spec and code
+[2026-02-07 18:47] be-dev (sonnet) - Integrate pairs strategy support into optimizer, walk-forward, and CLI tools
+[2026-02-07 18:49] fe-dev (sonnet) - Implement dual chart UI for pairs trading (Phase 5)
+[2026-02-07 20:00] docs-writer (haiku) - Create comprehensive changelog for 6-phase pairs trading, leverage, and performance charts release

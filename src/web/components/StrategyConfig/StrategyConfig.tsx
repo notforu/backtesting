@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useStrategies, useStrategy, useRunBacktest } from '../../hooks/useBacktest';
+import { useStrategies, useStrategy, useRunBacktest, useRunPairsBacktest } from '../../hooks/useBacktest';
 import {
   useOptimizedParams,
 } from '../../hooks/useOptimization';
@@ -147,18 +147,22 @@ export function StrategyConfig() {
     strategy,
     params,
     symbol,
+    symbolB,
     timeframe,
     startDate,
     endDate,
     initialCapital,
     exchange,
+    leverage,
     setStrategy,
     updateParam,
     setSymbol,
+    setSymbolB,
     setTimeframe,
     setStartDate,
     setEndDate,
     setInitialCapital,
+    setLeverage,
     setParams,
     getConfig,
   } = useConfigStore();
@@ -168,6 +172,7 @@ export function StrategyConfig() {
 
   const { isRunning, error } = useBacktestStore();
   const runBacktestMutation = useRunBacktest();
+  const runPairsBacktestMutation = useRunPairsBacktest();
 
   // Optimization hooks
   const { data: optimizedParams, isError: optimizedParamsError } =
@@ -211,11 +216,31 @@ export function StrategyConfig() {
 
   const handleRunBacktest = () => {
     if (!strategy) return;
-    const config = getConfig();
-    runBacktestMutation.mutate({
-      ...config,
-      exchange: exchange || 'binance',
-    });
+
+    const isPairsStrategy = strategyDetails?.isPairs;
+
+    if (isPairsStrategy) {
+      // Run pairs backtest
+      runPairsBacktestMutation.mutate({
+        strategyName: strategy,
+        params,
+        symbolA: symbol,
+        symbolB: symbolB,
+        timeframe,
+        startDate,
+        endDate,
+        initialCapital,
+        exchange: exchange || 'binance',
+        leverage,
+      });
+    } else {
+      // Run regular backtest
+      const config = getConfig();
+      runBacktestMutation.mutate({
+        ...config,
+        exchange: exchange || 'binance',
+      });
+    }
   };
 
   // Reset to strategy defaults (keeps optimization in DB)
@@ -230,7 +255,15 @@ export function StrategyConfig() {
     setUsingOptimizedParams(false);
   };
 
-  const canRun = strategy && symbol && startDate && endDate && !isRunning && !isOptimizing;
+  const isPairsStrategy = strategyDetails?.isPairs;
+  const canRun =
+    strategy &&
+    symbol &&
+    (!isPairsStrategy || symbolB) && // Require symbolB for pairs strategies
+    startDate &&
+    endDate &&
+    !isRunning &&
+    !isOptimizing;
 
   const inputClass =
     'w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent';
@@ -262,10 +295,12 @@ export function StrategyConfig() {
         )}
       </div>
 
-      {/* Symbol & Timeframe (2-column) */}
+      {/* Symbol & Timeframe */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Symbol</label>
+          <label className="block text-sm text-gray-400 mb-1">
+            {isPairsStrategy ? 'Symbol A' : 'Symbol'}
+          </label>
           <input
             type="text"
             value={symbol}
@@ -295,6 +330,37 @@ export function StrategyConfig() {
           </select>
         </div>
       </div>
+
+      {/* Symbol B & Leverage (only for pairs strategies) */}
+      {isPairsStrategy && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Symbol B</label>
+            <input
+              type="text"
+              value={symbolB}
+              onChange={(e) => setSymbolB(e.target.value.toUpperCase())}
+              placeholder="ETHUSDT"
+              className={inputClass}
+              list="symbols"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              Leverage (1-20)
+            </label>
+            <input
+              type="number"
+              value={leverage}
+              onChange={(e) => setLeverage(parseFloat(e.target.value) || 1)}
+              min={1}
+              max={20}
+              step={1}
+              className={inputClass}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Date Range (2-column) */}
       <div className="grid grid-cols-2 gap-3">

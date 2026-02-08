@@ -12,6 +12,8 @@
  *   --optimize-for=METRIC     Metric to optimize (default: sharpeRatio)
  *   --max-combinations=NUM    Max parameter combinations (default: 500)
  *   --min-trades=NUM          Minimum trades required (default: 10)
+ *   --symbol-b=SYMBOL         Second symbol for pairs trading (optional)
+ *   --leverage=NUM            Leverage for pairs trading (default: 1)
  *
  * Outputs JSON to stdout:
  * - Success: {"success":true,"bestParams":{...},"bestMetrics":{...},"totalCombinations":500,"testedCombinations":423}
@@ -112,6 +114,8 @@ async function main(): Promise<void> {
   // Parse numeric options
   const maxCombinations = args['max-combinations'] ? parseInt(args['max-combinations'], 10) : 500;
   const minTrades = args['min-trades'] ? parseInt(args['min-trades'], 10) : 10;
+  const symbolB = args['symbol-b'];
+  const leverage = args.leverage ? Number(args.leverage) : 1;
 
   // Create optimization configuration
   const config: OptimizationConfig = {
@@ -125,6 +129,8 @@ async function main(): Promise<void> {
     optimizeFor: optimizeFor as OptimizationConfig['optimizeFor'],
     maxCombinations,
     minTrades,
+    symbolB,
+    leverage,
   };
 
   console.error(`Running optimization: ${config.strategyName} on ${config.symbol}`);

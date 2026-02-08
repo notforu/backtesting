@@ -3,7 +3,7 @@
  * Calculates all trading performance metrics from trades and equity curve
  */
 
-import type { Trade, EquityPoint, PerformanceMetrics } from '../core/types.js';
+import type { Trade, EquityPoint, PerformanceMetrics, RollingMetrics } from '../core/types.js';
 
 /**
  * Check if a trade is a close trade (has PnL)
@@ -417,4 +417,100 @@ function calculateUlcerIndex(equity: EquityPoint[]): number {
   }
 
   return Math.sqrt(sumSquaredDrawdowns / equity.length);
+}
+
+/**
+ * Calculate rolling performance metrics over time
+ */
+export function calculateRollingMetrics(
+  trades: Trade[],
+  equity: EquityPoint[],
+  initialCapital: number
+): RollingMetrics {
+  const timestamps: number[] = [];
+  const cumulativeReturn: number[] = [];
+  const drawdown: number[] = [];
+  const rollingSharpe: number[] = [];
+  const cumulativeWinRate: number[] = [];
+  const cumulativeProfitFactor: number[] = [];
+
+  if (equity.length === 0) {
+    return { timestamps, cumulativeReturn, drawdown, rollingSharpe, cumulativeWinRate, cumulativeProfitFactor };
+  }
+
+  const closeTrades = trades.filter(isCloseTrade);
+
+  // Pre-compute equity returns for rolling Sharpe
+  const returns: number[] = [];
+  for (let i = 1; i < equity.length; i++) {
+    if (equity[i - 1].equity > 0) {
+      returns.push((equity[i].equity - equity[i - 1].equity) / equity[i - 1].equity);
+    } else {
+      returns.push(0);
+    }
+  }
+
+  // Track cumulative trade stats for win rate and profit factor
+  let tradeIdx = 0;
+  let wins = 0;
+  let totalCloseTrades = 0;
+  let grossProfit = 0;
+  let grossLoss = 0;
+
+  for (let i = 0; i < equity.length; i++) {
+    const point = equity[i];
+    timestamps.push(point.timestamp);
+
+    // Cumulative return %
+    cumulativeReturn.push(((point.equity - initialCapital) / initialCapital) * 100);
+
+    // Drawdown (already computed in equity)
+    drawdown.push(point.drawdown);
+
+    // Rolling Sharpe (50-bar window of returns)
+    if (i < 2) {
+      rollingSharpe.push(0);
+    } else {
+      const windowSize = 50;
+      const startIdx = Math.max(0, i - windowSize);
+      const windowReturns = returns.slice(startIdx, i);
+
+      if (windowReturns.length < 2) {
+        rollingSharpe.push(0);
+      } else {
+        const mean = windowReturns.reduce((s, r) => s + r, 0) / windowReturns.length;
+        const variance = windowReturns.reduce((s, r) => s + (r - mean) ** 2, 0) / (windowReturns.length - 1);
+        const std = Math.sqrt(variance);
+        rollingSharpe.push(std === 0 ? 0 : (mean / std) * Math.sqrt(252));
+      }
+    }
+
+    // Advance trade pointer to include trades up to current timestamp
+    while (tradeIdx < closeTrades.length && closeTrades[tradeIdx].timestamp <= point.timestamp) {
+      const t = closeTrades[tradeIdx];
+      totalCloseTrades++;
+      const pnl = t.pnl ?? 0;
+      if (pnl > 0) {
+        wins++;
+        grossProfit += pnl;
+      } else if (pnl < 0) {
+        grossLoss += Math.abs(pnl);
+      }
+      tradeIdx++;
+    }
+
+    // Cumulative win rate
+    cumulativeWinRate.push(totalCloseTrades === 0 ? 0 : (wins / totalCloseTrades) * 100);
+
+    // Cumulative profit factor
+    if (totalCloseTrades === 0) {
+      cumulativeProfitFactor.push(0);
+    } else if (grossLoss === 0) {
+      cumulativeProfitFactor.push(grossProfit > 0 ? 10 : 0); // Cap at 10 like Sortino
+    } else {
+      cumulativeProfitFactor.push(grossProfit / grossLoss);
+    }
+  }
+
+  return { timestamps, cumulativeReturn, drawdown, rollingSharpe, cumulativeWinRate, cumulativeProfitFactor };
 }

@@ -21,6 +21,7 @@ export interface StrategyInfo {
   version: string;
   params: StrategyParam[];
   filePath: string;
+  isPairs?: boolean;
 }
 
 /**
@@ -111,6 +112,7 @@ export async function getStrategyDetails(name: string): Promise<StrategyInfo> {
     version: strategy.version,
     params: strategy.params,
     filePath: path.join(STRATEGIES_DIR, `${name}.ts`),
+    isPairs: (strategy as any).isPairs === true,
   };
 }
 

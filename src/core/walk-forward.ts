@@ -14,9 +14,10 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import type { Timeframe, PerformanceMetrics } from './types.js';
+import type { Timeframe, PerformanceMetrics, PairsBacktestConfig } from './types.js';
 import { runOptimization, type OptimizationConfig, type OptimizationResult } from './optimizer.js';
 import { runBacktest, type EngineConfig } from './engine.js';
+import { runPairsBacktest } from './pairs-engine.js';
 
 // ============================================================================
 // Types
@@ -101,6 +102,16 @@ export interface WalkForwardConfig {
    * Minimum test Sharpe ratio for robustness (default: 0.5)
    */
   minTestSharpe?: number;
+
+  /**
+   * Second symbol for pairs trading (optional)
+   */
+  symbolB?: string;
+
+  /**
+   * Leverage for pairs trading (default: 1)
+   */
+  leverage?: number;
 }
 
 /**
@@ -242,6 +253,8 @@ export async function runWalkForwardTest(
     optimizeFor: optimizeMetric,
     maxCombinations,
     minTrades,
+    symbolB: config.symbolB,
+    leverage: config.leverage,
   };
 
   const optimizationResult = await runOptimization(optimizationConfig);
@@ -259,20 +272,41 @@ export async function runWalkForwardTest(
     enableLogging: false,
   };
 
-  const testResult = await runBacktest(
-    {
+  let testResult;
+
+  if (config.symbolB) {
+    // Pairs strategy - use pairs backtest for test period
+    const pairsConfig: PairsBacktestConfig = {
       id: uuidv4(),
       strategyName,
       params: optimizationResult.bestParams,
-      symbol,
+      symbolA: symbol,
+      symbolB: config.symbolB,
       timeframe,
       startDate: trainEndDate,
       endDate,
       initialCapital,
       exchange,
-    },
-    engineConfig
-  );
+      leverage: config.leverage ?? 1,
+    };
+    testResult = await runPairsBacktest(pairsConfig, engineConfig);
+  } else {
+    // Single symbol strategy - use regular backtest
+    testResult = await runBacktest(
+      {
+        id: uuidv4(),
+        strategyName,
+        params: optimizationResult.bestParams,
+        symbol,
+        timeframe,
+        startDate: trainEndDate,
+        endDate,
+        initialCapital,
+        exchange,
+      },
+      engineConfig
+    );
+  }
 
   console.log(`\nTest complete!`);
   console.log(`Test Sharpe: ${testResult.metrics.sharpeRatio.toFixed(4)}`);

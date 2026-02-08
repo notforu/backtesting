@@ -1,0 +1,1 @@
+export { PairsChart } from './PairsChart';

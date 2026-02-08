@@ -5,12 +5,15 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Chart } from './components/Chart';
+import { PairsChart } from './components/PairsChart';
+import { SpreadChart } from './components/SpreadChart';
+import { PerformanceCharts } from './components/PerformanceCharts';
 import { Dashboard } from './components/Dashboard';
 import { StrategyConfig } from './components/StrategyConfig';
 import { History } from './components/History';
 import { OptimizerModal } from './components/OptimizerModal';
 import { useBacktestStore } from './stores/backtestStore';
-import { getTradeActionLabel, getTradeActionColor, isCloseTrade } from './types';
+import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult } from './types';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,8 +24,13 @@ const queryClient = new QueryClient({
   },
 });
 
+function isPairsResult(result: unknown): result is PairsBacktestResult {
+  return result !== null && typeof result === 'object' && 'candlesA' in result && 'candlesB' in result;
+}
+
 function AppContent() {
   const { currentResult } = useBacktestStore();
+  const isPairs = currentResult && isPairsResult(currentResult);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col">
@@ -57,7 +65,11 @@ function AppContent() {
                   {currentResult.config.strategyName}
                 </span>{' '}
                 on{' '}
-                <span className="text-white">{currentResult.config.symbol}</span>
+                <span className="text-white">
+                  {isPairs
+                    ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
+                    : (currentResult as BacktestResult).config.symbol}
+                </span>
               </span>
             )}
           </div>
@@ -80,28 +92,65 @@ function AppContent() {
             {/* Chart Section */}
             <section>
               <div className="flex items-center justify-between mb-2">
-                <h2 className="text-lg font-semibold text-white">Chart</h2>
+                <h2 className="text-lg font-semibold text-white">
+                  {isPairs ? 'Pairs Charts' : 'Chart'}
+                </h2>
                 {currentResult && (
                   <div className="flex items-center gap-4 text-sm text-gray-400">
                     <span>
-                      {currentResult.config.symbol} /{' '}
-                      {currentResult.config.timeframe}
+                      {isPairs
+                        ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
+                        : (currentResult as BacktestResult).config.symbol}{' '}
+                      / {currentResult.config.timeframe}
                     </span>
                     <span>
                       {new Date(currentResult.config.startDate).toLocaleDateString()}{' '}
                       -{' '}
                       {new Date(currentResult.config.endDate).toLocaleDateString()}
                     </span>
-                    <span>{currentResult.candles.length} candles</span>
+                    <span>
+                      {isPairs
+                        ? `${(currentResult as PairsBacktestResult).candlesA.length} candles`
+                        : `${(currentResult as BacktestResult).candles?.length ?? 0} candles`}
+                    </span>
                   </div>
                 )}
               </div>
-              <Chart
-                candles={currentResult?.candles ?? []}
-                trades={currentResult?.trades ?? []}
-                height={450}
-              />
+              {isPairs ? (
+                <>
+                  <PairsChart
+                    candlesA={(currentResult as PairsBacktestResult).candlesA}
+                    candlesB={(currentResult as PairsBacktestResult).candlesB}
+                    trades={currentResult.trades}
+                    symbolA={(currentResult as PairsBacktestResult).config.symbolA}
+                    symbolB={(currentResult as PairsBacktestResult).config.symbolB}
+                    height={450}
+                  />
+                  <div className="mt-4">
+                    <SpreadChart
+                      spreadData={(currentResult as PairsBacktestResult).spreadData ?? []}
+                      height={150}
+                    />
+                  </div>
+                </>
+              ) : (
+                <Chart
+                  candles={(currentResult as BacktestResult)?.candles ?? []}
+                  trades={currentResult?.trades ?? []}
+                  height={450}
+                />
+              )}
             </section>
+
+            {/* Performance Charts */}
+            {currentResult && currentResult.equity.length > 0 && (
+              <section>
+                <PerformanceCharts
+                  equity={currentResult.equity}
+                  rollingMetrics={currentResult.rollingMetrics}
+                />
+              </section>
+            )}
 
             {/* Dashboard Section */}
             <section>

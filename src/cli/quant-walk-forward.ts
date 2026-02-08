@@ -11,6 +11,8 @@
  *   --timeframe=TF          Candle timeframe (default: 4h)
  *   --train-ratio=RATIO     Train/test split ratio (default: 0.7)
  *   --optimize-for=METRIC   Metric to optimize (default: sharpeRatio)
+ *   --symbol-b=SYMBOL       Second symbol for pairs trading (optional)
+ *   --leverage=NUM          Leverage for pairs trading (default: 1)
  *
  * Outputs JSON to stdout:
  * - Success: {"success":true,"trainMetrics":{...},"testMetrics":{...},"optimizedParams":{...},"oosDegrade":15.2}
@@ -119,6 +121,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Parse pairs trading options
+  const symbolB = args['symbol-b'];
+  const leverage = args.leverage ? Number(args.leverage) : 1;
+
   // Create walk-forward configuration
   const config: WalkForwardConfig = {
     strategyName: args.strategy,
@@ -130,6 +136,8 @@ async function main(): Promise<void> {
     optimizeFor,
     exchange: args.exchange || 'binance',
     initialCapital: args.capital ? Number(args.capital) : 10000,
+    symbolB,
+    leverage,
   };
 
   console.error(`Running walk-forward test: ${config.strategyName} on ${config.symbol}`);

@@ -129,6 +129,21 @@ export const EquityPointSchema = z.object({
 export type EquityPoint = z.infer<typeof EquityPointSchema>;
 
 // ============================================================================
+// Rolling Metrics
+// ============================================================================
+
+export const RollingMetricsSchema = z.object({
+  timestamps: z.array(z.number()),
+  cumulativeReturn: z.array(z.number()),
+  drawdown: z.array(z.number()),
+  rollingSharpe: z.array(z.number()),
+  cumulativeWinRate: z.array(z.number()),
+  cumulativeProfitFactor: z.array(z.number()),
+});
+
+export type RollingMetrics = z.infer<typeof RollingMetricsSchema>;
+
+// ============================================================================
 // Backtest Configuration
 // ============================================================================
 
@@ -142,6 +157,7 @@ export const BacktestConfigSchema = z.object({
   endDate: z.number(),
   initialCapital: z.number().positive(),
   exchange: z.string(),
+  leverage: z.number().min(1).max(125).default(1).optional(),
 });
 
 export type BacktestConfig = z.infer<typeof BacktestConfigSchema>;
@@ -187,10 +203,48 @@ export const BacktestResultSchema = z.object({
   trades: z.array(TradeSchema),
   equity: z.array(EquityPointSchema),
   metrics: PerformanceMetricsSchema,
+  rollingMetrics: RollingMetricsSchema.optional(),
   createdAt: z.number(),
 });
 
 export type BacktestResult = z.infer<typeof BacktestResultSchema>;
+
+// ============================================================================
+// Pairs Backtest Types
+// ============================================================================
+
+export interface PairsBacktestConfig {
+  id: string;
+  strategyName: string;
+  params: Record<string, unknown>;
+  symbolA: string;
+  symbolB: string;
+  timeframe: Timeframe;
+  startDate: number;
+  endDate: number;
+  initialCapital: number;
+  exchange: string;
+  leverage: number;
+}
+
+export interface SpreadDataPoint {
+  timestamp: number;
+  spread: number;
+  zScore: number;
+}
+
+export interface PairsBacktestResult {
+  id: string;
+  config: PairsBacktestConfig;
+  trades: Trade[];
+  equity: EquityPoint[];
+  metrics: PerformanceMetrics;
+  rollingMetrics?: RollingMetrics;
+  candlesA: Candle[];
+  candlesB: Candle[];
+  spreadData: SpreadDataPoint[];
+  createdAt: number;
+}
 
 // ============================================================================
 // Utility functions for timeframe conversion

@@ -14,17 +14,17 @@ export class Portfolio {
   /**
    * Available cash balance
    */
-  private _cash: number;
+  protected _cash: number;
 
   /**
    * Current long position, or null if none
    */
-  private _longPosition: Position | null = null;
+  protected _longPosition: Position | null = null;
 
   /**
    * Current short position, or null if none
    */
-  private _shortPosition: Position | null = null;
+  protected _shortPosition: Position | null = null;
 
   /**
    * Initial capital (for reference)
@@ -34,17 +34,17 @@ export class Portfolio {
   /**
    * Current price (for calculating unrealized PnL)
    */
-  private currentPrice: number = 0;
+  protected currentPrice: number = 0;
 
   /**
    * Symbol being traded
    */
-  private readonly symbol: string;
+  protected readonly symbol: string;
 
   /**
    * All trades executed in this portfolio
    */
-  private _trades: Trade[] = [];
+  protected _trades: Trade[] = [];
 
   constructor(initialCapital: number, symbol: string) {
     if (initialCapital <= 0) {

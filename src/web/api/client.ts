@@ -9,6 +9,8 @@ import type {
   Candle,
   CandleRequest,
   RunBacktestRequest,
+  RunPairsBacktestRequest,
+  PairsBacktestResult,
   StrategyDetails,
   StrategyInfo,
   ApiError,
@@ -87,6 +89,18 @@ export async function runBacktest(
   config: RunBacktestRequest
 ): Promise<BacktestResult> {
   return apiFetch<BacktestResult>('/backtest/run', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+/**
+ * Run a pairs trading backtest
+ */
+export async function runPairsBacktest(
+  config: RunPairsBacktestRequest
+): Promise<PairsBacktestResult> {
+  return apiFetch<PairsBacktestResult>('/backtest/pairs/run', {
     method: 'POST',
     body: JSON.stringify(config),
   });

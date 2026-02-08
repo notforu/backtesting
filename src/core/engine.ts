@@ -15,10 +15,11 @@ import type {
 } from './types.js';
 import { BacktestConfigSchema } from './types.js';
 import { Portfolio } from './portfolio.js';
+import { LeveragedPortfolio } from './leveraged-portfolio.js';
 import { Broker, type BrokerConfig } from './broker.js';
 import { loadStrategy } from '../strategy/loader.js';
 import { validateStrategyParams, type StrategyContext, type LogEntry, type CandleView } from '../strategy/base.js';
-import { calculateMetrics, generateEquityCurve } from '../analysis/metrics.js';
+import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
 import { getProvider } from '../data/providers/index.js';
 import { getCandles, saveCandles, saveBacktestRun, getCandleDateRange } from '../data/db.js';
 
@@ -211,8 +212,13 @@ export async function runBacktest(
     ...options.broker,
     feeRate,
   };
-  const portfolio = new Portfolio(validatedConfig.initialCapital, validatedConfig.symbol);
+  const leverage = validatedConfig.leverage ?? 1;
+  const portfolio = leverage > 1
+    ? new LeveragedPortfolio(validatedConfig.initialCapital, validatedConfig.symbol, leverage)
+    : new Portfolio(validatedConfig.initialCapital, validatedConfig.symbol);
   const broker = new Broker(portfolio, brokerConfig);
+
+  log(`Using leverage: ${leverage}x`, Date.now());
 
   // 4. Track results
   const trades: Trade[] = [];
@@ -306,6 +312,15 @@ export async function runBacktest(
 
     // Update portfolio price
     portfolio.updatePrice(candle.close);
+
+    // Check for liquidation (only for leveraged portfolios)
+    if (portfolio instanceof LeveragedPortfolio && portfolio.wasLiquidated) {
+      const liqTrade = portfolio.getLiquidationTrade();
+      if (liqTrade) {
+        trades.push(liqTrade);
+        log(`LIQUIDATION: Position closed at ${candle.close}`, candle.timestamp);
+      }
+    }
 
     // Reset pending actions for this bar
     pendingActions = [];
@@ -401,6 +416,7 @@ export async function runBacktest(
   // 10. Calculate metrics
   log(`Calculating metrics from ${trades.length} trades`, Date.now());
   const metrics = calculateMetrics(trades, equity, validatedConfig.initialCapital);
+  const rollingMetrics = calculateRollingMetrics(trades, equity, validatedConfig.initialCapital);
 
   // 11. Build result
   const result: BacktestResult = {
@@ -409,6 +425,7 @@ export async function runBacktest(
     trades,
     equity,
     metrics,
+    rollingMetrics,
     createdAt: Date.now(),
   };
 

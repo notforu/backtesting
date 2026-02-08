@@ -11,6 +11,8 @@
  *   --timeframe=TF        Candle timeframe (default: 4h)
  *   --capital=AMOUNT      Initial capital (default: 10000)
  *   --param.KEY=VALUE     Strategy parameter override
+ *   --symbol-b=SYMBOL     Second symbol for pairs trading (optional)
+ *   --leverage=NUM        Leverage for pairs trading (default: 1)
  *
  * Outputs JSON to stdout:
  * - Success: {"success":true,"metrics":{...},"tradeCount":42}
@@ -19,9 +21,11 @@
  * All logging goes to stderr
  */
 
+import { v4 as uuidv4 } from 'uuid';
 import { runBacktest, createBacktestConfig } from '../core/engine.js';
+import { runPairsBacktest } from '../core/pairs-engine.js';
 import { closeDb } from '../data/db.js';
-import type { Timeframe } from '../core/types.js';
+import type { Timeframe, PairsBacktestConfig } from '../core/types.js';
 
 /**
  * Parse command line arguments
@@ -111,26 +115,51 @@ async function main(): Promise<void> {
     }
   }
 
-  // Create backtest configuration
-  const config = createBacktestConfig({
-    strategyName: args.strategy,
-    symbol: args.symbol,
-    timeframe: (args.timeframe || '4h') as Timeframe,
-    startDate,
-    endDate,
-    initialCapital: args.capital ? Number(args.capital) : 10000,
-    exchange: args.exchange || 'binance',
-    params: strategyParams,
-  });
+  // Check if this is a pairs strategy
+  const symbolB = args['symbol-b'];
+  const leverage = args.leverage ? Number(args.leverage) : 1;
 
-  console.error(`Running backtest: ${config.strategyName} on ${config.symbol}`);
+  console.error(`Running backtest: ${args.strategy} on ${args.symbol}${symbolB ? ` / ${symbolB}` : ''}`);
 
   try {
-    // Run the backtest (with saveResults: false)
-    const result = await runBacktest(config, {
-      enableLogging: false,
-      saveResults: false,
-    });
+    let result;
+
+    if (symbolB) {
+      // Pairs strategy - use pairs backtest
+      const pairsConfig: PairsBacktestConfig = {
+        id: uuidv4(),
+        strategyName: args.strategy,
+        params: strategyParams,
+        symbolA: args.symbol,
+        symbolB: symbolB,
+        timeframe: (args.timeframe || '4h') as Timeframe,
+        startDate,
+        endDate,
+        initialCapital: args.capital ? Number(args.capital) : 10000,
+        exchange: args.exchange || 'binance',
+        leverage,
+      };
+      result = await runPairsBacktest(pairsConfig, {
+        enableLogging: false,
+        saveResults: false,
+      });
+    } else {
+      // Single symbol strategy - use regular backtest
+      const config = createBacktestConfig({
+        strategyName: args.strategy,
+        symbol: args.symbol,
+        timeframe: (args.timeframe || '4h') as Timeframe,
+        startDate,
+        endDate,
+        initialCapital: args.capital ? Number(args.capital) : 10000,
+        exchange: args.exchange || 'binance',
+        params: strategyParams,
+      });
+      result = await runBacktest(config, {
+        enableLogging: false,
+        saveResults: false,
+      });
+    }
 
     // Output JSON result to stdout
     process.stdout.write(JSON.stringify({

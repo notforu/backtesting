@@ -26,6 +26,8 @@ const OptimizeRequestSchema = z.object({
   maxCombinations: z.number().positive().optional().default(500),
   batchSize: z.number().positive().optional().default(4),
   minTrades: z.number().positive().optional().default(15),
+  symbolB: z.string().optional(),
+  leverage: z.number().positive().optional().default(1),
 });
 
 type OptimizeRequest = z.infer<typeof OptimizeRequestSchema>;
@@ -66,6 +68,8 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
           maxCombinations: parsed.maxCombinations,
           batchSize: parsed.batchSize,
           minTrades: parsed.minTrades,
+          symbolB: parsed.symbolB,
+          leverage: parsed.leverage,
         },
         // Progress callback - send SSE events
         (progress) => {
