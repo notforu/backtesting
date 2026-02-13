@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import type { BacktestResult, PairsBacktestResult, PairsBacktestConfig, RunBacktestRequest, Timeframe } from '../types';
+import type { BacktestResult, PairsBacktestResult, RunBacktestRequest, Timeframe } from '../types';
 
 // ============================================================================
 // Backtest Store
@@ -87,6 +87,7 @@ interface ConfigStore {
   initialCapital: number;
   exchange: string;
   leverage: number;
+  _configSource: 'dropdown' | 'history' | 'init';
 
   // Actions
   setStrategy: (strategy: string) => void;
@@ -130,12 +131,13 @@ const defaultConfigState = {
   initialCapital: 10000,
   exchange: 'binance',
   leverage: 1,
+  _configSource: 'init' as const,
 };
 
 export const useConfigStore = create<ConfigStore>((set, get) => ({
   ...defaultConfigState,
 
-  setStrategy: (strategy) => set({ strategy, params: {} }),
+  setStrategy: (strategy) => set({ strategy, params: {}, _configSource: 'dropdown' }),
   setParams: (params) => set({ params }),
   updateParam: (key, value) =>
     set((state) => ({
@@ -165,9 +167,9 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
   },
 
   applyHistoryParams: (result) => {
-    const isPairs = 'candlesA' in result && 'candlesB' in result;
+    const config = result.config as any;
+    const isPairs = config.symbolA && config.symbolB;
     if (isPairs) {
-      const config = result.config as PairsBacktestConfig;
       set({
         strategy: config.strategyName,
         params: config.params,
@@ -178,10 +180,10 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
         endDate: new Date(config.endDate).toISOString().split('T')[0],
         initialCapital: config.initialCapital,
         exchange: config.exchange,
-        leverage: config.leverage,
+        leverage: config.leverage || 1,
+        _configSource: 'history',
       });
     } else {
-      const config = result.config;
       set({
         strategy: config.strategyName,
         params: config.params,
@@ -193,6 +195,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
         initialCapital: config.initialCapital,
         exchange: config.exchange,
         leverage: 1,
+        _configSource: 'history',
       });
     }
   },

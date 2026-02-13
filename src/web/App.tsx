@@ -25,7 +25,14 @@ const queryClient = new QueryClient({
 });
 
 function isPairsResult(result: unknown): result is PairsBacktestResult {
-  return result !== null && typeof result === 'object' && 'candlesA' in result && 'candlesB' in result;
+  if (result === null || typeof result !== 'object') return false;
+  // Check for candlesA/candlesB (live results) OR symbolA in config (loaded from history)
+  if ('candlesA' in result && 'candlesB' in result) return true;
+  if ('config' in result) {
+    const config = (result as any).config;
+    return config && typeof config === 'object' && 'symbolA' in config && 'symbolB' in config;
+  }
+  return false;
 }
 
 function AppContent() {
@@ -138,6 +145,7 @@ function AppContent() {
                   candles={(currentResult as BacktestResult)?.candles ?? []}
                   trades={currentResult?.trades ?? []}
                   height={450}
+                  isPolymarket={(currentResult as BacktestResult)?.config.exchange === 'polymarket'}
                 />
               )}
             </section>

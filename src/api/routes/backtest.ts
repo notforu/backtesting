@@ -135,7 +135,35 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         });
       }
 
-      // Fetch candles for the chart display
+      const config = result.config as any;
+
+      // Check if this is a pairs result (has symbolA/symbolB)
+      if (config.symbolA && config.symbolB) {
+        // Fetch candles for both symbols
+        const candlesA = getCandles(
+          config.exchange,
+          config.symbolA,
+          config.timeframe,
+          config.startDate,
+          config.endDate
+        );
+        const candlesB = getCandles(
+          config.exchange,
+          config.symbolB,
+          config.timeframe,
+          config.startDate,
+          config.endDate
+        );
+
+        return reply.status(200).send({
+          ...result,
+          candlesA,
+          candlesB,
+          duration: 0,
+        });
+      }
+
+      // Single-market result
       const candles = getCandles(
         result.config.exchange,
         result.config.symbol,

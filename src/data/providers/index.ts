@@ -5,17 +5,21 @@
 
 import { type DataProvider } from './base.js';
 import { BinanceProvider } from './binance.js';
+import { PolymarketProvider } from './polymarket.js';
+import { ManifoldProvider } from './manifold.js';
 
 /**
  * Supported exchange identifiers
  */
-export type SupportedExchange = 'binance';
+export type SupportedExchange = 'binance' | 'polymarket' | 'manifold';
 
 /**
  * Registry of provider factories
  */
 const providerRegistry: Record<SupportedExchange, () => DataProvider> = {
   binance: () => new BinanceProvider(),
+  polymarket: () => new PolymarketProvider(),
+  manifold: () => new ManifoldProvider(),
 };
 
 /**
@@ -70,3 +74,5 @@ export function isExchangeSupported(exchange: string): boolean {
 // Re-export types and classes
 export { type DataProvider, RateLimiter } from './base.js';
 export { BinanceProvider } from './binance.js';
+export { PolymarketProvider } from './polymarket.js';
+export { ManifoldProvider } from './manifold.js';

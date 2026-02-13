@@ -9,6 +9,7 @@ import { backtestRoutes } from './routes/backtest.js';
 import { strategyRoutes } from './routes/strategies.js';
 import { candleRoutes } from './routes/candles.js';
 import { optimizeRoutes } from './routes/optimize.js';
+import { polymarketRoutes } from './routes/polymarket.js';
 import { getDb, closeDb } from '../data/db.js';
 
 const fastify = Fastify({
@@ -39,6 +40,7 @@ await fastify.register(backtestRoutes);
 await fastify.register(strategyRoutes);
 await fastify.register(candleRoutes);
 await fastify.register(optimizeRoutes);
+await fastify.register(polymarketRoutes);
 
 // Graceful shutdown
 const shutdown = async () => {
@@ -87,6 +89,10 @@ Available endpoints:
   GET    /api/optimize/all      - List all optimizations
   DELETE /api/optimize/:strategyName/:symbol/:timeframe - Delete all runs
   DELETE /api/optimize/id/:id    - Delete specific run
+
+  GET    /api/polymarket/markets         - Browse/search Polymarket markets
+  GET    /api/polymarket/markets/:slug   - Get market details by slug
+  GET    /api/polymarket/categories      - List available market categories
 `);
   } catch (err) {
     fastify.log.error(err);

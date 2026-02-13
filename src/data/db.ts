@@ -144,6 +144,23 @@ function initializeTables(database: Database.Database): void {
       tested_combinations INTEGER NOT NULL
     );
 
+    -- Polymarket markets metadata cache
+    CREATE TABLE IF NOT EXISTS polymarket_markets (
+      id TEXT PRIMARY KEY,
+      question TEXT NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      condition_id TEXT NOT NULL,
+      clob_token_ids TEXT NOT NULL,
+      end_date TEXT,
+      category TEXT,
+      liquidity TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      closed INTEGER NOT NULL DEFAULT 0,
+      image TEXT,
+      volume TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
     -- Indexes for efficient lookups
     CREATE INDEX IF NOT EXISTS idx_candles_lookup
       ON candles(exchange, symbol, timeframe, timestamp);
@@ -157,6 +174,10 @@ function initializeTables(database: Database.Database): void {
       ON optimization_results(strategy_name, symbol);
     CREATE INDEX IF NOT EXISTS idx_optimized_params_lookup
       ON optimized_params(strategy_name, symbol, timeframe);
+    CREATE INDEX IF NOT EXISTS idx_polymarket_markets_slug
+      ON polymarket_markets(slug);
+    CREATE INDEX IF NOT EXISTS idx_polymarket_markets_category
+      ON polymarket_markets(category);
   `);
 
   // Run migrations for existing databases

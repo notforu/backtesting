@@ -10,7 +10,7 @@ import type { PairsStrategy, PairsStrategyContext } from '../strategy/pairs-base
 import { validateStrategyParams, type CandleView } from '../strategy/base.js';
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
 import { getProvider } from '../data/providers/index.js';
-import { getCandles, saveCandles, getCandleDateRange } from '../data/db.js';
+import { getCandles, saveCandles, getCandleDateRange, saveBacktestRun } from '../data/db.js';
 import type { EngineConfig } from './engine.js';
 import { loadStrategy } from '../strategy/loader.js';
 
@@ -88,7 +88,7 @@ const DEFAULT_PAIRS_ENGINE_CONFIG: EngineConfig = {
     commissionPercent: 0,
     feeRate: 0,
   },
-  saveResults: false, // Pairs results not saved to DB yet
+  saveResults: true,
   enableLogging: true,
 };
 
@@ -450,6 +450,25 @@ export async function runPairsBacktest(
   };
 
   log(`Backtest complete. Total return: ${metrics.totalReturnPercent.toFixed(2)}%`);
+
+  // Save to database (preserve pairs config with symbolA/symbolB)
+  if (options.saveResults) {
+    log('Saving pairs results to database');
+    // Save with original pairs config, adding 'symbol' for summary display
+    const saveConfig = {
+      ...config,
+      symbol: `${config.symbolA} / ${config.symbolB}`,
+    };
+    saveBacktestRun({
+      id: result.id,
+      config: saveConfig as any,
+      trades: result.trades,
+      equity: result.equity,
+      metrics: result.metrics,
+      rollingMetrics: result.rollingMetrics,
+      createdAt: result.createdAt,
+    });
+  }
 
   return result;
 }

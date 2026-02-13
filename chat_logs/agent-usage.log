@@ -259,3 +259,28 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-13 15:10] fe-dev (sonnet) - History params apply to form + Clear All button + deleteAllHistory hook
 [2026-02-13 16:10] runner (haiku) - Kill stuck processes, start dev server, run 6 backtests, verify results
 [2026-02-13 12:00] runner (haiku) - Kill servers on 3001/5175, start npm run dev on ports 3000/5173
+[2026-02-13 15:12] commit (haiku) - Create comprehensive commit for pairs strategies and history UI features
+[2026-02-13 16:48] orchestrator (sonnet) - Polymarket strategy backtesting full implementation (6 phases)
+[2026-02-13 16:50] be-dev (sonnet) - Create Polymarket market discovery API routes
+[2026-02-13 16:50] fe-dev (sonnet) - Add Polymarket support to frontend (exchange dropdown, market browser, chart formatting)
+[2026-02-13 19:50] be-dev (sonnet) - Phase 1: Polymarket data provider (types, provider, cache, registry, DB migration)
+[2026-02-13 19:50] be-dev (sonnet) - Phase 2: Polymarket API routes (market search, categories, server registration)
+[2026-02-13 19:50] fe-dev (sonnet) - Phase 6: Frontend polymarket UI (exchange dropdown, market browser, chart formatting)
+[2026-02-13 20:00] be-dev (sonnet) - Implement Polymarket data provider (types, provider, cache, DB schema)
+[2026-02-13 16:54] fe-dev (sonnet) - Completed: Add Polymarket support to frontend (exchange dropdown, market browser, chart formatting)
+[2026-02-13 19:55] be-dev (sonnet) - Phase 3a: pm-information-edge momentum strategy
+[2026-02-13 19:55] be-dev (sonnet) - Phase 3b: pm-correlation-pairs z-score mean reversion strategy
+[2026-02-13 19:55] be-dev (sonnet) - Phase 5: Manifold provider + cross-platform arb strategy
+[2026-02-13 20:00] be-dev (sonnet) - Create pm-information-edge strategy (momentum/trend-following on probability changes)
+[2026-02-13 16:56] be-dev (sonnet) - Create pm-correlation-pairs strategy (z-score mean reversion for prediction markets)
+[2026-02-13 16:57] be-dev (sonnet) - Create Manifold Markets provider and cross-platform arbitrage strategy
+[2026-02-13 20:30] docs-writer (haiku) - Changelog for Polymarket prediction market integration
+[2026-02-13 23:26] orchestrator (sonnet) - Fix frontend pairs backtest detection from history
+[2026-02-13 23:26] fe-dev (sonnet) - Fix frontend pairs backtest detection from history
+[2026-02-13 23:30] docs-writer (haiku) - Create changelog for pairs history detection fix
+[2026-02-13 14:30] be-dev (sonnet) - Fix pairs backtest results loading bugs (preserve config, fetch candles)
+[2026-02-14 00:00] fe-dev (sonnet) - Fix history params overwrite bug with _configSource
+[2026-02-14 00:00] be-dev (sonnet) - Fix critical IIFE closure state persistence bug in PM strategies
+[2026-02-14 00:46] be-dev (sonnet) - Fix IIFE closure state persistence in PM strategies
+[2026-02-14 00:46] fe-dev (sonnet) - Fix params reset bug with _configSource approach
+[2026-02-14 00:50] docs-writer (haiku) - Changelog for strategy rerun and history params fixes

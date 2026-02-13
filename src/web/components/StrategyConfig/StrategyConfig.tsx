@@ -15,6 +15,7 @@ import {
   useOptimizerModalStore,
 } from '../../stores/backtestStore';
 import type { StrategyParam, Timeframe } from '../../types';
+import { PolymarketBrowser } from '../PolymarketBrowser';
 
 // Available timeframes
 const TIMEFRAMES: { value: Timeframe; label: string }[] = [
@@ -26,6 +27,12 @@ const TIMEFRAMES: { value: Timeframe; label: string }[] = [
   { value: '4h', label: '4 Hours' },
   { value: '1d', label: '1 Day' },
   { value: '1w', label: '1 Week' },
+];
+
+// Polymarket limited timeframes (prediction markets have limited granularity)
+const POLYMARKET_TIMEFRAMES: { value: Timeframe; label: string }[] = [
+  { value: '1h', label: '1 Hour' },
+  { value: '1d', label: '1 Day' },
 ];
 
 // Common trading pairs
@@ -162,6 +169,7 @@ export function StrategyConfig() {
     setStartDate,
     setEndDate,
     setInitialCapital,
+    setExchange,
     setLeverage,
     setParams,
     getConfig,
@@ -189,22 +197,31 @@ export function StrategyConfig() {
   // Collapsible params state
   const [paramsExpanded, setParamsExpanded] = useState(true);
 
-  // Initialize params with defaults when strategy changes
+  // Initialize params with defaults when strategy changes (skip if loaded from history)
   useEffect(() => {
     if (strategyDetails?.params) {
+      // Skip if params already set (applyHistoryParams sets params before this fires)
+      // setStrategy() clears params to {}, so this only skips for history loads
+      const currentParams = useConfigStore.getState().params;
+      const source = useConfigStore.getState()._configSource;
+      if (source === 'history' || Object.keys(currentParams).length > 0) {
+        setParamsExpanded((strategyDetails.params.length || 0) < 4);
+        return;
+      }
       const defaultParams: Record<string, unknown> = {};
       strategyDetails.params.forEach((p) => {
         defaultParams[p.name] = p.default;
       });
       setParams(defaultParams);
       setUsingOptimizedParams(false);
-      // Auto-expand if 4 or more params
       setParamsExpanded((strategyDetails.params.length || 0) < 4);
     }
   }, [strategyDetails, setParams, setUsingOptimizedParams]);
 
-  // Auto-apply optimized params when available
+  // Auto-apply optimized params when available (skip if loaded from history)
   useEffect(() => {
+    const source = useConfigStore.getState()._configSource;
+    if (source === 'history') return;
     if (optimizedParams && optimizedParams.length > 0 && !optimizedParamsError && strategy && symbol && timeframe) {
       // Use the most recent optimization result (first in array)
       setParams(optimizedParams[0].bestParams);
@@ -220,8 +237,7 @@ export function StrategyConfig() {
     const isPairsStrategy = strategyDetails?.isPairs;
 
     if (isPairsStrategy) {
-      // Run pairs backtest
-      runPairsBacktestMutation.mutate({
+      const req = {
         strategyName: strategy,
         params,
         symbolA: symbol,
@@ -232,14 +248,14 @@ export function StrategyConfig() {
         initialCapital,
         exchange: exchange || 'binance',
         leverage,
-      });
+      };
+      console.log('[Backtest] Running pairs:', JSON.stringify(req, null, 2));
+      runPairsBacktestMutation.mutate(req);
     } else {
-      // Run regular backtest
       const config = getConfig();
-      runBacktestMutation.mutate({
-        ...config,
-        exchange: exchange || 'binance',
-      });
+      const req = { ...config, exchange: exchange || 'binance' };
+      console.log('[Backtest] Running single:', JSON.stringify(req, null, 2));
+      runBacktestMutation.mutate(req);
     }
   };
 
@@ -295,25 +311,55 @@ export function StrategyConfig() {
         )}
       </div>
 
+      {/* Exchange Selection */}
+      <div>
+        <label className="block text-sm text-gray-400 mb-1">Exchange</label>
+        <select
+          value={exchange}
+          onChange={(e) => {
+            setExchange(e.target.value);
+            // Reset symbol when changing exchange
+            if (e.target.value === 'polymarket') {
+              setSymbol('');
+            } else {
+              setSymbol('BTCUSDT');
+            }
+          }}
+          className={inputClass}
+        >
+          <option value="binance">Binance</option>
+          <option value="polymarket">Polymarket</option>
+        </select>
+      </div>
+
       {/* Symbol & Timeframe */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-gray-400 mb-1">
-            {isPairsStrategy ? 'Symbol A' : 'Symbol'}
-          </label>
-          <input
-            type="text"
-            value={symbol}
-            onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-            placeholder="BTCUSDT"
-            className={inputClass}
-            list="symbols"
-          />
-          <datalist id="symbols">
-            {COMMON_SYMBOLS.map((s) => (
-              <option key={s} value={s} />
-            ))}
-          </datalist>
+          {exchange === 'polymarket' ? (
+            <PolymarketBrowser
+              onSelect={(slug) => setSymbol(`PM:${slug}`)}
+              selectedSlug={symbol.startsWith('PM:') ? symbol.slice(3) : undefined}
+            />
+          ) : (
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">
+                {isPairsStrategy ? 'Symbol A' : 'Symbol'}
+              </label>
+              <input
+                type="text"
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                placeholder="BTCUSDT"
+                className={inputClass}
+                list="symbols"
+              />
+              <datalist id="symbols">
+                {COMMON_SYMBOLS.map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-sm text-gray-400 mb-1">Timeframe</label>
@@ -322,7 +368,7 @@ export function StrategyConfig() {
             onChange={(e) => setTimeframe(e.target.value as Timeframe)}
             className={inputClass}
           >
-            {TIMEFRAMES.map((tf) => (
+            {(exchange === 'polymarket' ? POLYMARKET_TIMEFRAMES : TIMEFRAMES).map((tf) => (
               <option key={tf.value} value={tf.value}>
                 {tf.label}
               </option>

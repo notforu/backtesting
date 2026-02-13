@@ -23,6 +23,7 @@ interface ChartProps {
   candles: Candle[];
   trades: Trade[];
   height?: number;
+  isPolymarket?: boolean;
 }
 
 // Convert timestamp to TradingView time format
@@ -56,7 +57,7 @@ const chartColors = {
 
 type CandlestickSeriesApi = ISeriesApi<'Candlestick'>;
 
-export function Chart({ candles, trades, height = 500 }: ChartProps) {
+export function Chart({ candles, trades, height = 500, isPolymarket = false }: ChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<CandlestickSeriesApi | null>(null);
@@ -123,6 +124,10 @@ export function Chart({ candles, trades, height = 500 }: ChartProps) {
       borderDownColor: chartColors.borderDownColor,
       wickUpColor: chartColors.wickUpColor,
       wickDownColor: chartColors.wickDownColor,
+      priceFormat: isPolymarket ? {
+        type: 'custom',
+        formatter: (price: number) => `${(price * 100).toFixed(1)}%`,
+      } : undefined,
     });
 
     chartRef.current = chart;
