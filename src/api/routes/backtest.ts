@@ -12,6 +12,7 @@ import {
   getBacktestRun,
   getBacktestSummaries,
   deleteBacktestRun,
+  deleteAllBacktestRuns,
   getCandles,
 } from '../../data/index.js';
 
@@ -208,6 +209,28 @@ export async function backtestRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * DELETE /api/backtest/history
+   * Delete all backtest runs
+   */
+  fastify.delete('/api/backtest/history', async (
+    _request: FastifyRequest,
+    reply: FastifyReply
+  ) => {
+    try {
+      const count = deleteAllBacktestRuns();
+      return reply.status(200).send({
+        message: `Deleted ${count} backtest run${count !== 1 ? 's' : ''}`,
+        count,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        return reply.status(500).send({ error: error.message });
+      }
+      return reply.status(500).send({ error: 'Unknown error occurred' });
+    }
+  });
+
+  /**
    * DELETE /api/backtest/:id
    * Delete a backtest run
    */
@@ -278,6 +301,13 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         duration,
       });
     } catch (error) {
+      // Log full error with stack trace
+      fastify.log.error({
+        err: error,
+        msg: 'Error in /api/backtest/pairs/run',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
       if (error instanceof ZodError) {
         return reply.status(400).send({
           error: 'Validation error',

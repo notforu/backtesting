@@ -4,6 +4,21 @@ All notable changes to this project are documented here. Newest entries first.
 
 ---
 
+## [2026-02-11] Pairs Backtest Error Logging
+
+### Changed
+- Enhanced error handling in `/api/backtest/pairs/run` route to log errors with full stack traces
+- Now uses `fastify.log.error()` pattern matching established in `/api/backtest/history` route
+
+### Fixed
+- Improved error visibility for debugging 500 errors in pairs backtesting
+
+**Files**: `src/api/routes/backtest.ts`
+
+See `/docs/changelogs/2026-02-11-120000-pairs-backtest-error-logging.md` for details.
+
+---
+
 ## [2026-02-04] CCI Momentum Breakout Strategy - Walk-Forward Validated
 
 ### Added

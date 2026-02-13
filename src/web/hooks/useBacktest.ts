@@ -12,6 +12,7 @@ import {
   runBacktest,
   runPairsBacktest,
   deleteBacktest,
+  deleteAllHistory,
   getCandles,
   getExchanges,
   getSymbols,
@@ -166,6 +167,22 @@ export function useDeleteBacktest() {
       if (currentResult?.id === deletedId) {
         clear();
       }
+    },
+  });
+}
+
+/**
+ * Delete all backtest history mutation
+ */
+export function useDeleteAllHistory() {
+  const queryClient = useQueryClient();
+  const { clear } = useBacktestStore();
+
+  return useMutation<{ message: string; count: number }, Error, void>({
+    mutationFn: deleteAllHistory,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.history });
+      clear();
     },
   });
 }

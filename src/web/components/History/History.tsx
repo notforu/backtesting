@@ -3,8 +3,8 @@
  * Allows loading and deleting previous results.
  */
 
-import { useHistory, useLoadBacktest, useDeleteBacktest } from '../../hooks/useBacktest';
-import { useBacktestStore } from '../../stores/backtestStore';
+import { useHistory, useLoadBacktest, useDeleteBacktest, useDeleteAllHistory } from '../../hooks/useBacktest';
+import { useBacktestStore, useConfigStore } from '../../stores/backtestStore';
 import type { BacktestSummary } from '../../types';
 
 function formatDate(isoString: string): string {
@@ -111,8 +111,23 @@ function HistoryItem({
 export function History() {
   const { data: history, isLoading, error } = useHistory();
   const { selectedBacktestId } = useBacktestStore();
+  const { applyHistoryParams } = useConfigStore();
   const { loadBacktest } = useLoadBacktest();
   const deleteMutation = useDeleteBacktest();
+  const deleteAllMutation = useDeleteAllHistory();
+
+  const handleSelect = async (id: string) => {
+    const result = await loadBacktest(id);
+    if (result) {
+      applyHistoryParams(result);
+    }
+  };
+
+  const handleClearAll = () => {
+    if (window.confirm('Delete all backtest history? This cannot be undone.')) {
+      deleteAllMutation.mutate();
+    }
+  };
 
   if (isLoading) {
     return (
@@ -160,9 +175,18 @@ export function History() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-white">History</h2>
         {history && history.length > 0 && (
-          <span className="text-xs text-gray-500">
-            {history.length} run{history.length !== 1 ? 's' : ''}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">
+              {history.length} run{history.length !== 1 ? 's' : ''}
+            </span>
+            <button
+              onClick={handleClearAll}
+              disabled={deleteAllMutation.isPending}
+              className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed underline"
+            >
+              {deleteAllMutation.isPending ? 'Clearing...' : 'Clear All'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -193,7 +217,7 @@ export function History() {
               key={item.id}
               item={item}
               isSelected={selectedBacktestId === item.id}
-              onSelect={() => loadBacktest(item.id)}
+              onSelect={() => handleSelect(item.id)}
               onDelete={() => deleteMutation.mutate(item.id)}
               isDeleting={deleteMutation.isPending}
             />

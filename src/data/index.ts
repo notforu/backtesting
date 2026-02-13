@@ -15,6 +15,7 @@ export {
   getBacktestHistory,
   getBacktestSummaries,
   deleteBacktestRun,
+  deleteAllBacktestRuns,
   getTrades,
   saveTrades,
   saveOptimizedParams,

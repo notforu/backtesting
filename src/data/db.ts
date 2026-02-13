@@ -3,6 +3,7 @@
  * Uses better-sqlite3 for synchronous, fast database access
  */
 
+import path from 'path';
 import Database from 'better-sqlite3';
 import type {
   Candle,
@@ -15,9 +16,9 @@ import type {
   TradeAction,
 } from '../core/types.js';
 
-// Use /tmp for database to avoid FUSE filesystem issues with SQLite locking
+// Store database in project data/ directory for persistent caching
 // Can override with DB_PATH environment variable
-const DB_PATH = process.env.DB_PATH || '/tmp/backtesting.db';
+const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'backtesting.db');
 
 // ============================================================================
 // Database Connection
@@ -539,6 +540,19 @@ export function deleteBacktestRun(id: string): boolean {
   database.prepare('DELETE FROM trades_v2 WHERE backtest_id = ?').run(id);
   const result = database.prepare('DELETE FROM backtest_runs WHERE id = ?').run(id);
   return result.changes > 0;
+}
+
+/**
+ * Delete all backtest runs and their trades
+ */
+export function deleteAllBacktestRuns(): number {
+  const database = getDb();
+  const countResult = database.prepare('SELECT COUNT(*) as count FROM backtest_runs').get() as { count: number };
+  const count = countResult.count;
+  database.prepare('DELETE FROM trades').run();
+  database.prepare('DELETE FROM trades_v2').run();
+  database.prepare('DELETE FROM backtest_runs').run();
+  return count;
 }
 
 // ============================================================================

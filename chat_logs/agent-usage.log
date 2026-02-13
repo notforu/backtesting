@@ -223,3 +223,39 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-07 18:47] be-dev (sonnet) - Integrate pairs strategy support into optimizer, walk-forward, and CLI tools
 [2026-02-07 18:49] fe-dev (sonnet) - Implement dual chart UI for pairs trading (Phase 5)
 [2026-02-07 20:00] docs-writer (haiku) - Create comprehensive changelog for 6-phase pairs trading, leverage, and performance charts release
+[2026-02-08 15:30] quant-lead (opus) - Research pairs z-score optimization: best crypto pairs, timeframes, z-score thresholds, test periods from academic literature
+[2026-02-08 14:58] quant (sonnet) - Grid search optimization for pairs-zscore-scalper on SOL/USDT vs AVAX/USDT
+[2026-02-08 14:57] quant (sonnet) - Grid search optimization for pairs-zscore-scalper on SOL/AVAX
+[2026-02-08 14:57] quant (sonnet) - Grid search optimization for pairs-zscore-scalper strategy
+[2026-02-08 14:59] quant (sonnet) - Quick grid search optimization for pairs-zscore-scalper on BTC/ETH 1h timeframe
+[2026-02-08 09:30] quant (sonnet) - Re-optimize pairs-zscore-scalper with fixed hedge ratio
+[2026-02-08 18:27] quant (sonnet) - Re-optimize pairs-zscore-scalper with fixed hedge ratio
+[2026-02-08 18:26] quant (sonnet) - Re-optimize pairs-zscore-scalper with fixed OLS hedge ratio
+[2026-02-09 17:25] quant (sonnet) - Grid search optimization for pairs-zscore-scalper strategy
+[2026-02-09 17:25] quant (sonnet) - Grid search optimization and backtest verification for pairs-zscore-scalper strategy on SOL/USDT-AVAX/USDT
+[2026-02-09 17:25] quant (sonnet) - Grid search optimization for pairs-zscore-scalper strategy
+ be-dev (sonnet) - Implement pairs-kalman-reversion strategy with Kalman filter hedge ratio
+[2026-02-09 17:35] quant (sonnet) - Implement and optimize pairs-bollinger-reversion strategy
+[2026-02-09 10:30] quant (sonnet) - Implement + optimize pairs-kalman-reversion strategy
+[2026-02-09 10:30] quant (sonnet) - Implement + optimize pairs-bollinger-reversion strategy
+[2026-02-09 10:30] quant (sonnet) - Implement + optimize pairs-rsi-divergence strategy
+[2026-02-09 10:30] quant (sonnet) - Implement + optimize pairs-htf-mean-reversion strategy
+[2026-02-09 17:35] be-dev (sonnet) - Implement pairs-rsi-divergence strategy with triple confirmation
+[2026-02-09 14:32] quant (sonnet) - Implementing pairs-htf-mean-reversion strategy with multi-regime filtering
+[2026-02-09 14:33] be-dev (sonnet) - Creating pairs-htf-mean-reversion strategy file
+[2026-02-09 17:36] orchestrator (sonnet) - Delegate pairs-rsi-divergence implementation to be-dev
+ quant (sonnet) - Implemented and optimized pairs-kalman-reversion strategy
+[2026-02-09 17:45] quant (sonnet) - Implemented and optimized pairs-rsi-divergence strategy
+[2026-02-09 14:45] quant (sonnet) - Completed pairs-htf-mean-reversion implementation and optimization
+[2026-02-09 17:50] docs-writer (haiku) - Create changelog for four pairs trading strategy variants (Kalman, Bollinger, RSI, HTF)
+[2026-02-11 11:40] be-dev (sonnet) - Add error logging to pairs backtest route
+[2026-02-11 11:43] orchestrator (sonnet) - Coordinate error logging addition
+[2026-02-11 11:43] be-dev (sonnet) - Add error logging to pairs backtest route
+[2026-02-11 12:55] docs-writer (haiku) - Create changelog for pairs route error logging
+[2026-02-13 00:00] orchestrator (sonnet) - Delegating backend tasks: delete all backtest runs endpoint and DB path change
+[2026-02-13 15:08] fe-dev (sonnet) - Frontend features: apply history params to form and delete all history
+[2026-02-13 15:10] orchestrator (sonnet) - Coordinate history UI features + delete all + DB path
+[2026-02-13 15:10] be-dev (sonnet) - Add deleteAllBacktestRuns endpoint + persistent DB path
+[2026-02-13 15:10] fe-dev (sonnet) - History params apply to form + Clear All button + deleteAllHistory hook
+[2026-02-13 16:10] runner (haiku) - Kill stuck processes, start dev server, run 6 backtests, verify results
+[2026-02-13 12:00] runner (haiku) - Kill servers on 3001/5175, start npm run dev on ports 3000/5173

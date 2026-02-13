@@ -43,16 +43,14 @@ async function apiFetch<T>(
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
 
-  const defaultHeaders: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
+  const headers: HeadersInit = { ...options.headers };
+  if (options.body) {
+    (headers as Record<string, string>)['Content-Type'] = 'application/json';
+  }
 
   const response = await fetch(url, {
     ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -125,6 +123,15 @@ export async function getHistory(): Promise<BacktestSummary[]> {
  */
 export async function deleteBacktest(id: string): Promise<void> {
   return apiFetch<void>(`/backtest/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Delete all backtest history
+ */
+export async function deleteAllHistory(): Promise<{ message: string; count: number }> {
+  return apiFetch<{ message: string; count: number }>('/backtest/history', {
     method: 'DELETE',
   });
 }

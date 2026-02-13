@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import type { BacktestResult, PairsBacktestResult, RunBacktestRequest, Timeframe } from '../types';
+import type { BacktestResult, PairsBacktestResult, PairsBacktestConfig, RunBacktestRequest, Timeframe } from '../types';
 
 // ============================================================================
 // Backtest Store
@@ -101,6 +101,7 @@ interface ConfigStore {
   setExchange: (exchange: string) => void;
   setLeverage: (leverage: number) => void;
   getConfig: () => RunBacktestRequest;
+  applyHistoryParams: (result: BacktestResult | PairsBacktestResult) => void;
   reset: () => void;
 }
 
@@ -161,6 +162,39 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
       initialCapital: state.initialCapital,
       exchange: state.exchange,
     };
+  },
+
+  applyHistoryParams: (result) => {
+    const isPairs = 'candlesA' in result && 'candlesB' in result;
+    if (isPairs) {
+      const config = result.config as PairsBacktestConfig;
+      set({
+        strategy: config.strategyName,
+        params: config.params,
+        symbol: config.symbolA,
+        symbolB: config.symbolB,
+        timeframe: config.timeframe,
+        startDate: new Date(config.startDate).toISOString().split('T')[0],
+        endDate: new Date(config.endDate).toISOString().split('T')[0],
+        initialCapital: config.initialCapital,
+        exchange: config.exchange,
+        leverage: config.leverage,
+      });
+    } else {
+      const config = result.config;
+      set({
+        strategy: config.strategyName,
+        params: config.params,
+        symbol: config.symbol,
+        symbolB: '',
+        timeframe: config.timeframe,
+        startDate: new Date(config.startDate).toISOString().split('T')[0],
+        endDate: new Date(config.endDate).toISOString().split('T')[0],
+        initialCapital: config.initialCapital,
+        exchange: config.exchange,
+        leverage: 1,
+      });
+    }
   },
 
   reset: () => set(defaultConfigState),
