@@ -3,28 +3,34 @@
 ---
 ## ⚠️ MANDATORY RULES (READ FIRST - APPLIES TO EVERY PROMPT)
 
-### 🚨 RULE 1: ALWAYS USE ORCHESTRATOR
+### 🚨 RULE 1: DELEGATE CODE CHANGES TO SPECIALIZED AGENTS
 
-**For ANY task involving code changes, IMMEDIATELY delegate to `orchestrator` agent.**
+**For ANY task involving code changes, delegate to specialized agents (be-dev, fe-dev, fullstack-dev).**
 
 ```
-DO NOT call fe-dev, be-dev, or other agents directly.
-DO NOT make code changes yourself.
-ALWAYS: Task tool → subagent_type: "orchestrator"
+For code changes: Task tool → subagent_type: "be-dev" / "fe-dev" / "fullstack-dev"
+For multi-step tasks: Break down yourself, then launch agents in parallel
+For exploration: Task tool → subagent_type: "Explore"
+For committing: Task tool → subagent_type: "commit"
 ```
 
-The orchestrator will:
-- Break down the task
-- **MUST delegate to specialized agents** (fe-dev, be-dev, etc.) - orchestrator does NOT write code itself
-- Ensure proper logging
-- Call docs-writer for changelogs
+**The MAIN Claude Code instance acts as orchestrator:**
+- Break down complex tasks into subtasks
+- Launch specialized agents directly (be-dev, fe-dev, etc.)
+- Parallelize independent work (launch multiple agents in one message)
+- Ensure proper logging and changelogs
 
-**STRICT ENFORCEMENT:**
-- Orchestrator must ALWAYS delegate code changes to fe-dev/be-dev/fullstack-dev
-- Orchestrator must NOT just analyze and return instructions
-- NO exceptions for "trivial" changes - all code changes go through proper delegation
+**Agent selection guide:**
+- `be-dev`: Backend, engine, strategies, API, CLI, metrics
+- `fe-dev`: React components, charts, dashboard, forms
+- `fullstack-dev`: Data fetching, database, cross-cutting concerns
+- `docs-writer`: Changelogs and documentation
 
-**Only exceptions (non-code tasks):**
+**NOTE:** The `orchestrator` agent type is read-only (can analyze and plan but cannot
+write code or launch sub-agents). Use it only for complex planning/analysis tasks.
+
+**Only exceptions (no delegation needed):**
+- Simple single-line fixes
 - Reading/exploring code (use Explore agent)
 - Committing (use commit agent)
 
@@ -55,7 +61,7 @@ After ANY code modification, **ALWAYS call `docs-writer` agent** to create chang
 ### ✅ RULE 4: Session Completion Checklist
 
 Before completing ANY session, verify:
-- [ ] All tasks went through orchestrator
+- [ ] Code changes went through specialized agents (be-dev, fe-dev, etc.)
 - [ ] All agent calls logged to `agent-usage.log`
 - [ ] Changelog created for code changes
 - [ ] Changes committed (if requested)
@@ -79,14 +85,13 @@ A modular crypto backtesting platform for testing trading strategies across mult
 
 ## Agent System
 
-**IMPORTANT**: All non-trivial tasks MUST go through the orchestrator first. The orchestrator will break down work and delegate to specialized agents.
+**IMPORTANT**: The main Claude Code instance acts as orchestrator. For code changes, delegate directly to specialized agents (be-dev, fe-dev, fullstack-dev). The `orchestrator` agent type is read-only and cannot write code or launch sub-agents.
 
 ```
-Use orchestrator agent for any task that:
-- Spans multiple files or components
-- Requires coordination between FE/BE
-- Involves feature implementation
-- Needs architectural decisions
+For code changes: launch be-dev, fe-dev, or fullstack-dev directly
+For complex planning: use orchestrator agent (analysis only)
+For exploration: use Explore agent
+Parallelize: launch multiple agents in one message when work is independent
 ```
 
 ### Available Agents

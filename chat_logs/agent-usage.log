@@ -46,7 +46,7 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-01-24 20:12] Explore (sonnet) - Investigate strategy loading mechanism
 [2026-01-24 20:15] be-dev (sonnet) - Fix StandardDeviation import error in gpt-long-ultimate strategy
 [2026-01-24 20:15] be-dev (sonnet) - Fix StandardDeviation import error in gpt-long-ultimate
-[2026-01-24 20:16] commit (haiku) - Create comprehensive commit consolidating orchestrator rules, trade labels, and GPT LONG ULTIMATE strategy
+[2026-01-24 16:16] commit (manual) - Create comprehensive commit consolidating orchestrator rules, trade labels, and GPT LONG ULTIMATE strategy
 [2026-01-24 17:44] orchestrator (sonnet) - Plan divergence strategy + param optimizer implementation
 [2026-01-24 17:45] orchestrator (sonnet) - Create parameter optimization engine with grid search and database schema
 [2026-01-24 17:46] be-dev (sonnet) - Create Market Leader Divergence strategy
@@ -284,3 +284,74 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-14 00:46] be-dev (sonnet) - Fix IIFE closure state persistence in PM strategies
 [2026-02-14 00:46] fe-dev (sonnet) - Fix params reset bug with _configSource approach
 [2026-02-14 00:50] docs-writer (haiku) - Changelog for strategy rerun and history params fixes
+[2026-02-14 01:14] architect (opus) - Deep dive PM strategy realism analysis
+[2026-02-14 01:19] orchestrator (sonnet) - Fix prediction market data providers: forward-fill, Manifold open price, pagination, real volume
+[2026-02-14 01:19] be-dev (sonnet) - Implement 4 fixes for prediction market providers
+[2026-02-14 01:20] orchestrator (sonnet) - Fix prediction market strategy bugs (log(0) crash, ROC bias, cross-platform arb rework, position size caps)
+[2026-02-14 01:20] be-dev (sonnet) - Fix prediction market strategy bugs per detailed spec
+[2026-02-14 01:22] docs-writer (haiku) - Create changelog for prediction market provider improvements
+[2026-02-14 01:23] be-dev (sonnet) - Fix engine/portfolio execution model for prediction market realism (zero fees, 2% slippage, NO share cash flow)
+[2026-02-14 01:25] be-dev (sonnet) - Fixed PM strategy bugs: log(0) crash, ROC bias, cross-platform arb rework, position caps
+[2026-02-14 01:15] be-dev (sonnet) - Fix data providers: forward-fill, Manifold open/pagination, volume
+[2026-02-14 01:15] be-dev (sonnet) - Fix engine/portfolio: PM fees, slippage, short-selling, leg risk
+[2026-02-14 01:15] be-dev (sonnet) - Fix PM strategy logic: log(0), ROC bias, arb rework, position caps
+[2026-02-14 01:30] docs-writer (haiku) - Changelog for PM backtesting realism fixes
+[2026-02-14 10:18] orchestrator (sonnet) - Fix 4 critical PM bugs: slippage defaults, equity calc, forward-fill, price clamping
+[2026-02-14 10:19] be-dev (sonnet) - Fix 4 critical PM bugs: slippage defaults, equity calc, forward-fill, price clamping
+[2026-02-14 10:24] docs-writer (haiku) - Create changelog for PM bug fixes
+[2026-02-14 10:25] be-dev (sonnet) - Fix 4 critical PM bugs: slippage ??/0, equity calc, forward-fill cache, price clamping
+[2026-02-14 21:01] orchestrator (sonnet) - Add slippage tracking to trades and metrics
+[2026-02-14 21:01] be-dev (sonnet) - Add slippage tracking to Trade type, broker, pairs-engine, and metrics
+[2026-02-14 21:08] fe-dev (sonnet) - Update dashboard to show execution cost with fee+slippage breakdown
+[2026-02-14 21:12] docs-writer (haiku) - Create changelog for slippage tracking feature
+[2026-02-14 06:15] be-dev (sonnet) - Add slippage cost tracking to trades, metrics, and dashboard
+[2026-02-15 23:52] be-dev (sonnet) - Fix trade duration and Sharpe/Sortino annualization bugs, add PM utils
+[2026-02-16 07:56] be-dev (sonnet) - Redesign 3 PM strategies with tighter filters: lower extremes, cooldowns, profit filters, volume filters, minSpreadStd
+[2026-02-16 08:07] orchestrator (sonnet) - PM backtesting improvements: add --slippage CLI param, lower default slippage 2%→1%, tune pm-cross-platform-arb defaults
+[2026-02-16 08:07] be-dev (sonnet) - PM backtesting improvements: add --slippage CLI param, lower default slippage 2%→1%, tune pm-cross-platform-arb defaults
+
+[2026-02-16 08:00] Explore (sonnet) - Explore PM strategy code, providers, and data
+[2026-02-16 08:02] be-dev (sonnet) - Fix PM engine bugs: trade duration, Sharpe annualization, create pm-utils.ts
+[2026-02-16 08:03] be-dev (sonnet) - Redesign 3 PM strategies with profit filters, cooldowns, volume filters
+[2026-02-16 08:04] be-dev (opus) - Fetch new PM market data from Polymarket (stopped - API struggles)
+[2026-02-16 08:06] orchestrator (sonnet) - PM slippage + CLI fixes (couldn't delegate, read-only analysis)
+[2026-02-16 08:07] be-dev (sonnet) - Apply PM slippage 2%→1%, add --slippage CLI param, tune cross-arb defaults
+[2026-02-16 08:10] docs-writer (haiku) - Create changelog for PM strategy overhaul
+[2026-02-16 08:20] Explore (sonnet) - Explore orchestrator agent configuration
+[2026-02-16 08:22] orchestrator (sonnet) - Test orchestrator Task tool (confirmed: no Task tool at runtime)
+[2026-02-16 08:23] orchestrator (sonnet) - Test orchestrator with Bash/Edit tools (confirmed: tools field ignored)
+[2026-02-16 08:24] orchestrator (sonnet) - Test orchestrator with fixed tools (confirmed: built-in type overrides .md)
+[2026-02-16 08:52] be-dev (sonnet) - Update PM strategy defaults from grid search optimization results
+[2026-02-16 12:30] main-instance (opus) - Update pm-correlation-pairs defaults to optimized params, validate both strategies with production defaults
+[2026-02-16 12:30] docs-writer (haiku) - Create changelog for PM strategy final optimization with production defaults
+[2026-02-16 13:30] general-purpose (sonnet) - Research long-running Polymarket markets with slugs
+[2026-02-16 13:30] Explore (sonnet) - Analyze Polymarket data provider codebase
+[2026-02-16 14:00] main-instance (opus) - Fix provider fidelity, comprehensive 48-market backtest, store results
+[2026-02-16 14:30] be-dev (sonnet) - Create PM mean reversion strategy with Bollinger Bands
+[2026-02-16 11:08] be-dev (sonnet) - Create scanner backend with SSE streaming for multi-market PM backtests
+[2026-02-16 11:10] fe-dev (sonnet) - Add scanner types, Zustand store, and API client for multi-market PM scanner
+[2026-02-16 14:30] fe-dev (sonnet) - Build scanner UI components and integration (ScannerResults, PolymarketBrowser multi-select, StrategyConfig scan feature, App.tsx integration)
+[2026-02-16 17:30] Explore (sonnet) - Explore codebase for scanner/strategy implementation context
+[2026-02-16 17:35] be-dev (sonnet) - Create pm-mean-reversion strategy
+[2026-02-16 17:35] be-dev (sonnet) - Create scanner backend API (scan routes, server registration, active markets endpoint)
+[2026-02-16 17:45] fe-dev (sonnet) - Add scanner types, Zustand store, API client functions
+[2026-02-16 17:45] fe-dev (sonnet) - Build scanner UI components and app integration
+[2026-02-16 11:55] runner (haiku) - Start dev server and test PM scanner + mean reversion strategy
+[2026-02-16 11:59] be-dev (sonnet) - Implement automatic filesystem storage for backtest results
+[2026-02-16 18:00] runner (haiku) - Start dev server and test scanner feature
+[2026-02-16 18:05] be-dev (sonnet) - Implement filesystem result storage (result-storage.ts, engine/pairs-engine/scan mods)
+[2026-02-16 22:00] quant-lead (opus) - Comprehensive PM strategy assessment: research 15+ sources, evaluate all 4 PM strategies, honest expected returns for $1K capital
+[2026-02-16 18:30] architect (opus) - Critical assessment of PM trading viability
+[2026-02-16 18:30] quant-lead (opus) - Research PM strategy edge and Favorite Compounder approach
+[2026-02-16 12:40] runner (haiku) - Run two multi-market scans (pm-mean-reversion, pm-information-edge) across 15 Polymarket symbols
+[2026-02-16 12:40] be-dev (sonnet) - Build Favorite Compounder scanner for Polymarket
+[2026-02-16 13:01] docs-writer (haiku) - Create changelog for Favorite Compounder scanner
+[2026-02-16 13:05] quant-lead (opus) - Research Polymarket historical data sources (16+ options analyzed)
+[2026-02-16 13:05] be-dev (sonnet) - Build Favorite Compounder scanner (28K markets scanned)
+[2026-02-17 00:00] be-dev (sonnet) - Implement hybrid dual-fidelity Polymarket data fetching for 13+ months of history
+[2026-02-17 10:00] be-dev (sonnet) - Implement hybrid CLOB data fetching (fidelity=900+60 merge) for 13+ months PM history
+[2026-02-17 05:22] be-dev (sonnet) - Grid search optimization for pm-mean-reversion strategy to reduce max drawdown
+[2026-02-17 10:30] be-dev (sonnet) - Write and run pm-market-scanner.ts: scanned 700 markets, found 31 candidates, backtested 29, saved results
+[2026-02-17 10:35] be-dev (sonnet) - Grid search optimization: found low-DD params for Carti (3.2% DD) and Trump markets (3.4% DD)
+[2026-02-17 10:50] be-dev (sonnet) - PM market scanner v2: scanned 700 markets, backtested 29, found 8 profitable with Sharpe > 0.5
+[2026-02-17 10:55] docs-writer (haiku) - Create changelog for PM optimization and market scan results

@@ -31,3 +31,9 @@ yarn-error.log*
 
 # Playwright MCP output
 .playwright-mcp/
+
+# Backtest results
+/results/
+
+# Docker sandbox config
+.docker/
