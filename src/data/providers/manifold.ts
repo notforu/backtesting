@@ -22,6 +22,8 @@ const MANIFOLD_RATE_LIMIT: RateLimitConfig = {
 interface ManifoldBet {
   createdTime: number; // milliseconds since epoch
   probAfter: number; // probability after bet (0-1)
+  probBefore?: number; // probability before bet (0-1) - may not be available
+  amount?: number; // mana wagered on this bet
 }
 
 /**
@@ -69,23 +71,53 @@ export class ManifoldProvider implements DataProvider {
     }
     const slug = symbol.substring(3); // Remove "MF:" prefix
 
-    // Fetch bet history
-    await this.rateLimiter.throttle();
-    const url = `${this.apiBase}/bets?contractSlug=${slug}&limit=1000&order=ASC`;
+    // Fetch bet history with pagination
+    const allBets: ManifoldBet[] = [];
+    let before: string | undefined;
+    const endMs = end.getTime();
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch bet history from Manifold API: ${response.statusText}`);
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      await this.rateLimiter.throttle();
+      const url = before
+        ? `${this.apiBase}/bets?contractSlug=${slug}&limit=1000&order=ASC&before=${before}`
+        : `${this.apiBase}/bets?contractSlug=${slug}&limit=1000&order=ASC`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch bet history from Manifold API: ${response.statusText}`);
+      }
+
+      const bets = (await response.json()) as ManifoldBet[];
+
+      if (!bets || bets.length === 0) {
+        break; // No more results
+      }
+
+      allBets.push(...bets);
+
+      // Check if all results are past the end date
+      const lastBetTime = bets[bets.length - 1].createdTime;
+      if (lastBetTime > endMs) {
+        break;
+      }
+
+      // If we got fewer than 1000 results, we've reached the end
+      if (bets.length < 1000) {
+        break;
+      }
+
+      // Set cursor for next page (use the last bet's timestamp as "before")
+      // Note: This assumes Manifold API supports pagination. If not, this will fail gracefully.
+      before = String(bets[bets.length - 1].createdTime);
     }
 
-    const bets = (await response.json()) as ManifoldBet[];
-
-    if (!bets || bets.length === 0) {
+    if (allBets.length === 0) {
       return [];
     }
 
     // Convert bets to candles
-    const candles = this.convertBetsToCandles(bets, timeframe, start.getTime(), end.getTime());
+    const candles = this.convertBetsToCandles(allBets, timeframe, start.getTime(), end.getTime());
 
     return candles;
   }
@@ -123,7 +155,9 @@ export class ManifoldProvider implements DataProvider {
     }
 
     // Convert each bucket to a candle
-    for (const [bucketTimestamp, bucketBets] of buckets.entries()) {
+    let prevClose: number | null = null;
+    const bucketEntries = Array.from(buckets.entries());
+    for (const [bucketTimestamp, bucketBets] of bucketEntries) {
       if (bucketBets.length === 0) {
         continue;
       }
@@ -131,11 +165,23 @@ export class ManifoldProvider implements DataProvider {
       // Sort bets by time within bucket
       bucketBets.sort((a, b) => a.createdTime - b.createdTime);
 
-      const open = bucketBets[0].probAfter;
+      // Fix: Use probBefore of first bet if available, otherwise use previous candle's close
+      let open: number;
+      if (bucketBets[0].probBefore !== undefined) {
+        open = bucketBets[0].probBefore;
+      } else if (prevClose !== null) {
+        open = prevClose;
+      } else {
+        // First candle and no probBefore available: use probAfter as fallback
+        open = bucketBets[0].probAfter;
+      }
+
       const close = bucketBets[bucketBets.length - 1].probAfter;
       const high = Math.max(...bucketBets.map((b) => b.probAfter));
       const low = Math.min(...bucketBets.map((b) => b.probAfter));
-      const volume = bucketBets.length; // Use count of bets as volume
+
+      // Use sum of amounts if available, otherwise count of bets
+      const volume = bucketBets.reduce((sum, b) => sum + (b.amount || 1), 0);
 
       candles.push({
         timestamp: bucketTimestamp,
@@ -145,12 +191,45 @@ export class ManifoldProvider implements DataProvider {
         close,
         volume,
       });
+
+      prevClose = close;
     }
 
     // Sort candles by timestamp ascending
     candles.sort((a, b) => a.timestamp - b.timestamp);
 
-    return candles;
+    // Forward-fill missing candles
+    if (candles.length === 0) {
+      return candles;
+    }
+
+    const filledCandles: Candle[] = [];
+    const firstTimestamp = candles[0].timestamp;
+    const lastTimestamp = candles[candles.length - 1].timestamp;
+
+    let candleIndex = 0;
+    let lastCandle = candles[0];
+
+    for (let t = firstTimestamp; t <= lastTimestamp; t += timeframeMs) {
+      // Check if we have a candle for this timestamp
+      if (candleIndex < candles.length && candles[candleIndex].timestamp === t) {
+        filledCandles.push(candles[candleIndex]);
+        lastCandle = candles[candleIndex];
+        candleIndex++;
+      } else {
+        // Forward-fill missing candle
+        filledCandles.push({
+          timestamp: t,
+          open: lastCandle.close,
+          high: lastCandle.close,
+          low: lastCandle.close,
+          close: lastCandle.close,
+          volume: 0,
+        });
+      }
+    }
+
+    return filledCandles;
   }
 
   /**

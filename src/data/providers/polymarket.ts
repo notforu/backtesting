@@ -69,23 +69,78 @@ export class PolymarketProvider implements DataProvider {
 
     const yesTokenId = tokenIds[0];
 
-    // Fetch price history
-    await this.rateLimiter.throttle();
-    const url = `${this.clobApiBase}/prices-history?market=${yesTokenId}&interval=all&fidelity=60`;
+    // Fetch BOTH fidelities and merge for maximum coverage
+    // fidelity=900 gives ~650 pts over 13+ months (sparse, ~1 sample/15h)
+    // fidelity=60 gives ~740 pts over ~31 days (dense, ~1 sample/h)
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch price history from CLOB API: ${response.statusText}`);
+    // Request 1: long-range sparse data (13+ months of history)
+    await this.rateLimiter.throttle();
+    const longRangeUrl = `${this.clobApiBase}/prices-history?market=${yesTokenId}&interval=all&fidelity=900`;
+    const longRangeResponse = await fetch(longRangeUrl);
+    if (!longRangeResponse.ok) {
+      throw new Error(`Failed to fetch long-range price history from CLOB API: ${longRangeResponse.statusText}`);
+    }
+    const longRangeData = (await longRangeResponse.json()) as CLOBPriceHistory;
+    const longRangeHistory = longRangeData.history ?? [];
+
+    // Request 2: short-range dense data (last ~31 days, higher resolution)
+    await this.rateLimiter.throttle();
+    const shortRangeUrl = `${this.clobApiBase}/prices-history?market=${yesTokenId}&interval=all&fidelity=60`;
+    const shortRangeResponse = await fetch(shortRangeUrl);
+    if (!shortRangeResponse.ok) {
+      throw new Error(`Failed to fetch short-range price history from CLOB API: ${shortRangeResponse.statusText}`);
+    }
+    const shortRangeData = (await shortRangeResponse.json()) as CLOBPriceHistory;
+    const shortRangeHistory = shortRangeData.history ?? [];
+
+    // Edge case: if long-range returned no data, fall back to short-range only
+    let mergedHistory: Array<{ t: number; p: number }>;
+    if (longRangeHistory.length === 0) {
+      mergedHistory = shortRangeHistory;
+    } else {
+      // Merge: prefer fidelity=60 data for timestamps it covers (more granular)
+      // The fidelity=60 data starts ~31 days ago - use it from that point forward
+      // Find the earliest timestamp in the short-range data
+      const shortRangeStart = shortRangeHistory.length > 0
+        ? Math.min(...shortRangeHistory.map((p) => p.t))
+        : Infinity;
+
+      // Use long-range data for everything before short-range starts
+      const longRangeOnly = longRangeHistory.filter((p) => p.t < shortRangeStart);
+
+      // Combine: old sparse data + recent dense data
+      const combined = [...longRangeOnly, ...shortRangeHistory];
+
+      // Deduplicate by timestamp (keep the fidelity=60 one if same second)
+      // Since short-range is appended after long-range-only, and we dedup by keeping
+      // the last occurrence per timestamp, the short-range data naturally wins
+      const seenTimestamps = new Map<number, { t: number; p: number }>();
+      for (const point of combined) {
+        seenTimestamps.set(point.t, point);
+      }
+
+      mergedHistory = Array.from(seenTimestamps.values());
+      // Sort by timestamp ascending
+      mergedHistory.sort((a, b) => a.t - b.t);
     }
 
-    const data = (await response.json()) as CLOBPriceHistory;
-
-    if (!data.history || data.history.length === 0) {
+    if (mergedHistory.length === 0) {
       return [];
     }
 
+    // Log data range for debugging
+    const firstTs = mergedHistory[0].t;
+    const lastTs = mergedHistory[mergedHistory.length - 1].t;
+    const firstDate = new Date(firstTs * 1000).toISOString().split('T')[0];
+    const lastDate = new Date(lastTs * 1000).toISOString().split('T')[0];
+    console.log(
+      `[Polymarket] ${slug}: ${mergedHistory.length} price points fetched ` +
+      `(fidelity=900: ${longRangeHistory.length} pts, fidelity=60: ${shortRangeHistory.length} pts) ` +
+      `covering ${firstDate} to ${lastDate}`
+    );
+
     // Convert price points to candles
-    const candles = this.convertPricePointsToCandles(data.history, timeframe, start.getTime(), end.getTime());
+    const candles = this.convertPricePointsToCandles(mergedHistory, timeframe, start.getTime(), end.getTime());
 
     return candles;
   }
@@ -156,7 +211,8 @@ export class PolymarketProvider implements DataProvider {
     }
 
     // Convert each bucket to a candle
-    for (const [bucketTimestamp, points] of buckets.entries()) {
+    const bucketEntries = Array.from(buckets.entries());
+    for (const [bucketTimestamp, points] of bucketEntries) {
       if (points.length === 0) {
         continue;
       }
@@ -168,7 +224,9 @@ export class PolymarketProvider implements DataProvider {
       const close = points[points.length - 1].p;
       const high = Math.max(...points.map((p) => p.p));
       const low = Math.min(...points.map((p) => p.p));
-      const volume = points.length; // Use count of data points as volume
+      // Note: CLOB API /prices-history only provides {t, p} pairs without volume data.
+      // Using count of data points as a proxy, though this is not real dollar volume.
+      const volume = points.length;
 
       candles.push({
         timestamp: bucketTimestamp,
@@ -183,7 +241,38 @@ export class PolymarketProvider implements DataProvider {
     // Sort candles by timestamp ascending
     candles.sort((a, b) => a.timestamp - b.timestamp);
 
-    return candles;
+    // Forward-fill missing candles
+    if (candles.length === 0) {
+      return candles;
+    }
+
+    const filledCandles: Candle[] = [];
+    const firstTimestamp = candles[0].timestamp;
+    const lastTimestamp = candles[candles.length - 1].timestamp;
+
+    let candleIndex = 0;
+    let lastCandle = candles[0];
+
+    for (let t = firstTimestamp; t <= lastTimestamp; t += timeframeMs) {
+      // Check if we have a candle for this timestamp
+      if (candleIndex < candles.length && candles[candleIndex].timestamp === t) {
+        filledCandles.push(candles[candleIndex]);
+        lastCandle = candles[candleIndex];
+        candleIndex++;
+      } else {
+        // Forward-fill missing candle
+        filledCandles.push({
+          timestamp: t,
+          open: lastCandle.close,
+          high: lastCandle.close,
+          low: lastCandle.close,
+          close: lastCandle.close,
+          volume: 0,
+        });
+      }
+    }
+
+    return filledCandles;
   }
 
   /**
@@ -212,12 +301,12 @@ export class PolymarketProvider implements DataProvider {
 
   /**
    * Fetch trading fees for Polymarket
-   * Polymarket charges ~2% fee on trades
+   * Polymarket CLOB has zero trading fees; real cost is bid-ask spread (modeled via slippage)
    */
   async fetchTradingFees(_symbol: string): Promise<TradingFees> {
     return {
       maker: 0,
-      taker: 0.002, // ~0.2% effective fee (Polymarket charges on profit, not notional)
+      taker: 0, // Polymarket CLOB has zero trading fees; real cost is bid-ask spread (modeled via slippage)
     };
   }
 }
