@@ -4,6 +4,49 @@ All notable changes to this project are documented here. Newest entries first.
 
 ---
 
+## [2026-02-16] Filesystem Result Storage for All Backtests
+
+### Added
+- **Result Storage Module** (`src/core/result-storage.ts`): Automatic persistent storage of all backtest results
+  - `saveResultToFile()` - Saves individual backtest results as JSON
+  - `saveScanResultsToFile()` - Saves scanner summary with all market results
+  - Path format: `results/{strategy-name}/{YYYY-MM-DD-HHmmss}-{symbol}.json`
+  - Filesystem sanitization for safe file naming
+
+### Changed
+- **`src/core/engine.ts`**: Auto-saves every backtest result to filesystem after completion
+- **`src/core/pairs-engine.ts`**: Auto-saves pairs backtest results to filesystem
+- **`src/api/routes/scan.ts`**: Collects and saves scanner results summary file
+
+### Context
+Every backtest now persists to filesystem independently of database storage. This ensures reproducibility, provides an audit trail, and allows version control of results. Filesystem saves run independently and never crash backtests even if file I/O fails.
+
+See `/docs/changelogs/2026-02-16-180500-filesystem-result-storage.md` for full details.
+
+---
+
+## [2026-02-16] PM Strategy Final Optimization
+
+### Changed
+- **pm-correlation-pairs.ts**: Updated all default parameters to cross-validated optimal values
+  - lookbackPeriod: 60 → 70
+  - entryZScore: 1.5 → 2.0 (more selective entry signals)
+  - exitZScore: 0.5 → 0.75 (earlier profit-taking)
+  - positionSizePct: 40 → 60 (larger positions on high-conviction)
+  - minCorrelation: 0.5 → 0.9 (only trade highly correlated pairs)
+  - minSpreadStd: 0.05 → 0.066 (require meaningful spread volatility)
+  - cooldownBars: 10 → 16 (longer recovery between trades)
+  - minProfitBps: 350 → 460 (higher profit threshold)
+
+### Context
+Final optimization pass for prediction market strategies based on extensive cross-validation. pm-correlation-pairs is confirmed as the superior production candidate with Sharpe ratios of 3.2+ and drawdowns of only 0.1-0.5%, compared to pm-information-edge (Sharpe 1.0-1.3, drawdowns 9-10%). The higher entry threshold and strict minCorrelation requirement ensure high-conviction trades only on genuinely correlated pairs. pm-information-edge parameters were already optimized in the previous session and remain unchanged (momentumPeriod=20, entryThreshold=0.08, exitThreshold=0.04, minPriceRange=0.15 trend filter).
+
+**Files**: `strategies/pm-correlation-pairs.ts`
+
+See `/docs/changelogs/2026-02-16-123000-pm-strategy-final-optimization.md` for full details.
+
+---
+
 ## [2026-02-11] Pairs Backtest Error Logging
 
 ### Changed
