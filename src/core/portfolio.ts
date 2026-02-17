@@ -42,17 +42,23 @@ export class Portfolio {
   protected readonly symbol: string;
 
   /**
+   * Whether this is a prediction market (affects short position cash flow)
+   */
+  protected readonly isPredictionMarket: boolean;
+
+  /**
    * All trades executed in this portfolio
    */
   protected _trades: Trade[] = [];
 
-  constructor(initialCapital: number, symbol: string) {
+  constructor(initialCapital: number, symbol: string, isPredictionMarket: boolean = false) {
     if (initialCapital <= 0) {
       throw new Error('Initial capital must be positive');
     }
     this._cash = initialCapital;
     this.initialCapital = initialCapital;
     this.symbol = symbol;
+    this.isPredictionMarket = isPredictionMarket;
   }
 
   /**
@@ -116,9 +122,14 @@ export class Portfolio {
     }
 
     if (this._shortPosition) {
-      // Short position: add unrealized PnL (profit when price goes down)
-      const shortPnl = (this._shortPosition.entryPrice - this.currentPrice) * this._shortPosition.amount;
-      total += shortPnl;
+      if (this.isPredictionMarket) {
+        // PM short = NO shares, value = (1 - currentPrice) * amount
+        total += (1 - this.currentPrice) * this._shortPosition.amount;
+      } else {
+        // Short position: add unrealized PnL (profit when price goes down)
+        const shortPnl = (this._shortPosition.entryPrice - this.currentPrice) * this._shortPosition.amount;
+        total += shortPnl;
+      }
     }
 
     return total;
@@ -173,7 +184,7 @@ export class Portfolio {
     this.currentPrice = price;
 
     const trade: Trade = {
-      id: uuidv4(),
+      id: positionId, // Reuse position ID so close trades can reference it
       symbol: this.symbol,
       action: 'OPEN_LONG',
       price,
@@ -284,14 +295,26 @@ export class Portfolio {
     const tradeValue = amount * price;
     const fee = tradeValue * feeRate;
 
-    if (fee > this._cash) {
-      throw new Error(
-        `Insufficient funds for fee: need ${fee.toFixed(2)}, have ${this._cash.toFixed(2)}`
-      );
+    let totalCost: number;
+    if (this.isPredictionMarket) {
+      // In prediction markets, short = buy NO at (1-price)
+      const noCost = amount * (1 - price);
+      totalCost = noCost + fee;
+      if (totalCost > this._cash) {
+        throw new Error(
+          `Insufficient funds: need ${totalCost.toFixed(2)} (including ${fee.toFixed(2)} fee), have ${this._cash.toFixed(2)}`
+        );
+      }
+      this._cash -= totalCost;
+    } else {
+      // Traditional short: only deduct fee
+      if (fee > this._cash) {
+        throw new Error(
+          `Insufficient funds for fee: need ${fee.toFixed(2)}, have ${this._cash.toFixed(2)}`
+        );
+      }
+      this._cash -= fee;
     }
-
-    // Deduct fee from cash
-    this._cash -= fee;
 
     const positionId = uuidv4();
 
@@ -308,7 +331,7 @@ export class Portfolio {
     this.currentPrice = price;
 
     const trade: Trade = {
-      id: uuidv4(),
+      id: positionId, // Reuse position ID so close trades can reference it
       symbol: this.symbol,
       action: 'OPEN_SHORT',
       price,
@@ -363,8 +386,15 @@ export class Portfolio {
     const pnl = grossPnl - fee;
     const pnlPercent = ((entryPrice - price) / entryPrice) * 100;
 
-    // Add PnL to cash minus fee (for shorts, we settle the difference)
-    this._cash += grossPnl - fee;
+    // Add cash back based on market type
+    if (this.isPredictionMarket) {
+      // Return NO share value at exit
+      const noValue = closeAmount * (1 - price);
+      this._cash += noValue - fee;
+    } else {
+      // Traditional short: settle the PnL difference
+      this._cash += grossPnl - fee;
+    }
 
     // Update or clear position
     if (closeAmount >= this._shortPosition.amount) {

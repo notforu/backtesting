@@ -18,12 +18,14 @@ function isCloseTrade(trade: Trade): boolean {
  * @param trades - Array of all trades (open and close)
  * @param equity - Array of equity points over time
  * @param initialCapital - Starting capital
+ * @param timeframe - Optional timeframe for annualization (e.g., '1h', '1d')
  * @returns Complete performance metrics
  */
 export function calculateMetrics(
   trades: Trade[],
   equity: EquityPoint[],
-  initialCapital: number
+  initialCapital: number,
+  timeframe?: string
 ): PerformanceMetrics {
   // Filter to only close trades for PnL calculations
   const closeTrades = trades.filter(isCloseTrade);
@@ -53,6 +55,7 @@ export function calculateMetrics(
       avgTradeDuration: 0,
       exposureTime: 0,
       totalFees: 0,
+      totalSlippage: 0,
     };
   }
 
@@ -116,16 +119,19 @@ export function calculateMetrics(
   const dailyReturns = calculateReturns(equity);
 
   // Sharpe Ratio (assuming risk-free rate of 0 for simplicity)
-  const sharpeRatio = calculateSharpeRatio(dailyReturns);
+  const sharpeRatio = calculateSharpeRatio(dailyReturns, timeframe);
 
   // Sortino Ratio
-  const sortinoRatio = calculateSortinoRatio(dailyReturns);
+  const sortinoRatio = calculateSortinoRatio(dailyReturns, timeframe);
 
   // Exposure time (percentage of time in the market)
   const exposureTime = calculateExposureTime(trades, equity);
 
   // Total fees paid across all trades
   const totalFees = trades.reduce((sum, t) => sum + (t.fee ?? 0), 0);
+
+  // Total slippage cost across all trades
+  const totalSlippage = trades.reduce((sum, t) => sum + (t.slippage ?? 0), 0);
 
   return {
     totalReturn,
@@ -150,6 +156,7 @@ export function calculateMetrics(
     avgTradeDuration,
     exposureTime,
     totalFees,
+    totalSlippage,
   };
 }
 
@@ -234,10 +241,23 @@ function calculateReturns(equity: EquityPoint[]): number[] {
 }
 
 /**
- * Calculate Sharpe Ratio
- * Assumes risk-free rate of 0 and annualizes based on daily returns
+ * Get annualization factor based on timeframe
+ * Defaults to 252 (daily trading days) for backward compatibility
  */
-function calculateSharpeRatio(returns: number[]): number {
+function getAnnualizationFactor(timeframe?: string): number {
+  if (!timeframe) return 252;
+  const factors: Record<string, number> = {
+    '1m': 525600, '5m': 105120, '15m': 35040, '30m': 17520,
+    '1h': 8760, '4h': 2190, '1d': 365, '1w': 52
+  };
+  return factors[timeframe] ?? 365;
+}
+
+/**
+ * Calculate Sharpe Ratio
+ * Assumes risk-free rate of 0 and annualizes based on timeframe
+ */
+function calculateSharpeRatio(returns: number[], timeframe?: string): number {
   if (returns.length < 2) return 0;
 
   const mean = returns.reduce((sum, r) => sum + r, 0) / returns.length;
@@ -248,9 +268,10 @@ function calculateSharpeRatio(returns: number[]): number {
 
   if (stdDev === 0) return 0;
 
-  // Annualize (assuming 252 trading days)
-  const annualizedReturn = mean * 252;
-  const annualizedStdDev = stdDev * Math.sqrt(252);
+  // Annualize based on timeframe
+  const factor = getAnnualizationFactor(timeframe);
+  const annualizedReturn = mean * factor;
+  const annualizedStdDev = stdDev * Math.sqrt(factor);
 
   return annualizedReturn / annualizedStdDev;
 }
@@ -259,7 +280,7 @@ function calculateSharpeRatio(returns: number[]): number {
  * Calculate Sortino Ratio
  * Uses only downside deviation in the denominator
  */
-function calculateSortinoRatio(returns: number[]): number {
+function calculateSortinoRatio(returns: number[], timeframe?: string): number {
   if (returns.length < 2) return 0;
 
   const mean = returns.reduce((sum, r) => sum + r, 0) / returns.length;
@@ -278,9 +299,10 @@ function calculateSortinoRatio(returns: number[]): number {
 
   if (downsideDeviation === 0) return 0;
 
-  // Annualize
-  const annualizedReturn = mean * 252;
-  const annualizedDownsideDev = downsideDeviation * Math.sqrt(252);
+  // Annualize based on timeframe
+  const factor = getAnnualizationFactor(timeframe);
+  const annualizedReturn = mean * factor;
+  const annualizedDownsideDev = downsideDeviation * Math.sqrt(factor);
 
   return annualizedReturn / annualizedDownsideDev;
 }

@@ -5,6 +5,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { Candle, Trade, Timeframe, PairsBacktestConfig, PairsBacktestResult, SpreadDataPoint } from './types.js';
+import { timeframeToMs } from './types.js';
 import { PairsPortfolio } from './pairs-portfolio.js';
 import type { PairsStrategy, PairsStrategyContext } from '../strategy/pairs-base.js';
 import { validateStrategyParams, type CandleView } from '../strategy/base.js';
@@ -13,6 +14,42 @@ import { getProvider } from '../data/providers/index.js';
 import { getCandles, saveCandles, getCandleDateRange, saveBacktestRun } from '../data/db.js';
 import type { EngineConfig } from './engine.js';
 import { loadStrategy } from '../strategy/loader.js';
+import { saveResultToFile } from './result-storage.js';
+
+/**
+ * Forward-fill candles to ensure no gaps in the data
+ * Useful for prediction markets where some periods may have no trades
+ */
+function forwardFillCandles(candles: Candle[], timeframe: Timeframe): Candle[] {
+  if (candles.length <= 1) return candles;
+
+  const timeframeMs = timeframeToMs(timeframe);
+  const filled: Candle[] = [];
+
+  let lastCandle = candles[0];
+  let candleIndex = 0;
+  const firstTs = candles[0].timestamp;
+  const lastTs = candles[candles.length - 1].timestamp;
+
+  for (let t = firstTs; t <= lastTs; t += timeframeMs) {
+    if (candleIndex < candles.length && candles[candleIndex].timestamp === t) {
+      filled.push(candles[candleIndex]);
+      lastCandle = candles[candleIndex];
+      candleIndex++;
+    } else {
+      filled.push({
+        timestamp: t,
+        open: lastCandle.close,
+        high: lastCandle.close,
+        low: lastCandle.close,
+        close: lastCandle.close,
+        volume: 0,
+      });
+    }
+  }
+
+  return filled;
+}
 
 /**
  * Memory-efficient view into candle array without copying
@@ -91,6 +128,18 @@ const DEFAULT_PAIRS_ENGINE_CONFIG: EngineConfig = {
   saveResults: true,
   enableLogging: true,
 };
+
+/**
+ * Apply slippage to a price based on trade direction
+ */
+function applySlippage(price: number, side: 'buy' | 'sell', slippagePct: number, isPredictionMarket: boolean = false): number {
+  if (slippagePct === 0) return price;
+  let slippedPrice = side === 'buy' ? price * (1 + slippagePct / 100) : price * (1 - slippagePct / 100);
+  if (isPredictionMarket) {
+    slippedPrice = Math.max(0.001, Math.min(0.999, slippedPrice));
+  }
+  return slippedPrice;
+}
 
 /**
  * Run a pairs trading backtest
@@ -179,16 +228,29 @@ export async function runPairsBacktest(
     }
   }
 
-  // 5. Initialize pairs portfolio
+  // 5. Initialize pairs portfolio with prediction market detection
   const leverage = config.leverage ?? 1;
+  const isPredictionMarket = ['polymarket', 'manifold'].includes(config.exchange);
+
+  // Prediction market slippage default
+  // Check for both undefined and explicit 0 (default) to apply PM slippage
+  const configuredSlippage = options.broker?.slippagePercent;
+  const slippagePercent = (configuredSlippage === undefined || configuredSlippage === 0)
+    ? (isPredictionMarket ? 1 : 0)
+    : configuredSlippage;
+
   const portfolio = new PairsPortfolio(
     config.initialCapital,
     config.symbolA,
     config.symbolB,
-    leverage
+    leverage,
+    isPredictionMarket
   );
 
   log(`Using leverage: ${leverage}x`);
+  if (slippagePercent > 0) {
+    log(`Using slippage: ${slippagePercent}%`);
+  }
 
   // 6. Track results
   const trades: Trade[] = [];
@@ -292,45 +354,87 @@ export async function runPairsBacktest(
     for (const action of pendingActions) {
       try {
         let trade: Trade | undefined;
+        let originalPrice: number;
+        let slippedPrice: number;
 
         switch (action.type) {
           case 'openLongA':
-            trade = portfolio.openLongA(action.amount!, candleA.close, candleA.timestamp, feeRate);
+            originalPrice = candleA.close;
+            slippedPrice = applySlippage(originalPrice, 'buy', slippagePercent, isPredictionMarket);
+            trade = portfolio.openLongA(action.amount!, slippedPrice, candleA.timestamp, feeRate);
+            if (trade && slippedPrice !== originalPrice) {
+              trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+            }
             break;
           case 'closeLongA': {
             const amount = action.amount ?? portfolio.longPositionA?.amount ?? 0;
             if (amount > 0) {
-              trade = portfolio.closeLongA(amount === portfolio.longPositionA?.amount ? 'all' : amount, candleA.close, candleA.timestamp, feeRate);
+              originalPrice = candleA.close;
+              slippedPrice = applySlippage(originalPrice, 'sell', slippagePercent, isPredictionMarket);
+              trade = portfolio.closeLongA(amount === portfolio.longPositionA?.amount ? 'all' : amount, slippedPrice, candleA.timestamp, feeRate);
+              if (trade && slippedPrice !== originalPrice) {
+                trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+              }
             }
             break;
           }
           case 'openShortA':
-            trade = portfolio.openShortA(action.amount!, candleA.close, candleA.timestamp, feeRate);
+            originalPrice = candleA.close;
+            slippedPrice = applySlippage(originalPrice, 'sell', slippagePercent, isPredictionMarket);
+            trade = portfolio.openShortA(action.amount!, slippedPrice, candleA.timestamp, feeRate);
+            if (trade && slippedPrice !== originalPrice) {
+              trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+            }
             break;
           case 'closeShortA': {
             const amount = action.amount ?? portfolio.shortPositionA?.amount ?? 0;
             if (amount > 0) {
-              trade = portfolio.closeShortA(amount === portfolio.shortPositionA?.amount ? 'all' : amount, candleA.close, candleA.timestamp, feeRate);
+              originalPrice = candleA.close;
+              slippedPrice = applySlippage(originalPrice, 'buy', slippagePercent, isPredictionMarket);
+              trade = portfolio.closeShortA(amount === portfolio.shortPositionA?.amount ? 'all' : amount, slippedPrice, candleA.timestamp, feeRate);
+              if (trade && slippedPrice !== originalPrice) {
+                trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+              }
             }
             break;
           }
           case 'openLongB':
-            trade = portfolio.openLongB(action.amount!, candleB.close, candleB.timestamp, feeRate);
+            originalPrice = candleB.close;
+            slippedPrice = applySlippage(originalPrice, 'buy', slippagePercent, isPredictionMarket);
+            trade = portfolio.openLongB(action.amount!, slippedPrice, candleB.timestamp, feeRate);
+            if (trade && slippedPrice !== originalPrice) {
+              trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+            }
             break;
           case 'closeLongB': {
             const amount = action.amount ?? portfolio.longPositionB?.amount ?? 0;
             if (amount > 0) {
-              trade = portfolio.closeLongB(amount === portfolio.longPositionB?.amount ? 'all' : amount, candleB.close, candleB.timestamp, feeRate);
+              originalPrice = candleB.close;
+              slippedPrice = applySlippage(originalPrice, 'sell', slippagePercent, isPredictionMarket);
+              trade = portfolio.closeLongB(amount === portfolio.longPositionB?.amount ? 'all' : amount, slippedPrice, candleB.timestamp, feeRate);
+              if (trade && slippedPrice !== originalPrice) {
+                trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+              }
             }
             break;
           }
           case 'openShortB':
-            trade = portfolio.openShortB(action.amount!, candleB.close, candleB.timestamp, feeRate);
+            originalPrice = candleB.close;
+            slippedPrice = applySlippage(originalPrice, 'sell', slippagePercent, isPredictionMarket);
+            trade = portfolio.openShortB(action.amount!, slippedPrice, candleB.timestamp, feeRate);
+            if (trade && slippedPrice !== originalPrice) {
+              trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+            }
             break;
           case 'closeShortB': {
             const amount = action.amount ?? portfolio.shortPositionB?.amount ?? 0;
             if (amount > 0) {
-              trade = portfolio.closeShortB(amount === portfolio.shortPositionB?.amount ? 'all' : amount, candleB.close, candleB.timestamp, feeRate);
+              originalPrice = candleB.close;
+              slippedPrice = applySlippage(originalPrice, 'buy', slippagePercent, isPredictionMarket);
+              trade = portfolio.closeShortB(amount === portfolio.shortPositionB?.amount ? 'all' : amount, slippedPrice, candleB.timestamp, feeRate);
+              if (trade && slippedPrice !== originalPrice) {
+                trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+              }
             }
             break;
           }
@@ -380,33 +484,55 @@ export async function runPairsBacktest(
     for (const action of pendingActions) {
       try {
         let trade: Trade | undefined;
+        let originalPrice: number;
+        let slippedPrice: number;
 
         switch (action.type) {
           case 'closeLongA': {
             const amount = action.amount ?? portfolio.longPositionA?.amount ?? 0;
             if (amount > 0) {
-              trade = portfolio.closeLongA('all', candleA.close, candleA.timestamp, feeRate);
+              originalPrice = candleA.close;
+              slippedPrice = applySlippage(originalPrice, 'sell', slippagePercent, isPredictionMarket);
+              trade = portfolio.closeLongA('all', slippedPrice, candleA.timestamp, feeRate);
+              if (trade && slippedPrice !== originalPrice) {
+                trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+              }
             }
             break;
           }
           case 'closeShortA': {
             const amount = action.amount ?? portfolio.shortPositionA?.amount ?? 0;
             if (amount > 0) {
-              trade = portfolio.closeShortA('all', candleA.close, candleA.timestamp, feeRate);
+              originalPrice = candleA.close;
+              slippedPrice = applySlippage(originalPrice, 'buy', slippagePercent, isPredictionMarket);
+              trade = portfolio.closeShortA('all', slippedPrice, candleA.timestamp, feeRate);
+              if (trade && slippedPrice !== originalPrice) {
+                trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+              }
             }
             break;
           }
           case 'closeLongB': {
             const amount = action.amount ?? portfolio.longPositionB?.amount ?? 0;
             if (amount > 0) {
-              trade = portfolio.closeLongB('all', candleB.close, candleB.timestamp, feeRate);
+              originalPrice = candleB.close;
+              slippedPrice = applySlippage(originalPrice, 'sell', slippagePercent, isPredictionMarket);
+              trade = portfolio.closeLongB('all', slippedPrice, candleB.timestamp, feeRate);
+              if (trade && slippedPrice !== originalPrice) {
+                trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+              }
             }
             break;
           }
           case 'closeShortB': {
             const amount = action.amount ?? portfolio.shortPositionB?.amount ?? 0;
             if (amount > 0) {
-              trade = portfolio.closeShortB('all', candleB.close, candleB.timestamp, feeRate);
+              originalPrice = candleB.close;
+              slippedPrice = applySlippage(originalPrice, 'buy', slippagePercent, isPredictionMarket);
+              trade = portfolio.closeShortB('all', slippedPrice, candleB.timestamp, feeRate);
+              if (trade && slippedPrice !== originalPrice) {
+                trade.slippage = Math.abs(slippedPrice - originalPrice) * trade.amount;
+              }
             }
             break;
           }
@@ -432,7 +558,7 @@ export async function runPairsBacktest(
 
   // 12. Calculate metrics
   log(`Calculating metrics from ${trades.length} trades`);
-  const metrics = calculateMetrics(trades, equity, config.initialCapital);
+  const metrics = calculateMetrics(trades, equity, config.initialCapital, config.timeframe);
   const rollingMetrics = calculateRollingMetrics(trades, equity, config.initialCapital);
 
   // 13. Build result
@@ -468,6 +594,14 @@ export async function runPairsBacktest(
       rollingMetrics: result.rollingMetrics,
       createdAt: result.createdAt,
     });
+  }
+
+  // Save to filesystem (always, regardless of saveResults flag)
+  try {
+    const filepath = saveResultToFile(result);
+    log(`Results saved to ${filepath}`);
+  } catch (err) {
+    console.error('Failed to save result to file:', err);
   }
 
   return result;
@@ -506,6 +640,8 @@ async function fetchOrLoadCandles(
   startDate: number,
   endDate: number
 ): Promise<Candle[]> {
+  let candles: Candle[];
+
   // Check what we have in cache
   const cachedRange = getCandleDateRange(exchange, symbol, timeframe);
 
@@ -517,23 +653,28 @@ async function fetchOrLoadCandles(
     cachedRange.end >= endDate
   ) {
     console.log(`Using cached candles for ${symbol}`);
-    return getCandles(exchange, symbol, timeframe, startDate, endDate);
+    candles = getCandles(exchange, symbol, timeframe, startDate, endDate);
+  } else {
+    // Fetch from exchange
+    console.log(`Fetching candles from exchange for ${symbol}...`);
+    const provider = getProvider(exchange);
+    candles = await provider.fetchCandles(
+      symbol,
+      timeframe,
+      new Date(startDate),
+      new Date(endDate)
+    );
+
+    // Cache the fetched candles
+    if (candles.length > 0) {
+      console.log(`Caching ${candles.length} candles for ${symbol}`);
+      saveCandles(candles, exchange, symbol, timeframe);
+    }
   }
 
-  // Fetch from exchange
-  console.log(`Fetching candles from exchange for ${symbol}...`);
-  const provider = getProvider(exchange);
-  const candles = await provider.fetchCandles(
-    symbol,
-    timeframe,
-    new Date(startDate),
-    new Date(endDate)
-  );
-
-  // Cache the fetched candles
-  if (candles.length > 0) {
-    console.log(`Caching ${candles.length} candles for ${symbol}`);
-    saveCandles(candles, exchange, symbol, timeframe);
+  // Apply forward-fill for prediction market exchanges
+  if (['polymarket', 'manifold'].includes(exchange)) {
+    candles = forwardFillCandles(candles, timeframe);
   }
 
   return candles;

@@ -13,6 +13,7 @@
  *   --param.KEY=VALUE     Strategy parameter override
  *   --symbol-b=SYMBOL     Second symbol for pairs trading (optional)
  *   --leverage=NUM        Leverage for pairs trading (default: 1)
+ *   --slippage=PERCENT    Slippage percent override (default: auto-detect based on exchange)
  *
  * Outputs JSON to stdout:
  * - Success: {"success":true,"metrics":{...},"tradeCount":42}
@@ -139,10 +140,14 @@ async function main(): Promise<void> {
         exchange: args.exchange || 'binance',
         leverage,
       };
-      result = await runPairsBacktest(pairsConfig, {
+      const pairsOptions: any = {
         enableLogging: false,
         saveResults: false,
-      });
+      };
+      if (args.slippage !== undefined) {
+        pairsOptions.broker = { slippagePercent: Number(args.slippage) };
+      }
+      result = await runPairsBacktest(pairsConfig, pairsOptions);
     } else {
       // Single symbol strategy - use regular backtest
       const config = createBacktestConfig({
@@ -155,10 +160,14 @@ async function main(): Promise<void> {
         exchange: args.exchange || 'binance',
         params: strategyParams,
       });
-      result = await runBacktest(config, {
+      const options: any = {
         enableLogging: false,
         saveResults: false,
-      });
+      };
+      if (args.slippage !== undefined) {
+        options.broker = { slippagePercent: Number(args.slippage) };
+      }
+      result = await runBacktest(config, options);
     }
 
     // Output JSON result to stdout

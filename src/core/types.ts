@@ -89,6 +89,9 @@ export const TradeSchema = z.object({
   // Fee tracking
   fee: z.number().optional(), // Fee amount in quote currency
   feeRate: z.number().optional(), // Fee rate as decimal (0.001 = 0.1%)
+
+  // Slippage tracking
+  slippage: z.number().optional(), // Slippage cost in quote currency
 });
 
 export type Trade = z.infer<typeof TradeSchema>;
@@ -189,6 +192,7 @@ export const PerformanceMetricsSchema = z.object({
   avgTradeDuration: z.number(),
   exposureTime: z.number(),
   totalFees: z.number(), // Sum of all fees paid
+  totalSlippage: z.number().optional(), // Sum of all slippage costs
 });
 
 export type PerformanceMetrics = z.infer<typeof PerformanceMetricsSchema>;

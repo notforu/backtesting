@@ -32,15 +32,17 @@ export class LeveragedPortfolio extends Portfolio {
    * @param initialCapital - Starting capital
    * @param symbol - Trading symbol
    * @param leverage - Leverage multiplier (1-125, default 1)
+   * @param isPredictionMarket - Whether this is a prediction market (affects short position cash flow)
    * @param maintenanceMarginRate - Maintenance margin as fraction of initial margin (default 0.5 = 50%)
    */
   constructor(
     initialCapital: number,
     symbol: string,
     leverage: number = 1,
+    isPredictionMarket: boolean = false,
     maintenanceMarginRate: number = 0.5
   ) {
-    super(initialCapital, symbol);
+    super(initialCapital, symbol, isPredictionMarket);
 
     if (leverage < 1 || leverage > 125) {
       throw new Error('Leverage must be between 1 and 125');

@@ -13,7 +13,7 @@ import type {
   Timeframe,
   TradeAction,
 } from './types.js';
-import { BacktestConfigSchema } from './types.js';
+import { BacktestConfigSchema, timeframeToMs } from './types.js';
 import { Portfolio } from './portfolio.js';
 import { LeveragedPortfolio } from './leveraged-portfolio.js';
 import { Broker, type BrokerConfig } from './broker.js';
@@ -22,6 +22,42 @@ import { validateStrategyParams, type StrategyContext, type LogEntry, type Candl
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
 import { getProvider } from '../data/providers/index.js';
 import { getCandles, saveCandles, saveBacktestRun, getCandleDateRange } from '../data/db.js';
+import { saveResultToFile } from './result-storage.js';
+
+/**
+ * Forward-fill candles to ensure no gaps in the data
+ * Useful for prediction markets where some periods may have no trades
+ */
+function forwardFillCandles(candles: Candle[], timeframe: Timeframe): Candle[] {
+  if (candles.length <= 1) return candles;
+
+  const timeframeMs = timeframeToMs(timeframe);
+  const filled: Candle[] = [];
+
+  let lastCandle = candles[0];
+  let candleIndex = 0;
+  const firstTs = candles[0].timestamp;
+  const lastTs = candles[candles.length - 1].timestamp;
+
+  for (let t = firstTs; t <= lastTs; t += timeframeMs) {
+    if (candleIndex < candles.length && candles[candleIndex].timestamp === t) {
+      filled.push(candles[candleIndex]);
+      lastCandle = candles[candleIndex];
+      candleIndex++;
+    } else {
+      filled.push({
+        timestamp: t,
+        open: lastCandle.close,
+        high: lastCandle.close,
+        low: lastCandle.close,
+        close: lastCandle.close,
+        volume: 0,
+      });
+    }
+  }
+
+  return filled;
+}
 
 /**
  * Memory-efficient view into candle array without copying
@@ -208,14 +244,24 @@ export async function runBacktest(
   }
 
   // 4. Initialize portfolio and broker with fetched fee rate
+  const isPredictionMarket = ['polymarket', 'manifold'].includes(validatedConfig.exchange);
+
   const brokerConfig: BrokerConfig = {
     ...options.broker,
     feeRate,
+    isPredictionMarket,
   };
+
+  // Apply prediction market slippage defaults if no explicit slippage set
+  if ((options.broker?.slippagePercent === undefined || options.broker?.slippagePercent === 0)
+      && isPredictionMarket) {
+    brokerConfig.slippagePercent = 1; // 1% default slippage for prediction markets (tight spreads on liquid CLOB)
+  }
+
   const leverage = validatedConfig.leverage ?? 1;
   const portfolio = leverage > 1
-    ? new LeveragedPortfolio(validatedConfig.initialCapital, validatedConfig.symbol, leverage)
-    : new Portfolio(validatedConfig.initialCapital, validatedConfig.symbol);
+    ? new LeveragedPortfolio(validatedConfig.initialCapital, validatedConfig.symbol, leverage, isPredictionMarket)
+    : new Portfolio(validatedConfig.initialCapital, validatedConfig.symbol, isPredictionMarket);
   const broker = new Broker(portfolio, brokerConfig);
 
   log(`Using leverage: ${leverage}x`, Date.now());
@@ -415,7 +461,7 @@ export async function runBacktest(
 
   // 10. Calculate metrics
   log(`Calculating metrics from ${trades.length} trades`, Date.now());
-  const metrics = calculateMetrics(trades, equity, validatedConfig.initialCapital);
+  const metrics = calculateMetrics(trades, equity, validatedConfig.initialCapital, validatedConfig.timeframe);
   const rollingMetrics = calculateRollingMetrics(trades, equity, validatedConfig.initialCapital);
 
   // 11. Build result
@@ -433,6 +479,15 @@ export async function runBacktest(
   if (options.saveResults) {
     log('Saving results to database', Date.now());
     saveBacktestRun(result);
+  }
+
+  // 13. Save to filesystem (always, regardless of saveResults flag)
+  try {
+    const filepath = saveResultToFile(result);
+    log(`Results saved to ${filepath}`, Date.now());
+  } catch (err) {
+    // Don't fail the backtest if file save fails
+    console.error('Failed to save result to file:', err);
   }
 
   log(`Backtest complete. Total return: ${metrics.totalReturnPercent.toFixed(2)}%`, Date.now());
@@ -464,6 +519,8 @@ async function fetchOrLoadCandles(
   startDate: number,
   endDate: number
 ): Promise<Candle[]> {
+  let candles: Candle[];
+
   // Check what we have in cache
   const cachedRange = getCandleDateRange(exchange, symbol, timeframe);
 
@@ -475,23 +532,28 @@ async function fetchOrLoadCandles(
     cachedRange.end >= endDate
   ) {
     console.log('Using cached candles');
-    return getCandles(exchange, symbol, timeframe, startDate, endDate);
+    candles = getCandles(exchange, symbol, timeframe, startDate, endDate);
+  } else {
+    // Fetch from exchange
+    console.log('Fetching candles from exchange...');
+    const provider = getProvider(exchange);
+    candles = await provider.fetchCandles(
+      symbol,
+      timeframe,
+      new Date(startDate),
+      new Date(endDate)
+    );
+
+    // Cache the fetched candles
+    if (candles.length > 0) {
+      console.log(`Caching ${candles.length} candles`);
+      saveCandles(candles, exchange, symbol, timeframe);
+    }
   }
 
-  // Fetch from exchange
-  console.log('Fetching candles from exchange...');
-  const provider = getProvider(exchange);
-  const candles = await provider.fetchCandles(
-    symbol,
-    timeframe,
-    new Date(startDate),
-    new Date(endDate)
-  );
-
-  // Cache the fetched candles
-  if (candles.length > 0) {
-    console.log(`Caching ${candles.length} candles`);
-    saveCandles(candles, exchange, symbol, timeframe);
+  // Apply forward-fill for prediction market exchanges
+  if (['polymarket', 'manifold'].includes(exchange)) {
+    candles = forwardFillCandles(candles, timeframe);
   }
 
   return candles;

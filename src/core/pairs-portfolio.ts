@@ -10,6 +10,7 @@ export class PairsPortfolio {
   private readonly symbolA: string;
   private readonly symbolB: string;
   private readonly _leverage: number;
+  private readonly _isPredictionMarket: boolean;
 
   private _longPositionA: Position | null = null;
   private _shortPositionA: Position | null = null;
@@ -25,13 +26,14 @@ export class PairsPortfolio {
   private _priceB = 0;
   private _trades: Trade[] = [];
 
-  constructor(initialCapital: number, symbolA: string, symbolB: string, leverage: number = 1) {
+  constructor(initialCapital: number, symbolA: string, symbolB: string, leverage: number = 1, isPredictionMarket: boolean = false) {
     if (initialCapital <= 0) throw new Error('Initial capital must be positive');
     this._cash = initialCapital;
     this.initialCapital = initialCapital;
     this.symbolA = symbolA;
     this.symbolB = symbolB;
     this._leverage = Math.max(1, leverage);
+    this._isPredictionMarket = isPredictionMarket;
   }
 
   get cash(): number { return this._cash; }
@@ -65,9 +67,23 @@ export class PairsPortfolio {
       }
     } else {
       if (this._longPositionA) total += this._longPositionA.amount * this._priceA;
-      if (this._shortPositionA) total += (this._shortPositionA.entryPrice - this._priceA) * this._shortPositionA.amount;
+      if (this._shortPositionA) {
+        if (this._isPredictionMarket) {
+          // PM short = NO shares, value = (1 - currentPrice) * amount
+          total += (1 - this._priceA) * this._shortPositionA.amount;
+        } else {
+          total += (this._shortPositionA.entryPrice - this._priceA) * this._shortPositionA.amount;
+        }
+      }
       if (this._longPositionB) total += this._longPositionB.amount * this._priceB;
-      if (this._shortPositionB) total += (this._shortPositionB.entryPrice - this._priceB) * this._shortPositionB.amount;
+      if (this._shortPositionB) {
+        if (this._isPredictionMarket) {
+          // PM short = NO shares, value = (1 - currentPrice) * amount
+          total += (1 - this._priceB) * this._shortPositionB.amount;
+        } else {
+          total += (this._shortPositionB.entryPrice - this._priceB) * this._shortPositionB.amount;
+        }
+      }
     }
     return total;
   }
@@ -143,9 +159,19 @@ export class PairsPortfolio {
         if (costFromCash > this._cash) throw new Error(`Insufficient funds: need ${costFromCash.toFixed(2)}, have ${this._cash.toFixed(2)}`);
         this._cash -= costFromCash;
       } else {
-        // Short in spot mode: only deduct fee
-        if (fee > this._cash) throw new Error(`Insufficient funds for fee: need ${fee.toFixed(2)}, have ${this._cash.toFixed(2)}`);
-        this._cash -= fee;
+        // Short in spot mode
+        if (this._isPredictionMarket) {
+          // In prediction markets, short = buy NO at (1-price)
+          const noCost = amount * (1 - price);
+          costFromCash = noCost + fee;
+          if (costFromCash > this._cash) throw new Error(`Insufficient funds: need ${costFromCash.toFixed(2)}, have ${this._cash.toFixed(2)}`);
+          this._cash -= costFromCash;
+        } else {
+          // Traditional short: only deduct fee
+          costFromCash = fee;
+          if (fee > this._cash) throw new Error(`Insufficient funds for fee: need ${fee.toFixed(2)}, have ${this._cash.toFixed(2)}`);
+          this._cash -= fee;
+        }
       }
       this._setMargin(side, type, 0);
     }
@@ -163,7 +189,7 @@ export class PairsPortfolio {
 
     const action = type === 'long' ? 'OPEN_LONG' as const : 'OPEN_SHORT' as const;
     const trade: Trade = {
-      id: uuidv4(),
+      id: positionId, // Reuse position ID so close trades can reference it
       symbol,
       action,
       price,
@@ -211,7 +237,13 @@ export class PairsPortfolio {
       if (type === 'long') {
         this._cash += notional - fee;
       } else {
-        this._cash += grossPnl - fee;
+        if (this._isPredictionMarket) {
+          // Return NO share value at exit
+          const noValue = closeAmount * (1 - price);
+          this._cash += noValue - fee;
+        } else {
+          this._cash += grossPnl - fee;
+        }
       }
     }
 

@@ -154,8 +154,8 @@ describe('LeveragedPortfolio', () => {
     });
 
     it('should reject invalid maintenance margin rate', () => {
-      expect(() => new LeveragedPortfolio(10000, symbol, 10, -0.1)).toThrow();
-      expect(() => new LeveragedPortfolio(10000, symbol, 10, 1.1)).toThrow();
+      expect(() => new LeveragedPortfolio(10000, symbol, 10, false, -0.1)).toThrow();
+      expect(() => new LeveragedPortfolio(10000, symbol, 10, false, 1.1)).toThrow();
     });
 
     it('should handle insufficient funds for leveraged position', () => {
