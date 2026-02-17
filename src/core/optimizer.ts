@@ -121,9 +121,14 @@ export async function runOptimization(
   console.log('Pre-fetching candle data...');
   const provider = getProvider(exchange);
 
-  // Fetch candles for symbol A
+  // Fetch candles for symbol A (with PM-aware cache check)
+  const isPM = ['polymarket', 'manifold'].includes(exchange);
   const cachedRange = getCandleDateRange(exchange, symbol, timeframe);
-  if (!cachedRange.start || !cachedRange.end || cachedRange.start > startDate || cachedRange.end < endDate) {
+  const needsFetchA = !cachedRange.start || !cachedRange.end ||
+    (!isPM && (cachedRange.start > startDate || cachedRange.end < endDate)) ||
+    (isPM && cachedRange.end < Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  if (needsFetchA) {
     const candles = await provider.fetchCandles(symbol, timeframe, new Date(startDate), new Date(endDate));
     if (candles.length > 0) {
       saveCandles(candles, exchange, symbol, timeframe);
@@ -136,7 +141,11 @@ export async function runOptimization(
   // If pairs strategy, also fetch candles for symbol B
   if (isPairsStrategy && config.symbolB) {
     const cachedRangeB = getCandleDateRange(exchange, config.symbolB, timeframe);
-    if (!cachedRangeB.start || !cachedRangeB.end || cachedRangeB.start > startDate || cachedRangeB.end < endDate) {
+    const needsFetchB = !cachedRangeB.start || !cachedRangeB.end ||
+      (!isPM && (cachedRangeB.start > startDate || cachedRangeB.end < endDate)) ||
+      (isPM && cachedRangeB.end < Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    if (needsFetchB) {
       const candlesB = await provider.fetchCandles(config.symbolB, timeframe, new Date(startDate), new Date(endDate));
       if (candlesB.length > 0) {
         saveCandles(candlesB, exchange, config.symbolB, timeframe);

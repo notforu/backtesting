@@ -524,15 +524,26 @@ async function fetchOrLoadCandles(
   // Check what we have in cache
   const cachedRange = getCandleDateRange(exchange, symbol, timeframe);
 
-  // If we have complete coverage, use cache
-  if (
-    cachedRange.start !== null &&
-    cachedRange.end !== null &&
-    cachedRange.start <= startDate &&
-    cachedRange.end >= endDate
-  ) {
+  // Determine if cache is sufficient:
+  // - For prediction markets (polymarket, manifold), data only exists from market creation
+  //   to present. The requested startDate/endDate may be outside this range.
+  //   Accept cached data if it's recent (within 7 days of now).
+  // - For regular exchanges, require full coverage of requested range.
+  const isPredictionMarket = ['polymarket', 'manifold'].includes(exchange);
+  const hasCachedData = cachedRange.start !== null && cachedRange.end !== null;
+  const hasFullCoverage = hasCachedData &&
+    cachedRange.start! <= startDate &&
+    cachedRange.end! >= endDate;
+  const hasSufficientPMCoverage = hasCachedData && isPredictionMarket &&
+    cachedRange.end! >= Date.now() - 7 * 24 * 60 * 60 * 1000; // cached data is recent (within 7 days of now)
+
+  if (hasFullCoverage) {
     console.log('Using cached candles');
     candles = getCandles(exchange, symbol, timeframe, startDate, endDate);
+  } else if (hasSufficientPMCoverage) {
+    // PM markets: use cached data even if requested range extends beyond available data
+    console.log(`Using cached candles (PM market, data from ${new Date(cachedRange.start!).toISOString().slice(0, 10)})`);
+    candles = getCandles(exchange, symbol, timeframe, cachedRange.start!, Math.min(endDate, Date.now()));
   } else {
     // Fetch from exchange
     console.log('Fetching candles from exchange...');

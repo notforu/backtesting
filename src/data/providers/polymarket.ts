@@ -69,74 +69,122 @@ export class PolymarketProvider implements DataProvider {
 
     const yesTokenId = tokenIds[0];
 
-    // Fetch BOTH fidelities and merge for maximum coverage
-    // fidelity=900 gives ~650 pts over 13+ months (sparse, ~1 sample/15h)
-    // fidelity=60 gives ~740 pts over ~31 days (dense, ~1 sample/h)
-
-    // Request 1: long-range sparse data (13+ months of history)
+    // Step 1: Discovery request - get the full market time range using fidelity=900 with interval=all
+    // This is cheap (1 request) and tells us the oldest and newest available data points
     await this.rateLimiter.throttle();
-    const longRangeUrl = `${this.clobApiBase}/prices-history?market=${yesTokenId}&interval=all&fidelity=900`;
-    const longRangeResponse = await fetch(longRangeUrl);
-    if (!longRangeResponse.ok) {
-      throw new Error(`Failed to fetch long-range price history from CLOB API: ${longRangeResponse.statusText}`);
+    const discoveryUrl = `${this.clobApiBase}/prices-history?market=${yesTokenId}&interval=all&fidelity=900`;
+    const discoveryResponse = await fetch(discoveryUrl);
+    if (!discoveryResponse.ok) {
+      throw new Error(`Failed to fetch discovery price history from CLOB API: ${discoveryResponse.statusText}`);
     }
-    const longRangeData = (await longRangeResponse.json()) as CLOBPriceHistory;
-    const longRangeHistory = longRangeData.history ?? [];
+    const discoveryData = (await discoveryResponse.json()) as CLOBPriceHistory;
+    const discoveryHistory = discoveryData.history ?? [];
 
-    // Request 2: short-range dense data (last ~31 days, higher resolution)
-    await this.rateLimiter.throttle();
-    const shortRangeUrl = `${this.clobApiBase}/prices-history?market=${yesTokenId}&interval=all&fidelity=60`;
-    const shortRangeResponse = await fetch(shortRangeUrl);
-    if (!shortRangeResponse.ok) {
-      throw new Error(`Failed to fetch short-range price history from CLOB API: ${shortRangeResponse.statusText}`);
-    }
-    const shortRangeData = (await shortRangeResponse.json()) as CLOBPriceHistory;
-    const shortRangeHistory = shortRangeData.history ?? [];
-
-    // Edge case: if long-range returned no data, fall back to short-range only
-    let mergedHistory: Array<{ t: number; p: number }>;
-    if (longRangeHistory.length === 0) {
-      mergedHistory = shortRangeHistory;
-    } else {
-      // Merge: prefer fidelity=60 data for timestamps it covers (more granular)
-      // The fidelity=60 data starts ~31 days ago - use it from that point forward
-      // Find the earliest timestamp in the short-range data
-      const shortRangeStart = shortRangeHistory.length > 0
-        ? Math.min(...shortRangeHistory.map((p) => p.t))
-        : Infinity;
-
-      // Use long-range data for everything before short-range starts
-      const longRangeOnly = longRangeHistory.filter((p) => p.t < shortRangeStart);
-
-      // Combine: old sparse data + recent dense data
-      const combined = [...longRangeOnly, ...shortRangeHistory];
-
-      // Deduplicate by timestamp (keep the fidelity=60 one if same second)
-      // Since short-range is appended after long-range-only, and we dedup by keeping
-      // the last occurrence per timestamp, the short-range data naturally wins
-      const seenTimestamps = new Map<number, { t: number; p: number }>();
-      for (const point of combined) {
-        seenTimestamps.set(point.t, point);
-      }
-
-      mergedHistory = Array.from(seenTimestamps.values());
-      // Sort by timestamp ascending
-      mergedHistory.sort((a, b) => a.t - b.t);
-    }
-
-    if (mergedHistory.length === 0) {
+    if (discoveryHistory.length === 0) {
+      console.log(`[Polymarket] ${slug}: No data available from discovery request`);
       return [];
     }
 
-    // Log data range for debugging
+    // Determine the market's full data range from discovery
+    const marketFirstTs = discoveryHistory[0].t; // seconds
+    const marketLastTs = discoveryHistory[discoveryHistory.length - 1].t; // seconds
+
+    const discoveryFirstDate = new Date(marketFirstTs * 1000).toISOString().split('T')[0];
+    const discoveryLastDate = new Date(marketLastTs * 1000).toISOString().split('T')[0];
+    console.log(
+      `[Polymarket] ${slug}: Discovery: ${discoveryHistory.length} pts, ` +
+      `range ${discoveryFirstDate} to ${discoveryLastDate}`
+    );
+
+    // Step 2: Calculate the effective fetch range, constrained by both market data and caller params
+    // startTs/endTs are Unix seconds
+    const requestedStartSec = Math.floor(start.getTime() / 1000);
+    const requestedEndSec = Math.floor(end.getTime() / 1000);
+
+    const effectiveStartSec = Math.max(marketFirstTs, requestedStartSec);
+    const effectiveEndSec = Math.min(marketLastTs, requestedEndSec);
+
+    if (effectiveStartSec >= effectiveEndSec) {
+      console.log(`[Polymarket] ${slug}: Requested date range has no overlap with market data`);
+      return [];
+    }
+
+    // Step 3: Build 15-day windows covering the effective range (working backwards from end)
+    // 15 days in seconds = 15 * 24 * 60 * 60 = 1,296,000 seconds
+    // At fidelity=60 (~1 point/hour), 15 days = ~360 points, safely under the ~740 cap
+    const WINDOW_SIZE_SEC = 15 * 24 * 60 * 60; // 1,296,000 seconds
+
+    const windows: Array<{ start: number; end: number }> = [];
+    let windowEnd = effectiveEndSec;
+    while (windowEnd > effectiveStartSec) {
+      const windowStart = Math.max(effectiveStartSec, windowEnd - WINDOW_SIZE_SEC);
+      windows.push({ start: windowStart, end: windowEnd });
+      windowEnd = windowStart;
+    }
+
+    console.log(`[Polymarket] ${slug}: Fetching ${windows.length} windows of hourly data...`);
+
+    // Step 4: Fetch each window using startTs/endTs (mutually exclusive with interval=)
+    // Accumulate all price points across windows
+    const allPoints = new Map<number, { t: number; p: number }>();
+
+    for (let i = 0; i < windows.length; i++) {
+      const window = windows[i];
+      const windowStartDate = new Date(window.start * 1000).toISOString().split('T')[0];
+      const windowEndDate = new Date(window.end * 1000).toISOString().split('T')[0];
+
+      try {
+        await this.rateLimiter.throttle();
+        const windowUrl =
+          `${this.clobApiBase}/prices-history?market=${yesTokenId}` +
+          `&startTs=${window.start}&endTs=${window.end}&fidelity=60`;
+        const windowResponse = await fetch(windowUrl);
+
+        if (!windowResponse.ok) {
+          console.warn(
+            `[Polymarket] ${slug}: Window ${i + 1}/${windows.length} failed: ${windowResponse.statusText} ` +
+            `(${windowStartDate} to ${windowEndDate}) - skipping`
+          );
+          continue;
+        }
+
+        const windowData = (await windowResponse.json()) as CLOBPriceHistory;
+        const windowHistory = windowData.history ?? [];
+
+        // Deduplicate by timestamp - last write wins (later windows override earlier for same ts)
+        for (const point of windowHistory) {
+          allPoints.set(point.t, point);
+        }
+
+        console.log(
+          `[Polymarket] ${slug}: Window ${i + 1}/${windows.length}: ` +
+          `${windowStartDate} to ${windowEndDate} -> ${windowHistory.length} pts`
+        );
+      } catch (err) {
+        console.warn(
+          `[Polymarket] ${slug}: Window ${i + 1}/${windows.length} error ` +
+          `(${windowStartDate} to ${windowEndDate}): ` +
+          `${err instanceof Error ? err.message : String(err)} - skipping`
+        );
+      }
+    }
+
+    // Step 5: Merge, sort, and log final result
+    const mergedHistory = Array.from(allPoints.values());
+    mergedHistory.sort((a, b) => a.t - b.t);
+
+    if (mergedHistory.length === 0) {
+      console.log(`[Polymarket] ${slug}: No price points collected after windowed fetch`);
+      return [];
+    }
+
     const firstTs = mergedHistory[0].t;
     const lastTs = mergedHistory[mergedHistory.length - 1].t;
-    const firstDate = new Date(firstTs * 1000).toISOString().split('T')[0];
-    const lastDate = new Date(lastTs * 1000).toISOString().split('T')[0];
+    const finalFirstDate = new Date(firstTs * 1000).toISOString().split('T')[0];
+    const finalLastDate = new Date(lastTs * 1000).toISOString().split('T')[0];
     console.log(
-      `[Polymarket] ${slug}: ${mergedHistory.length} price points fetched ` +
-      `(fidelity=900: ${longRangeHistory.length} pts, fidelity=60: ${shortRangeHistory.length} pts) ` +
-      `covering ${firstDate} to ${lastDate}`
+      `[Polymarket] ${slug}: Total: ${mergedHistory.length.toLocaleString()} real price points ` +
+      `covering ${finalFirstDate} to ${finalLastDate}`
     );
 
     // Convert price points to candles
