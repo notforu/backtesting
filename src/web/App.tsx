@@ -12,7 +12,9 @@ import { Dashboard } from './components/Dashboard';
 import { StrategyConfig } from './components/StrategyConfig';
 import { History } from './components/History';
 import { OptimizerModal } from './components/OptimizerModal';
+import { ScannerResults } from './components/ScannerResults';
 import { useBacktestStore } from './stores/backtestStore';
+import { useScannerStore } from './stores/scannerStore';
 import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult } from './types';
 
 const queryClient = new QueryClient({
@@ -37,7 +39,9 @@ function isPairsResult(result: unknown): result is PairsBacktestResult {
 
 function AppContent() {
   const { currentResult } = useBacktestStore();
+  const { scanResults } = useScannerStore();
   const isPairs = currentResult && isPairsResult(currentResult);
+  const showScanner = scanResults.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col">
@@ -150,6 +154,11 @@ function AppContent() {
               )}
             </section>
 
+            {/* Scanner Results - shown when scan results exist */}
+            {showScanner && (
+              <ScannerResults />
+            )}
+
             {/* Performance Charts */}
             {currentResult && currentResult.equity.length > 0 && (
               <section>
@@ -181,7 +190,7 @@ function AppContent() {
                         <th className="pb-2 pr-4">Amount</th>
                         <th className="pb-2 pr-4">P&L</th>
                         <th className="pb-2 pr-4">P&L %</th>
-                        <th className="pb-2 pr-4">Fee</th>
+                        <th className="pb-2 pr-4">Cost</th>
                         <th className="pb-2 pr-4">Balance</th>
                         <th className="pb-2">Time</th>
                       </tr>
@@ -238,7 +247,7 @@ function AppContent() {
                                 : '-'}
                             </td>
                             <td className="py-2 pr-4 text-gray-400">
-                              {trade.fee ? `$${trade.fee.toFixed(2)}` : '-'}
+                              {(trade.fee || trade.slippage) ? `$${((trade.fee ?? 0) + (trade.slippage ?? 0)).toFixed(2)}` : '-'}
                             </td>
                             <td className="py-2 pr-4 text-gray-300">
                               ${trade.balanceAfter.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

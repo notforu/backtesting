@@ -16,6 +16,10 @@ import type {
   ApiError,
   OptimizationRequest,
   OptimizationResult,
+  ScanRequest,
+  ScanResultRow,
+  ScanSummary,
+  ActivePolymarketMarket,
 } from '../types';
 
 const API_BASE = '/api';
@@ -422,6 +426,110 @@ export async function searchPolymarketMarkets(params: {
  */
 export async function getPolymarketCategories(): Promise<string[]> {
   return apiFetch<string[]>('/polymarket/categories');
+}
+
+/**
+ * Get active Polymarket markets for scanner prefill
+ */
+export async function getActivePolymarketMarkets(): Promise<ActivePolymarketMarket[]> {
+  return apiFetch<ActivePolymarketMarket[]>('/polymarket/markets/active');
+}
+
+// ============================================================================
+// Scanner Endpoints
+// ============================================================================
+
+export interface ScanCallbacks {
+  onProgress?: (progress: { current: number; total: number }) => void;
+  onResult?: (result: ScanResultRow) => void;
+  onDone?: (summary: ScanSummary) => void;
+  onError?: (error: string) => void;
+}
+
+/**
+ * Run multi-market scan with SSE streaming
+ * Similar pattern to runOptimization - uses fetch + ReadableStream
+ */
+export async function runScan(
+  config: ScanRequest,
+  callbacks?: ScanCallbacks
+): Promise<void> {
+  const url = `${API_BASE}/backtest/scan`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+
+  if (!response.ok) {
+    throw new ApiClientError(
+      `Scan request failed: ${response.status} ${response.statusText}`,
+      response.status
+    );
+  }
+
+  if (!response.body) {
+    throw new ApiClientError('Response body is null', 500);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split('\n\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+
+      const dataStr = line.substring(6);
+      try {
+        const data = JSON.parse(dataStr);
+
+        switch (data.type) {
+          case 'progress':
+            callbacks?.onProgress?.({ current: data.current, total: data.total });
+            break;
+
+          case 'result':
+            if (data.status === 'complete') {
+              callbacks?.onResult?.({
+                symbol: data.symbol,
+                metrics: data.metrics,
+                tradesCount: data.tradesCount,
+                status: 'complete',
+              });
+            } else if (data.status === 'error') {
+              callbacks?.onResult?.({
+                symbol: data.symbol,
+                metrics: { totalReturnPercent: 0, sharpeRatio: 0, maxDrawdownPercent: 0, winRate: 0, profitFactor: 0 },
+                tradesCount: 0,
+                status: 'error',
+                error: data.error,
+              });
+            }
+            break;
+
+          case 'done':
+            callbacks?.onDone?.(data.summary);
+            break;
+
+          case 'error':
+            callbacks?.onError?.(data.error);
+            break;
+        }
+      } catch (err) {
+        console.error('Error parsing scan SSE data:', err);
+      }
+    }
+  }
 }
 
 // ============================================================================

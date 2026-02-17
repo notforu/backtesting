@@ -10,6 +10,7 @@ import { strategyRoutes } from './routes/strategies.js';
 import { candleRoutes } from './routes/candles.js';
 import { optimizeRoutes } from './routes/optimize.js';
 import { polymarketRoutes } from './routes/polymarket.js';
+import { scanRoutes } from './routes/scan.js';
 import { getDb, closeDb } from '../data/db.js';
 
 const fastify = Fastify({
@@ -41,6 +42,7 @@ await fastify.register(strategyRoutes);
 await fastify.register(candleRoutes);
 await fastify.register(optimizeRoutes);
 await fastify.register(polymarketRoutes);
+await fastify.register(scanRoutes);
 
 // Graceful shutdown
 const shutdown = async () => {

@@ -1,0 +1,1 @@
+export { ScannerResults } from './ScannerResults';

@@ -82,6 +82,9 @@ export interface Trade {
   // Fee information
   fee?: number;      // Fee amount in quote currency
   feeRate?: number;  // Fee rate as decimal (e.g., 0.001 = 0.1%)
+
+  // Slippage information
+  slippage?: number; // Slippage cost in quote currency
 }
 
 export interface EquityPoint {
@@ -169,6 +172,7 @@ export interface PerformanceMetrics {
   avgTradeDuration: number;
   exposureTime: number;
   totalFees: number;
+  totalSlippage?: number;
 }
 
 export interface BacktestResult {
@@ -325,6 +329,51 @@ export interface ChartMarker {
   color: string;
   shape: 'arrowUp' | 'arrowDown' | 'circle';
   text?: string;
+}
+
+// ============================================================================
+// Scanner Types
+// ============================================================================
+
+export interface ScanRequest {
+  strategy: string;
+  symbols: string[];
+  timeframe: string;
+  from: string;
+  to: string;
+  slippage?: number;
+  initialCapital?: number;
+  params?: Record<string, unknown>;
+}
+
+export interface ScanResultMetrics {
+  totalReturnPercent: number;
+  sharpeRatio: number;
+  maxDrawdownPercent: number;
+  winRate: number;
+  profitFactor: number;
+}
+
+export interface ScanResultRow {
+  symbol: string;
+  metrics: ScanResultMetrics;
+  tradesCount: number;
+  status: 'complete' | 'error';
+  error?: string;
+}
+
+export interface ScanSummary {
+  total: number;
+  profitable: number;
+  avgSharpe: number;
+  avgReturn: number;
+}
+
+export interface ActivePolymarketMarket {
+  slug: string;
+  question: string;
+  volume: number;
+  category: string;
 }
 
 // ============================================================================

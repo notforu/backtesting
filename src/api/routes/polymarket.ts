@@ -177,4 +177,52 @@ export async function polymarketRoutes(fastify: FastifyInstance) {
       });
     }
   });
+
+  /**
+   * GET /api/polymarket/markets/active
+   * Get active markets sorted by volume for scanner prefill
+   */
+  fastify.get('/api/polymarket/markets/active', async (
+    _request: FastifyRequest,
+    reply: FastifyReply
+  ) => {
+    try {
+      // Fetch active, non-closed markets
+      const url = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=50';
+      fastify.log.info('Fetching active markets for scanner');
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        const errorText = await response.text();
+        fastify.log.error(`Gamma API error: ${response.status} - ${errorText}`);
+        throw new Error(`Gamma API error: ${response.status}`);
+      }
+
+      const markets = await response.json();
+
+      // Map to simpler format and sort by volume descending
+      const simplified = markets
+        .map((m: any) => ({
+          slug: m.slug || '',
+          question: m.question || '',
+          volume: m.volume || 0,
+          category: m.category || '',
+        }))
+        .sort((a: any, b: any) => b.volume - a.volume);
+
+      fastify.log.info(`Retrieved ${simplified.length} active markets`);
+
+      return reply.status(200).send(simplified);
+    } catch (error) {
+      if (error instanceof Error) {
+        return reply.status(500).send({
+          error: error.message,
+        });
+      }
+
+      return reply.status(500).send({
+        error: 'Unknown error occurred',
+      });
+    }
+  });
 }

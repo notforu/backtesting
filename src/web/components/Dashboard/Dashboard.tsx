@@ -193,8 +193,13 @@ export function Dashboard({ metrics }: DashboardProps) {
           isPositive={false}
         />
         <MetricCard
-          label="Total Fees"
-          value={`$${(metrics.totalFees ?? 0).toFixed(2)}`}
+          label="Execution Cost"
+          value={`$${((metrics.totalFees ?? 0) + (metrics.totalSlippage ?? 0)).toFixed(2)}`}
+          subValue={
+            (metrics.totalSlippage ?? 0) > 0
+              ? `Fees: $${(metrics.totalFees ?? 0).toFixed(2)} | Slippage: $${(metrics.totalSlippage ?? 0).toFixed(2)}`
+              : undefined
+          }
         />
         <MetricCard
           label="Avg Trade Duration"

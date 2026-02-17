@@ -14,6 +14,8 @@ import {
   useOptimizationStore,
   useOptimizerModalStore,
 } from '../../stores/backtestStore';
+import { useScannerStore } from '../../stores/scannerStore';
+import { runScan } from '../../api/client';
 import type { StrategyParam, Timeframe } from '../../types';
 import { PolymarketBrowser } from '../PolymarketBrowser';
 
@@ -194,6 +196,19 @@ export function StrategyConfig() {
 
   const { setOptimizerModalOpen } = useOptimizerModalStore();
 
+  // Scanner store
+  const {
+    isScanning,
+    selectedMarkets,
+    setSelectedMarkets,
+    toggleMarket,
+    startScan,
+    addResult,
+    setScanProgress,
+    setScanSummary,
+    setScanError,
+  } = useScannerStore();
+
   // Collapsible params state
   const [paramsExpanded, setParamsExpanded] = useState(true);
 
@@ -271,6 +286,35 @@ export function StrategyConfig() {
     setUsingOptimizedParams(false);
   };
 
+  const handleScanMarkets = async () => {
+    if (selectedMarkets.length === 0 || !strategy) return;
+
+    startScan();
+
+    try {
+      await runScan(
+        {
+          strategy,
+          symbols: selectedMarkets,
+          timeframe,
+          from: startDate,
+          to: endDate,
+          slippage: 1.0,
+          initialCapital,
+          params,
+        },
+        {
+          onProgress: (progress) => setScanProgress(progress),
+          onResult: (result) => addResult(result),
+          onDone: (summary) => setScanSummary(summary),
+          onError: (error) => setScanError(error),
+        }
+      );
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : 'Scan failed');
+    }
+  };
+
   const isPairsStrategy = strategyDetails?.isPairs;
   const canRun =
     strategy &&
@@ -334,33 +378,59 @@ export function StrategyConfig() {
 
       {/* Symbol & Timeframe */}
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          {exchange === 'polymarket' ? (
+        {exchange === 'polymarket' ? (
+          <div className="col-span-2">
             <PolymarketBrowser
               onSelect={(slug) => setSymbol(`PM:${slug}`)}
               selectedSlug={symbol.startsWith('PM:') ? symbol.slice(3) : undefined}
             />
-          ) : (
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">
-                {isPairsStrategy ? 'Symbol A' : 'Symbol'}
-              </label>
-              <input
-                type="text"
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                placeholder="BTCUSDT"
-                className={inputClass}
-                list="symbols"
-              />
-              <datalist id="symbols">
-                {COMMON_SYMBOLS.map((s) => (
-                  <option key={s} value={s} />
-                ))}
-              </datalist>
-            </div>
-          )}
-        </div>
+            {/* Scanner section - only for non-pairs PM strategies */}
+            {!isPairsStrategy && strategy && (
+              <div className="mt-3 border-t border-gray-700 pt-3">
+                <button
+                  onClick={() => {
+                    const scanSection = document.getElementById('scanner-markets');
+                    if (scanSection) scanSection.classList.toggle('hidden');
+                  }}
+                  className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  Scan Multiple Markets ({selectedMarkets.length} selected)
+                </button>
+                <div id="scanner-markets" className="hidden mt-2">
+                  <PolymarketBrowser
+                    onSelect={() => {}}
+                    multiSelect={true}
+                    selectedSlugs={selectedMarkets.map(m => m.replace('PM:', ''))}
+                    onToggleSelect={(slug) => toggleMarket(`PM:${slug}`)}
+                    onSelectAll={(slugs) => setSelectedMarkets(slugs.map(s => `PM:${s}`))}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              {isPairsStrategy ? 'Symbol A' : 'Symbol'}
+            </label>
+            <input
+              type="text"
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+              placeholder="BTCUSDT"
+              className={inputClass}
+              list="symbols"
+            />
+            <datalist id="symbols">
+              {COMMON_SYMBOLS.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+          </div>
+        )}
         <div>
           <label className="block text-sm text-gray-400 mb-1">Timeframe</label>
           <select
@@ -505,6 +575,32 @@ export function StrategyConfig() {
           </button>
         )}
       </div>
+
+      {/* Scan Markets button - PM non-pairs only */}
+      {exchange === 'polymarket' && !isPairsStrategy && strategy && selectedMarkets.length > 0 && (
+        <button
+          onClick={handleScanMarkets}
+          disabled={isScanning || isRunning}
+          className={`
+            w-full py-2 rounded font-medium text-white transition-colors text-sm mt-2
+            ${!isScanning && !isRunning
+              ? 'bg-emerald-600 hover:bg-emerald-500'
+              : 'bg-gray-600 cursor-not-allowed'}
+          `}
+        >
+          {isScanning ? (
+            <span className="flex items-center justify-center gap-2">
+              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              Scanning...
+            </span>
+          ) : (
+            `Scan ${selectedMarkets.length} Markets`
+          )}
+        </button>
+      )}
 
       {/* Strategy Parameters - Collapsible */}
       {strategyDetails?.params && strategyDetails.params.length > 0 && (
