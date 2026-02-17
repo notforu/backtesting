@@ -56,6 +56,7 @@ let pricesB: number[] = [];
 let spreads: number[] = [];
 let barsInPosition = 0;
 let positionType: 'long-spread' | 'short-spread' | null = null;
+let lastExitBar = -1000;
 
 const strategy: PairsStrategy = {
   name: 'pm-correlation-pairs',
@@ -68,7 +69,7 @@ const strategy: PairsStrategy = {
       name: 'lookbackPeriod',
       label: 'Lookback Period',
       type: 'number',
-      default: 100,
+      default: 70,
       min: 30,
       max: 500,
       step: 10,
@@ -88,7 +89,7 @@ const strategy: PairsStrategy = {
       name: 'exitZScore',
       label: 'Exit Z-Score',
       type: 'number',
-      default: 0.5,
+      default: 0.75,
       min: 0.0,
       max: 1.5,
       step: 0.25,
@@ -118,21 +119,71 @@ const strategy: PairsStrategy = {
       name: 'positionSizePct',
       label: 'Position Size %',
       type: 'number',
-      default: 80,
+      default: 60,
       min: 20,
       max: 95,
       step: 10,
       description: '% of capital for both legs combined'
     },
     {
+      name: 'maxPositionUSD',
+      label: 'Max Position ($)',
+      type: 'number',
+      default: 1000,
+      min: 100,
+      max: 10000,
+      step: 100,
+      description: 'Maximum position size in USD (prevents oversizing on thin markets)',
+    },
+    {
       name: 'minCorrelation',
       label: 'Min Correlation',
       type: 'number',
-      default: 0.6,
+      default: 0.9,
       min: 0.3,
       max: 0.9,
       step: 0.1,
       description: 'Minimum rolling correlation to trade'
+    },
+    {
+      name: 'avoidExtremesPct',
+      label: 'Avoid Extremes %',
+      type: 'number',
+      default: 3,
+      min: 1,
+      max: 25,
+      step: 1,
+      description: 'Skip entry when either market prob < X% or > (100-X)%',
+    },
+    {
+      name: 'minSpreadStd',
+      label: 'Min Spread Std',
+      type: 'number',
+      default: 0.066,
+      min: 0.001,
+      max: 0.1,
+      step: 0.005,
+      description: 'Min spread standard deviation (skip if spread is too stable)',
+    },
+    {
+      name: 'cooldownBars',
+      label: 'Cooldown Bars',
+      type: 'number',
+      default: 16,
+      min: 0,
+      max: 20,
+      step: 1,
+      description: 'Bars to wait after exit before re-entering',
+    },
+    {
+      name: 'minProfitBps',
+      label: 'Min Profit (bps)',
+      type: 'number',
+      default: 460,
+      min: 10,
+      max: 500,
+      step: 10,
+      description: 'Min expected profit bps to enter',
     },
   ],
 
@@ -142,6 +193,7 @@ const strategy: PairsStrategy = {
     spreads = [];
     barsInPosition = 0;
     positionType = null;
+    lastExitBar = -1000;
     ctx.log(`PM Correlation Pairs initialized`);
     ctx.log(`Trading pair: ${ctx.symbolA} / ${ctx.symbolB}`);
   },
@@ -166,9 +218,19 @@ const strategy: PairsStrategy = {
       const maxHoldBars = params.maxHoldBars as number;
       const positionSizePct = params.positionSizePct as number;
       const minCorrelation = params.minCorrelation as number;
+      const avoidExtremesPct = params.avoidExtremesPct as number;
+      const maxPositionUSD = params.maxPositionUSD as number;
+      const minSpreadStd = params.minSpreadStd as number;
+      const cooldownBars = params.cooldownBars as number;
+      const minProfitBps = params.minProfitBps as number;
 
       const priceA = candleA.close;
       const priceB = candleB.close;
+
+      // Skip forward-filled candles (no real trading)
+      if (candleA.volume === 0 || candleB.volume === 0) {
+        return;
+      }
 
       // Store prices
       pricesA.push(priceA);
@@ -182,8 +244,10 @@ const strategy: PairsStrategy = {
       }
 
       // Calculate log-price spread
-      const logPriceA = Math.log(priceA);
-      const logPriceB = Math.log(priceB);
+      // Clamp probabilities to avoid log(0) = -Infinity when probability reaches 0
+      // Min value 0.001 (0.1%) is safe lower bound for prediction markets
+      const logPriceA = Math.log(Math.max(priceA, 0.001));
+      const logPriceB = Math.log(Math.max(priceB, 0.001));
       const spread = logPriceA - logPriceB;
       spreads.push(spread);
 
@@ -200,6 +264,11 @@ const strategy: PairsStrategy = {
 
       if (spreadStd < 1e-10) {
         return; // Avoid division by zero
+      }
+
+      // Check minimum spread volatility
+      if (spreadStd < minSpreadStd) {
+        return; // Skip if spread is too stable
       }
 
       // Calculate z-score
@@ -265,6 +334,7 @@ const strategy: PairsStrategy = {
           if (shortPositionB) ctx.closeShortB();
 
           ctx.log(`EXIT ${positionType} z=${zScore.toFixed(2)} (${exitReason}) bars=${barsInPosition}`);
+          lastExitBar = ctx.currentIndex;
           barsInPosition = 0;
           positionType = null;
         }
@@ -275,6 +345,14 @@ const strategy: PairsStrategy = {
       // ================================================================
       if (inPosition || positionType !== null) return;
 
+      // Cooldown check
+      if (ctx.currentIndex - lastExitBar < cooldownBars) return;
+
+      // Filter: Avoid extremes (prices near 0 or 1)
+      const lowerBound = avoidExtremesPct / 100;
+      const upperBound = 1 - lowerBound;
+      if (priceA < lowerBound || priceA > upperBound || priceB < lowerBound || priceB > upperBound) return;
+
       // Correlation regime filter
       if (correlation < minCorrelation) return;
 
@@ -282,8 +360,12 @@ const strategy: PairsStrategy = {
       const absZ = Math.abs(zScore);
       if (absZ <= entryZScore) return;
 
+      // Profit filter: expected mean-reversion profit must exceed minimum
+      const expectedProfitBps = absZ * spreadStd * 10000;
+      if (expectedProfitBps <= minProfitBps) return;
+
       // Calculate position sizes (equal split for simplicity)
-      const totalNotional = equity * (positionSizePct / 100);
+      const totalNotional = Math.min(equity * (positionSizePct / 100), maxPositionUSD);
       const notionalPerLeg = totalNotional / 2;
 
       const amountA = notionalPerLeg / priceA;

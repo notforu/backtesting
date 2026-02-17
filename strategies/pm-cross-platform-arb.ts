@@ -1,13 +1,19 @@
 /**
- * Cross-Platform Arbitrage Strategy
+ * Prediction Market Spread Arbitrage Strategy
  *
- * Exploits price differences between Polymarket and Manifold Markets on the same event.
- * Buys on the cheaper platform and sells on the more expensive one when the spread exceeds
- * the entry threshold.
+ * Exploits price differences between related prediction markets.
+ *
+ * Primary mode: Two related markets on the SAME platform (e.g., two Polymarket markets).
+ * Example: "Trump wins presidency" vs "Republican wins presidency" - these should be
+ * strongly correlated, and spread deviations tend to revert.
+ *
+ * Theoretical mode: Cross-platform (Polymarket vs Manifold). NOTE: Manifold uses play
+ * money (Mana), so cross-platform profits are not realizable in practice. Use only for
+ * research/analysis.
  *
  * Strategy:
- * - Track probability spread between platform A (e.g., Polymarket) and platform B (e.g., Manifold)
- * - Entry: When |spreadA - spreadB| > entryThreshold
+ * - Track probability spread between market A and market B
+ * - Entry: When |spreadA - spreadB| > entryThreshold (and not in extreme zones)
  *   - If probA > probB + threshold: short A, long B (sell expensive, buy cheap)
  *   - If probB > probA + threshold: long A, short B (buy cheap, sell expensive)
  * - Exit: When spread narrows to exitThreshold (mean reversion)
@@ -15,15 +21,9 @@
  * - Time Stop: Exit after maxHoldBars to prevent capital lockup
  *
  * Usage:
- * - Exchange: polymarket or manifold (doesn't matter, pairs engine fetches both)
- * - Symbol A: PM:some-market-slug
- * - Symbol B: MF:equivalent-manifold-slug
+ * - Same-platform: PM:market-1 / PM:market-2 (both Polymarket)
+ * - Cross-platform: PM:market-slug / MF:market-slug (theoretical)
  * - Timeframe: 1h or 15m recommended
- *
- * Example pairs to find:
- * - Same political events listed on both platforms
- * - Same sports outcomes
- * - Same crypto price predictions
  */
 
 import type { PairsStrategy, PairsStrategyContext } from '../src/strategy/pairs-base.js';
@@ -31,6 +31,8 @@ import type { PairsStrategy, PairsStrategyContext } from '../src/strategy/pairs-
 // Module-level mutable state (reset in init)
 let barsInPosition = 0;
 let positionType: 'long-a-short-b' | 'short-a-long-b' | null = null;
+let lastExitBar = -1000;
+let barCount = 0;
 
 const strategy: PairsStrategy = {
   name: 'pm-cross-platform-arb',
@@ -43,7 +45,7 @@ const strategy: PairsStrategy = {
       name: 'entryThreshold',
       label: 'Entry Spread',
       type: 'number',
-      default: 0.05,
+      default: 0.08,
       min: 0.02,
       max: 0.15,
       step: 0.01,
@@ -53,7 +55,7 @@ const strategy: PairsStrategy = {
       name: 'exitThreshold',
       label: 'Exit Spread',
       type: 'number',
-      default: 0.01,
+      default: 0.03,
       min: 0.0,
       max: 0.05,
       step: 0.005,
@@ -89,11 +91,63 @@ const strategy: PairsStrategy = {
       step: 10,
       description: '% of capital per trade',
     },
+    {
+      name: 'maxPositionUSD',
+      label: 'Max Position ($)',
+      type: 'number',
+      default: 1000,
+      min: 100,
+      max: 10000,
+      step: 100,
+      description: 'Maximum position size in USD (prevents oversizing on thin markets)',
+    },
+    {
+      name: 'avoidExtremesPct',
+      label: 'Avoid Extremes %',
+      type: 'number',
+      default: 5,
+      min: 1,
+      max: 25,
+      step: 1,
+      description: 'Skip entry when either market prob < X% or > (100-X)%',
+    },
+    {
+      name: 'cooldownBars',
+      label: 'Cooldown Bars',
+      type: 'number',
+      default: 48,
+      min: 0,
+      max: 50,
+      step: 5,
+      description: 'Bars to wait after exit before re-entering',
+    },
+    {
+      name: 'minProfitPct',
+      label: 'Min Profit %',
+      type: 'number',
+      default: 8,
+      min: 1,
+      max: 15,
+      step: 1,
+      description: 'Min expected profit % (spread - costs) to enter',
+    },
+    {
+      name: 'minSpreadHistory',
+      label: 'Min Spread History',
+      type: 'number',
+      default: 30,
+      min: 5,
+      max: 100,
+      step: 5,
+      description: 'Min bars of spread data before trading',
+    },
   ],
 
   init(ctx: PairsStrategyContext): void {
     barsInPosition = 0;
     positionType = null;
+    lastExitBar = -1000;
+    barCount = 0;
     ctx.log(`Cross-Platform Arbitrage initialized`);
     ctx.log(`Platform A: ${ctx.symbolA}`);
     ctx.log(`Platform B: ${ctx.symbolB}`);
@@ -117,6 +171,19 @@ const strategy: PairsStrategy = {
       const stopThreshold = params.stopThreshold as number;
       const maxHoldBars = params.maxHoldBars as number;
       const positionSizePct = params.positionSizePct as number;
+      const avoidExtremesPct = params.avoidExtremesPct as number;
+      const maxPositionUSD = params.maxPositionUSD as number;
+      const cooldownBars = params.cooldownBars as number;
+      const minProfitPct = params.minProfitPct as number;
+      const minSpreadHistory = params.minSpreadHistory as number;
+
+      // Increment bar count
+      barCount++;
+
+      // Skip forward-filled candles (no real trading)
+      if (candleA.volume === 0 || candleB.volume === 0) {
+        return;
+      }
 
       // Get current probabilities (close prices)
       const probA = candleA.close;
@@ -172,6 +239,7 @@ const strategy: PairsStrategy = {
           ctx.log(
             `EXIT ${positionType} spread=${spread.toFixed(4)} (${exitReason}) bars=${barsInPosition}`
           );
+          lastExitBar = ctx.currentIndex;
           barsInPosition = 0;
           positionType = null;
         }
@@ -182,11 +250,26 @@ const strategy: PairsStrategy = {
       // ================================================================
       if (inPosition || positionType !== null) return;
 
+      // Ensure enough spread history before trading
+      if (barCount < minSpreadHistory) return;
+
+      // Cooldown check
+      if (ctx.currentIndex - lastExitBar < cooldownBars) return;
+
+      // Filter: Avoid extremes (prices near 0 or 1)
+      const lowerBound = avoidExtremesPct / 100;
+      const upperBound = 1 - lowerBound;
+      if (probA < lowerBound || probA > upperBound || probB < lowerBound || probB > upperBound) return;
+
       // Check if spread exceeds entry threshold
       if (absSpread <= entryThreshold) return;
 
+      // Profit filter: expected convergence profit must exceed minimum
+      const expectedConvergenceProfit = (absSpread - exitThreshold) * 100;
+      if (expectedConvergenceProfit <= minProfitPct) return;
+
       // Calculate position sizes (equal notional on both legs)
-      const totalNotional = equity * (positionSizePct / 100);
+      const totalNotional = Math.min(equity * (positionSizePct / 100), maxPositionUSD);
       const notionalPerLeg = totalNotional / 2;
 
       const amountA = notionalPerLeg / probA;

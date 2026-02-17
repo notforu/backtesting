@@ -21,6 +21,7 @@ interface StrategyState {
   lastRoc: number;
   isLong: boolean;
   rocHistory: number[];
+  lastExitBar: number;
 }
 
 const pmInformationEdge: Strategy = {
@@ -43,31 +44,41 @@ const pmInformationEdge: Strategy = {
       name: 'entryThreshold',
       label: 'Entry Threshold',
       type: 'number',
-      default: 0.05,
+      default: 0.08,
       min: 0.01,
       max: 0.20,
       step: 0.01,
-      description: 'Min ROC to enter (0.05 = 5% probability move)',
+      description: 'Min absolute probability change to enter (0.08 = 8pp move)',
     },
     {
       name: 'exitThreshold',
       label: 'Exit Threshold',
       type: 'number',
-      default: 0.02,
+      default: 0.04,
       min: 0.005,
       max: 0.10,
       step: 0.005,
-      description: 'ROC reversal to exit',
+      description: 'Reversal threshold to exit (absolute probability change)',
     },
     {
       name: 'positionSizePct',
       label: 'Position Size %',
       type: 'number',
-      default: 50,
+      default: 30,
       min: 10,
       max: 90,
       step: 10,
       description: '% of equity per trade',
+    },
+    {
+      name: 'maxPositionUSD',
+      label: 'Max Position ($)',
+      type: 'number',
+      default: 5000,
+      min: 100,
+      max: 10000,
+      step: 100,
+      description: 'Maximum position size in USD (prevents oversizing on thin markets)',
     },
     {
       name: 'avoidExtremesPct',
@@ -78,6 +89,36 @@ const pmInformationEdge: Strategy = {
       max: 25,
       step: 5,
       description: 'Skip trades when prob < X% or > (100-X)%',
+    },
+    {
+      name: 'cooldownBars',
+      label: 'Cooldown Bars',
+      type: 'number',
+      default: 12,
+      min: 0,
+      max: 20,
+      step: 1,
+      description: 'Bars to wait after exit before re-entering',
+    },
+    {
+      name: 'minProfitPct',
+      label: 'Min Profit %',
+      type: 'number',
+      default: 8,
+      min: 1,
+      max: 15,
+      step: 1,
+      description: 'Min expected profit % to enter (must exceed round-trip costs)',
+    },
+    {
+      name: 'minPriceRange',
+      label: 'Min Price Range',
+      type: 'number',
+      default: 0.15,
+      min: 0.02,
+      max: 0.50,
+      step: 0.02,
+      description: 'Min price range (max-min) in lookback window to confirm trend (0.15 = 15pp)',
     },
   ],
 
@@ -90,12 +131,13 @@ const pmInformationEdge: Strategy = {
       lastRoc: 0,
       isLong: false,
       rocHistory: [],
+      lastExitBar: -1000,
     };
 
     (this as any)._state = state;
 
     context.log(
-      `Initialized PM Information Edge: momentumPeriod=${params.momentumPeriod}, entryThreshold=${params.entryThreshold}, exitThreshold=${params.exitThreshold}, positionSize=${params.positionSizePct}%, avoidExtremes=${params.avoidExtremesPct}%`
+      `Initialized PM Information Edge: momentumPeriod=${params.momentumPeriod}, entryThreshold=${params.entryThreshold}, exitThreshold=${params.exitThreshold}, positionSize=${params.positionSizePct}%, avoidExtremes=${params.avoidExtremesPct}%, cooldown=${params.cooldownBars}, minProfit=${params.minProfitPct}%, minPriceRange=${params.minPriceRange}`
     );
   },
 
@@ -119,8 +161,17 @@ const pmInformationEdge: Strategy = {
       const exitThreshold = params.exitThreshold as number;
       const positionSizePct = params.positionSizePct as number;
       const avoidExtremesPct = params.avoidExtremesPct as number;
+      const maxPositionUSD = params.maxPositionUSD as number;
+      const cooldownBars = params.cooldownBars as number;
+      const minProfitPct = params.minProfitPct as number;
+      const minPriceRange = params.minPriceRange as number;
 
       const currentPrice = currentCandle.close;
+
+      // Skip forward-filled candles (no real trading)
+      if (currentCandle.volume === 0) {
+        return;
+      }
 
       // Need at least momentumPeriod + 1 bars to calculate ROC
       if (currentIndex < momentumPeriod) {
@@ -128,9 +179,11 @@ const pmInformationEdge: Strategy = {
       }
 
       // Calculate Rate of Change (ROC)
-      // ROC = (current_price - price_N_bars_ago) / price_N_bars_ago
+      // Use absolute probability change instead of relative ROC
+      // For prediction markets with bounded [0,1] prices, absolute change
+      // avoids bias toward low-probability events
       const pastPrice = candles[currentIndex - momentumPeriod].close;
-      const roc = pastPrice > 0 ? (currentPrice - pastPrice) / pastPrice : 0;
+      const roc = currentPrice - pastPrice;
 
       // Store ROC for trend analysis
       state.rocHistory.push(roc);
@@ -153,11 +206,12 @@ const pmInformationEdge: Strategy = {
 
         if (rocReversed) {
           context.log(
-            `EXIT LONG: ROC reversed (${(roc * 100).toFixed(2)}% < -${(exitThreshold * 100).toFixed(2)}%) at prob=${(currentPrice * 100).toFixed(1)}%, held ${barsHeld} bars`
+            `EXIT LONG: ROC reversed (${(roc * 100).toFixed(2)}pp < -${(exitThreshold * 100).toFixed(2)}pp) at prob=${(currentPrice * 100).toFixed(1)}%, held ${barsHeld} bars`
           );
           context.closeLong();
           state.isLong = false;
           state.lastRoc = roc;
+          state.lastExitBar = currentIndex;
           return;
         }
 
@@ -169,6 +223,7 @@ const pmInformationEdge: Strategy = {
           context.closeLong();
           state.isLong = false;
           state.lastRoc = roc;
+          state.lastExitBar = currentIndex;
           return;
         }
       }
@@ -181,11 +236,12 @@ const pmInformationEdge: Strategy = {
 
         if (rocReversed) {
           context.log(
-            `EXIT SHORT: ROC reversed (${(roc * 100).toFixed(2)}% > ${(exitThreshold * 100).toFixed(2)}%) at prob=${(currentPrice * 100).toFixed(1)}%, held ${barsHeld} bars`
+            `EXIT SHORT: ROC reversed (${(roc * 100).toFixed(2)}pp > ${(exitThreshold * 100).toFixed(2)}pp) at prob=${(currentPrice * 100).toFixed(1)}%, held ${barsHeld} bars`
           );
           context.closeShort();
           state.isLong = false;
           state.lastRoc = roc;
+          state.lastExitBar = currentIndex;
           return;
         }
 
@@ -197,6 +253,7 @@ const pmInformationEdge: Strategy = {
           context.closeShort();
           state.isLong = false;
           state.lastRoc = roc;
+          state.lastExitBar = currentIndex;
           return;
         }
       }
@@ -205,14 +262,40 @@ const pmInformationEdge: Strategy = {
 
       // Only enter if not already in a position and not in extreme zone
       if (!longPosition && !shortPosition && !isInExtremeZone) {
+        // Cooldown check: ensure enough bars have passed since last exit
+        if (currentIndex - state.lastExitBar < cooldownBars) {
+          return;
+        }
+
+        // Trend filter: require sufficient price movement in lookback window
+        // This prevents trading in flat/choppy markets where momentum signals are noise
+        if (currentIndex >= momentumPeriod) {
+          let maxPrice = -Infinity;
+          let minPrice = Infinity;
+          for (let i = currentIndex - momentumPeriod; i <= currentIndex; i++) {
+            const c = candles[i].close;
+            if (c > maxPrice) maxPrice = c;
+            if (c < minPrice) minPrice = c;
+          }
+          const priceRange = maxPrice - minPrice;
+          if (priceRange < minPriceRange) {
+            return; // Market not trending enough
+          }
+        }
+
+        // Profit filter: ensure momentum signal exceeds minimum expected profit
+        if (Math.abs(roc) * 100 <= minProfitPct) {
+          return;
+        }
+
         // Entry LONG: Strong positive momentum (probability rising fast)
         if (roc > entryThreshold) {
-          const positionValue = equity * (positionSizePct / 100);
+          const positionValue = Math.min(equity * (positionSizePct / 100), maxPositionUSD);
           const amount = positionValue / currentPrice;
 
           if (amount > 0) {
             context.log(
-              `OPEN LONG: ROC=${(roc * 100).toFixed(2)}% > ${(entryThreshold * 100).toFixed(2)}% at prob=${(currentPrice * 100).toFixed(1)}%`
+              `OPEN LONG: ROC=${(roc * 100).toFixed(2)}pp > ${(entryThreshold * 100).toFixed(2)}pp at prob=${(currentPrice * 100).toFixed(1)}%`
             );
             context.openLong(amount);
             state.entryBar = currentIndex;
@@ -223,12 +306,12 @@ const pmInformationEdge: Strategy = {
 
         // Entry SHORT: Strong negative momentum (probability dropping fast)
         if (roc < -entryThreshold) {
-          const positionValue = equity * (positionSizePct / 100);
+          const positionValue = Math.min(equity * (positionSizePct / 100), maxPositionUSD);
           const amount = positionValue / currentPrice;
 
           if (amount > 0) {
             context.log(
-              `OPEN SHORT: ROC=${(roc * 100).toFixed(2)}% < -${(entryThreshold * 100).toFixed(2)}% at prob=${(currentPrice * 100).toFixed(1)}%`
+              `OPEN SHORT: ROC=${(roc * 100).toFixed(2)}pp < -${(entryThreshold * 100).toFixed(2)}pp at prob=${(currentPrice * 100).toFixed(1)}%`
             );
             context.openShort(amount);
             state.entryBar = currentIndex;
