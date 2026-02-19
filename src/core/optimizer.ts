@@ -123,7 +123,7 @@ export async function runOptimization(
 
   // Fetch candles for symbol A (with PM-aware cache check)
   const isPM = ['polymarket', 'manifold'].includes(exchange);
-  const cachedRange = getCandleDateRange(exchange, symbol, timeframe);
+  const cachedRange = await getCandleDateRange(exchange, symbol, timeframe);
   const needsFetchA = !cachedRange.start || !cachedRange.end ||
     (!isPM && (cachedRange.start > startDate || cachedRange.end < endDate)) ||
     (isPM && cachedRange.end < Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -131,7 +131,7 @@ export async function runOptimization(
   if (needsFetchA) {
     const candles = await provider.fetchCandles(symbol, timeframe, new Date(startDate), new Date(endDate));
     if (candles.length > 0) {
-      saveCandles(candles, exchange, symbol, timeframe);
+      await saveCandles(candles, exchange, symbol, timeframe);
       console.log(`Cached ${candles.length} candles for ${symbol}`);
     }
   } else {
@@ -140,7 +140,7 @@ export async function runOptimization(
 
   // If pairs strategy, also fetch candles for symbol B
   if (isPairsStrategy && config.symbolB) {
-    const cachedRangeB = getCandleDateRange(exchange, config.symbolB, timeframe);
+    const cachedRangeB = await getCandleDateRange(exchange, config.symbolB, timeframe);
     const needsFetchB = !cachedRangeB.start || !cachedRangeB.end ||
       (!isPM && (cachedRangeB.start > startDate || cachedRangeB.end < endDate)) ||
       (isPM && cachedRangeB.end < Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -148,7 +148,7 @@ export async function runOptimization(
     if (needsFetchB) {
       const candlesB = await provider.fetchCandles(config.symbolB, timeframe, new Date(startDate), new Date(endDate));
       if (candlesB.length > 0) {
-        saveCandles(candlesB, exchange, config.symbolB, timeframe);
+        await saveCandles(candlesB, exchange, config.symbolB, timeframe);
         console.log(`Cached ${candlesB.length} candles for ${config.symbolB}`);
       }
     } else {
@@ -297,7 +297,7 @@ export async function runOptimization(
   };
 
   // Save to database
-  saveOptimizedParams(optimizationResult);
+  await saveOptimizedParams(optimizationResult);
 
   console.log(`\nOptimization complete!`);
   console.log(`Best ${optimizeFor}: ${bestMetricValue.toFixed(4)}`);

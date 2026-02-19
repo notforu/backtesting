@@ -14,7 +14,7 @@ import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { runBacktest } from '../src/core/engine.js';
 import { runPairsBacktest } from '../src/core/pairs-engine.js';
-import { getDb, getCandles, getCandleDateRange } from '../src/data/db.js';
+import { getPool, getCandles, getCandleDateRange } from '../src/data/db.js';
 import type { PairsBacktestConfig } from '../src/core/types.js';
 
 // ============================================================================
@@ -131,29 +131,31 @@ interface WalkForwardResult {
 // Step 1: Load manifest and discover cached markets
 // ============================================================================
 
-function loadCachedMarkets(): CachedMarket[] {
+async function loadCachedMarkets(): Promise<CachedMarket[]> {
   console.log('=== Step 1: Loading cached markets ===');
 
-  const db = getDb();
+  const pool = getPool();
 
   // Query all polymarket 1h candle groups from DB
-  const rows = db.prepare(`
-    SELECT symbol,
-           COUNT(*) as candleCount,
-           SUM(CASE WHEN volume > 0 THEN 1 ELSE 0 END) as realCandleCount,
-           MIN(timestamp) as minTs,
-           MAX(timestamp) as maxTs
-    FROM candles
-    WHERE exchange = ? AND timeframe = ?
-    GROUP BY symbol
-    ORDER BY candleCount DESC
-  `).all(EXCHANGE, TIMEFRAME) as Array<{
-    symbol: string;
-    candleCount: number;
-    realCandleCount: number;
-    minTs: number;
-    maxTs: number;
-  }>;
+  const queryResult = await pool.query(
+    `SELECT symbol,
+            COUNT(*) as "candleCount",
+            SUM(CASE WHEN volume > 0 THEN 1 ELSE 0 END) as "realCandleCount",
+            MIN(timestamp) as "minTs",
+            MAX(timestamp) as "maxTs"
+     FROM candles
+     WHERE exchange = $1 AND timeframe = $2
+     GROUP BY symbol
+     ORDER BY "candleCount" DESC`,
+    [EXCHANGE, TIMEFRAME]
+  );
+  const rows = queryResult.rows.map((row) => ({
+    symbol: row.symbol as string,
+    candleCount: Number(row.candleCount),
+    realCandleCount: Number(row.realCandleCount),
+    minTs: Number(row.minTs),
+    maxTs: Number(row.maxTs),
+  }));
 
   // Try to load manifest for question text
   let manifestMap = new Map<string, string>();
@@ -322,7 +324,7 @@ async function runPairsDiscovery(markets: CachedMarket[]): Promise<PairsResult[]
   const priceSeries: TimestampedPrices[] = [];
 
   for (const market of markets) {
-    const candles = getCandles(EXCHANGE, market.symbol, TIMEFRAME, market.startDate, market.endDate);
+    const candles = await getCandles(EXCHANGE, market.symbol, TIMEFRAME, market.startDate, market.endDate);
     const priceMap = new Map<number, number>();
     for (const c of candles) {
       if (c.volume > 0) {
@@ -751,7 +753,7 @@ async function main(): Promise<void> {
   console.log('PM Backtest Scan - Starting pipeline...\n');
 
   // Step 1: Load cached markets
-  const markets = loadCachedMarkets();
+  const markets = await loadCachedMarkets();
 
   if (markets.length === 0) {
     console.log('\nNo markets ready for backtesting (need >= 500 real candles).');

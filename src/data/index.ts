@@ -4,7 +4,8 @@
 
 // Database
 export {
-  getDb,
+  getPool,
+  initDb,
   closeDb,
   saveCandles,
   getCandles,

@@ -204,7 +204,7 @@ async function main(): Promise<void> {
     );
   }
 
-  closeDb();
+  await closeDb();
 }
 
 main().catch((error) => {

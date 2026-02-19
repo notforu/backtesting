@@ -1,10 +1,11 @@
 /**
- * SQLite database connection and operations
- * Uses better-sqlite3 for synchronous, fast database access
+ * PostgreSQL database connection and operations
+ * Uses node-postgres (pg) with a connection pool for async, non-blocking access
  */
 
+import fs from 'fs';
 import path from 'path';
-import Database from 'better-sqlite3';
+import * as pg from 'pg';
 import type {
   Candle,
   Timeframe,
@@ -17,265 +18,102 @@ import type {
   FundingRate,
 } from '../core/types.js';
 
-// Store database in project data/ directory for persistent caching
-// Can override with DB_PATH environment variable
-const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'backtesting.db');
+const { Pool } = pg;
+
+// Connection string - override with DATABASE_URL env var
+const DATABASE_URL =
+  process.env.DATABASE_URL ||
+  'postgresql://backtesting:backtesting@localhost:5432/backtesting';
 
 // ============================================================================
-// Database Connection
+// Connection Management
 // ============================================================================
 
-let db: Database.Database | null = null;
+let pool: pg.Pool | null = null;
 
 /**
- * Get or create database connection
+ * Get or create the shared connection pool
  */
-export function getDb(): Database.Database {
-  if (!db) {
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    initializeTables(db);
+export function getPool(): pg.Pool {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: DATABASE_URL,
+      max: 10,
+      idleTimeoutMillis: 30000,
+    });
+
+    pool.on('error', (err) => {
+      console.error('Unexpected PostgreSQL pool error:', err);
+    });
   }
-  return db;
+  return pool;
 }
 
 /**
- * Close database connection
+ * Initialize the database by running pending migrations
  */
-export function closeDb(): void {
-  if (db) {
-    db.close();
-    db = null;
+export async function initDb(): Promise<void> {
+  const p = getPool();
+  await runMigrations(p);
+}
+
+/**
+ * Close the database connection pool
+ */
+export async function closeDb(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    pool = null;
   }
 }
 
 // ============================================================================
-// Schema Initialization
+// Migration Runner
 // ============================================================================
 
-/**
- * Create database tables if they don't exist
- */
-function initializeTables(database: Database.Database): void {
-  database.exec(`
-    -- Candles cache
-    CREATE TABLE IF NOT EXISTS candles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      exchange TEXT NOT NULL,
-      symbol TEXT NOT NULL,
-      timeframe TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      open REAL NOT NULL,
-      high REAL NOT NULL,
-      low REAL NOT NULL,
-      close REAL NOT NULL,
-      volume REAL NOT NULL,
-      UNIQUE(exchange, symbol, timeframe, timestamp)
-    );
-
-    -- Backtest runs
-    CREATE TABLE IF NOT EXISTS backtest_runs (
-      id TEXT PRIMARY KEY,
-      strategy_name TEXT NOT NULL,
-      config JSON NOT NULL,
-      metrics JSON NOT NULL,
-      equity JSON NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-
-    -- Legacy trades table (for backward compatibility)
-    CREATE TABLE IF NOT EXISTS trades (
-      id TEXT PRIMARY KEY,
-      backtest_id TEXT NOT NULL,
-      symbol TEXT NOT NULL,
-      side TEXT NOT NULL,
-      entry_price REAL NOT NULL,
-      exit_price REAL NOT NULL,
-      amount REAL NOT NULL,
-      pnl REAL NOT NULL,
-      pnl_percent REAL NOT NULL,
-      entry_time INTEGER NOT NULL,
-      exit_time INTEGER NOT NULL,
-      FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
-    );
-
-    -- New trades table with open/close model
-    CREATE TABLE IF NOT EXISTS trades_v2 (
-      id TEXT PRIMARY KEY,
-      backtest_id TEXT NOT NULL,
-      symbol TEXT NOT NULL,
-      action TEXT NOT NULL,
-      price REAL NOT NULL,
-      amount REAL NOT NULL,
-      timestamp INTEGER NOT NULL,
-      pnl REAL,
-      pnl_percent REAL,
-      closed_position_id TEXT,
-      balance_after REAL NOT NULL,
-      fee REAL,
-      fee_rate REAL,
-      FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
-    );
-
-    -- Optimization results (legacy table)
-    CREATE TABLE IF NOT EXISTS optimization_results (
-      id TEXT PRIMARY KEY,
-      strategy_name TEXT NOT NULL,
-      symbol TEXT NOT NULL,
-      best_params JSON NOT NULL,
-      best_metric_value REAL NOT NULL,
-      metric_name TEXT NOT NULL,
-      config JSON NOT NULL,
-      all_results JSON NOT NULL,
-      created_at INTEGER NOT NULL,
-      UNIQUE(strategy_name, symbol)
-    );
-
-    -- Optimized parameters (used by optimizer)
-    CREATE TABLE IF NOT EXISTS optimized_params (
-      id TEXT PRIMARY KEY,
-      strategy_name TEXT NOT NULL,
-      symbol TEXT NOT NULL,
-      timeframe TEXT NOT NULL,
-      params JSON NOT NULL,
-      metrics JSON NOT NULL,
-      optimized_at INTEGER NOT NULL,
-      config JSON NOT NULL,
-      total_combinations INTEGER NOT NULL,
-      tested_combinations INTEGER NOT NULL
-    );
-
-    -- Polymarket markets metadata cache
-    CREATE TABLE IF NOT EXISTS polymarket_markets (
-      id TEXT PRIMARY KEY,
-      question TEXT NOT NULL,
-      slug TEXT UNIQUE NOT NULL,
-      condition_id TEXT NOT NULL,
-      clob_token_ids TEXT NOT NULL,
-      end_date TEXT,
-      category TEXT,
-      liquidity TEXT,
-      active INTEGER NOT NULL DEFAULT 1,
-      closed INTEGER NOT NULL DEFAULT 0,
-      image TEXT,
-      volume TEXT,
-      updated_at INTEGER NOT NULL
-    );
-
-    -- Funding rates (perpetual futures)
-    CREATE TABLE IF NOT EXISTS funding_rates (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      exchange TEXT NOT NULL,
-      symbol TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      funding_rate REAL NOT NULL,
-      mark_price REAL,
-      UNIQUE(exchange, symbol, timestamp)
-    );
-
-    -- Indexes for efficient lookups
-    CREATE INDEX IF NOT EXISTS idx_candles_lookup
-      ON candles(exchange, symbol, timeframe, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_funding_rates_lookup
-      ON funding_rates(exchange, symbol, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_trades_backtest
-      ON trades(backtest_id);
-    CREATE INDEX IF NOT EXISTS idx_trades_v2_backtest
-      ON trades_v2(backtest_id);
-    CREATE INDEX IF NOT EXISTS idx_backtest_runs_created
-      ON backtest_runs(created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_optimization_results_lookup
-      ON optimization_results(strategy_name, symbol);
-    CREATE INDEX IF NOT EXISTS idx_optimized_params_lookup
-      ON optimized_params(strategy_name, symbol, timeframe);
-    CREATE INDEX IF NOT EXISTS idx_polymarket_markets_slug
-      ON polymarket_markets(slug);
-    CREATE INDEX IF NOT EXISTS idx_polymarket_markets_category
-      ON polymarket_markets(category);
+async function runMigrations(p: pg.Pool): Promise<void> {
+  // Ensure _migrations table exists
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      applied_at TIMESTAMPTZ DEFAULT NOW()
+    )
   `);
 
-  // Run migrations for existing databases
-  runMigrations(database);
-}
-
-/**
- * Run database migrations for schema updates
- */
-function runMigrations(database: Database.Database): void {
-  // Check if fee columns exist in trades_v2
-  const tableInfo = database.prepare("PRAGMA table_info(trades_v2)").all() as { name: string }[];
-  const columnNames = tableInfo.map((col) => col.name);
-
-  // Add fee column if it doesn't exist
-  if (!columnNames.includes('fee')) {
-    database.exec('ALTER TABLE trades_v2 ADD COLUMN fee REAL');
+  // Read migration files from the migrations/ directory
+  const migrationsDir = path.join(process.cwd(), 'migrations');
+  if (!fs.existsSync(migrationsDir)) {
+    return;
   }
 
-  // Add fee_rate column if it doesn't exist
-  if (!columnNames.includes('fee_rate')) {
-    database.exec('ALTER TABLE trades_v2 ADD COLUMN fee_rate REAL');
-  }
+  const files = fs
+    .readdirSync(migrationsDir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
 
-  // Check if timeframe column exists in optimized_params
-  const optimizedParamsInfo = database.prepare("PRAGMA table_info(optimized_params)").all() as { name: string }[];
-  const optimizedColumns = optimizedParamsInfo.map((col) => col.name);
+  for (const file of files) {
+    // Check if already applied
+    const { rows } = await p.query('SELECT 1 FROM _migrations WHERE name = $1', [file]);
+    if (rows.length > 0) {
+      continue;
+    }
 
-  if (!optimizedColumns.includes('timeframe')) {
-    // Add timeframe column, default to '1h' for existing records
-    database.exec("ALTER TABLE optimized_params ADD COLUMN timeframe TEXT NOT NULL DEFAULT '1h'");
-    // Recreate index with timeframe
-    database.exec("DROP INDEX IF EXISTS idx_optimized_params_lookup");
-    database.exec("CREATE INDEX idx_optimized_params_lookup ON optimized_params(strategy_name, symbol, timeframe)");
-  }
-
-  // Add start_date and end_date columns if they don't exist
-  if (!optimizedColumns.includes('start_date')) {
-    database.exec("ALTER TABLE optimized_params ADD COLUMN start_date INTEGER");
-  }
-  if (!optimizedColumns.includes('end_date')) {
-    database.exec("ALTER TABLE optimized_params ADD COLUMN end_date INTEGER");
-  }
-
-  // Migration: Remove UNIQUE constraint from optimized_params table
-  // SQLite doesn't support DROP CONSTRAINT, so we need to recreate the table
-  // Check if the constraint exists by looking at the table's SQL
-  const tableSchema = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='optimized_params'").get() as { sql: string } | undefined;
-  if (tableSchema?.sql.includes('UNIQUE(strategy_name, symbol, timeframe)')) {
-    console.log('Migrating optimized_params table to remove UNIQUE constraint...');
-
-    // Create new table without UNIQUE constraint
-    database.exec(`
-      CREATE TABLE optimized_params_new (
-        id TEXT PRIMARY KEY,
-        strategy_name TEXT NOT NULL,
-        symbol TEXT NOT NULL,
-        timeframe TEXT NOT NULL,
-        params JSON NOT NULL,
-        metrics JSON NOT NULL,
-        optimized_at INTEGER NOT NULL,
-        config JSON NOT NULL,
-        total_combinations INTEGER NOT NULL,
-        tested_combinations INTEGER NOT NULL,
-        start_date INTEGER,
-        end_date INTEGER
-      );
-
-      -- Copy data from old table
-      INSERT INTO optimized_params_new
-      SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date
-      FROM optimized_params;
-
-      -- Drop old table
-      DROP TABLE optimized_params;
-
-      -- Rename new table
-      ALTER TABLE optimized_params_new RENAME TO optimized_params;
-
-      -- Recreate index
-      CREATE INDEX idx_optimized_params_lookup ON optimized_params(strategy_name, symbol, timeframe);
-    `);
-
-    console.log('Migration completed successfully.');
+    // Apply migration in a transaction
+    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
+    const client = await p.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query('INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [file]);
+      await client.query('COMMIT');
+      console.log(`Applied migration: ${file}`);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }
 
@@ -284,7 +122,7 @@ function runMigrations(database: Database.Database): void {
 // ============================================================================
 
 interface CandleRow {
-  timestamp: number;
+  timestamp: string | number;
   open: number;
   high: number;
   low: number;
@@ -293,64 +131,81 @@ interface CandleRow {
 }
 
 /**
- * Save candles to the database
- * Uses INSERT OR REPLACE to handle duplicates
+ * Save candles to the database.
+ * Uses INSERT ... ON CONFLICT DO UPDATE to handle duplicates.
+ * Returns the number of rows upserted.
  */
-export function saveCandles(
+export async function saveCandles(
   candles: Candle[],
   exchange: string,
   symbol: string,
   timeframe: Timeframe
-): number {
-  const database = getDb();
-  const insert = database.prepare(`
-    INSERT OR REPLACE INTO candles (exchange, symbol, timeframe, timestamp, open, high, low, close, volume)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+): Promise<number> {
+  if (candles.length === 0) {
+    return 0;
+  }
 
-  const insertMany = database.transaction((candleList: Candle[]) => {
-    let count = 0;
-    for (const candle of candleList) {
-      insert.run(
-        exchange,
-        symbol,
-        timeframe,
-        candle.timestamp,
-        candle.open,
-        candle.high,
-        candle.low,
-        candle.close,
-        candle.volume
+  const p = getPool();
+  const client = await p.connect();
+  let count = 0;
+
+  try {
+    await client.query('BEGIN');
+
+    for (const candle of candles) {
+      const result = await client.query(
+        `INSERT INTO candles (exchange, symbol, timeframe, timestamp, open, high, low, close, volume)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (exchange, symbol, timeframe, timestamp)
+         DO UPDATE SET open = $5, high = $6, low = $7, close = $8, volume = $9`,
+        [
+          exchange,
+          symbol,
+          timeframe,
+          candle.timestamp,
+          candle.open,
+          candle.high,
+          candle.low,
+          candle.close,
+          candle.volume,
+        ]
       );
-      count++;
+      count += result.rowCount ?? 0;
     }
-    return count;
-  });
 
-  return insertMany(candles);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return count;
 }
 
 /**
  * Get candles from the database
  */
-export function getCandles(
+export async function getCandles(
   exchange: string,
   symbol: string,
   timeframe: Timeframe,
   start: number,
   end: number
-): Candle[] {
-  const database = getDb();
-  const select = database.prepare<[string, string, string, number, number], CandleRow>(`
-    SELECT timestamp, open, high, low, close, volume
-    FROM candles
-    WHERE exchange = ? AND symbol = ? AND timeframe = ? AND timestamp >= ? AND timestamp <= ?
-    ORDER BY timestamp ASC
-  `);
+): Promise<Candle[]> {
+  const p = getPool();
+  const { rows } = await p.query<CandleRow>(
+    `SELECT timestamp, open, high, low, close, volume
+     FROM candles
+     WHERE exchange = $1 AND symbol = $2 AND timeframe = $3
+       AND timestamp >= $4 AND timestamp <= $5
+     ORDER BY timestamp ASC`,
+    [exchange, symbol, timeframe, start, end]
+  );
 
-  const rows = select.all(exchange, symbol, timeframe, start, end);
   return rows.map((row) => ({
-    timestamp: row.timestamp,
+    timestamp: Number(row.timestamp),
     open: row.open,
     high: row.high,
     low: row.low,
@@ -362,38 +217,40 @@ export function getCandles(
 /**
  * Get the date range of cached candles
  */
-export function getCandleDateRange(
+export async function getCandleDateRange(
   exchange: string,
   symbol: string,
   timeframe: Timeframe
-): { start: number | null; end: number | null } {
-  const database = getDb();
-  const select = database.prepare<[string, string, string], { min_ts: number | null; max_ts: number | null }>(`
-    SELECT MIN(timestamp) as min_ts, MAX(timestamp) as max_ts
-    FROM candles
-    WHERE exchange = ? AND symbol = ? AND timeframe = ?
-  `);
+): Promise<{ start: number | null; end: number | null }> {
+  const p = getPool();
+  const { rows } = await p.query<{ min_ts: string | null; max_ts: string | null }>(
+    `SELECT MIN(timestamp) as min_ts, MAX(timestamp) as max_ts
+     FROM candles
+     WHERE exchange = $1 AND symbol = $2 AND timeframe = $3`,
+    [exchange, symbol, timeframe]
+  );
 
-  const row = select.get(exchange, symbol, timeframe);
+  const row = rows[0];
   return {
-    start: row?.min_ts ?? null,
-    end: row?.max_ts ?? null,
+    start: row?.min_ts != null ? Number(row.min_ts) : null,
+    end: row?.max_ts != null ? Number(row.max_ts) : null,
   };
 }
 
 /**
  * Delete candles from the database
  */
-export function deleteCandles(
+export async function deleteCandles(
   exchange: string,
   symbol: string,
   timeframe: Timeframe
-): number {
-  const database = getDb();
-  const result = database
-    .prepare('DELETE FROM candles WHERE exchange = ? AND symbol = ? AND timeframe = ?')
-    .run(exchange, symbol, timeframe);
-  return result.changes;
+): Promise<number> {
+  const p = getPool();
+  const result = await p.query(
+    'DELETE FROM candles WHERE exchange = $1 AND symbol = $2 AND timeframe = $3',
+    [exchange, symbol, timeframe]
+  );
+  return result.rowCount ?? 0;
 }
 
 // ============================================================================
@@ -403,87 +260,102 @@ export function deleteCandles(
 interface BacktestRunRow {
   id: string;
   strategy_name: string;
-  config: string;
-  metrics: string;
-  equity: string;
-  created_at: number;
+  config: BacktestConfig | string;
+  metrics: PerformanceMetrics | string;
+  equity: EquityPoint[] | string;
+  created_at: string | number;
 }
 
 /**
  * Save a backtest run to the database (using new trades_v2 schema)
  */
-export function saveBacktestRun(result: BacktestResult): void {
-  const database = getDb();
+export async function saveBacktestRun(result: BacktestResult): Promise<void> {
+  const p = getPool();
+  const client = await p.connect();
 
-  const insertRun = database.prepare(`
-    INSERT INTO backtest_runs (id, strategy_name, config, metrics, equity, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
+  try {
+    await client.query('BEGIN');
 
-  const insertTrade = database.prepare(`
-    INSERT INTO trades_v2 (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent, closed_position_id, balance_after, fee, fee_rate)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const saveAll = database.transaction(() => {
     // Insert the run
-    insertRun.run(
-      result.id,
-      result.config.strategyName,
-      JSON.stringify(result.config),
-      JSON.stringify(result.metrics),
-      JSON.stringify(result.equity),
-      result.createdAt
+    await client.query(
+      `INSERT INTO backtest_runs (id, strategy_name, config, metrics, equity, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        result.id,
+        result.config.strategyName,
+        JSON.stringify(result.config),
+        JSON.stringify(result.metrics),
+        JSON.stringify(result.equity),
+        result.createdAt,
+      ]
     );
 
     // Insert all trades
     for (const trade of result.trades) {
-      insertTrade.run(
-        trade.id,
-        result.id,
-        trade.symbol,
-        trade.action,
-        trade.price,
-        trade.amount,
-        trade.timestamp,
-        trade.pnl ?? null,
-        trade.pnlPercent ?? null,
-        trade.closedPositionId ?? null,
-        trade.balanceAfter,
-        trade.fee ?? null,
-        trade.feeRate ?? null
+      await client.query(
+        `INSERT INTO trades_v2
+         (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent,
+          closed_position_id, balance_after, fee, fee_rate)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [
+          trade.id,
+          result.id,
+          trade.symbol,
+          trade.action,
+          trade.price,
+          trade.amount,
+          trade.timestamp,
+          trade.pnl ?? null,
+          trade.pnlPercent ?? null,
+          trade.closedPositionId ?? null,
+          trade.balanceAfter,
+          trade.fee ?? null,
+          trade.feeRate ?? null,
+        ]
       );
     }
-  });
 
-  saveAll();
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**
  * Get a backtest run by ID
  */
-export function getBacktestRun(id: string): BacktestResult | null {
-  const database = getDb();
-  const select = database.prepare<[string], BacktestRunRow>(`
-    SELECT id, strategy_name, config, metrics, equity, created_at
-    FROM backtest_runs
-    WHERE id = ?
-  `);
+export async function getBacktestRun(id: string): Promise<BacktestResult | null> {
+  const p = getPool();
+  const { rows } = await p.query<BacktestRunRow>(
+    `SELECT id, strategy_name, config, metrics, equity, created_at
+     FROM backtest_runs
+     WHERE id = $1`,
+    [id]
+  );
 
-  const row = select.get(id);
+  const row = rows[0];
   if (!row) {
     return null;
   }
 
-  const trades = getTrades(id);
+  const trades = await getTrades(id);
 
   return {
     id: row.id,
-    config: JSON.parse(row.config) as BacktestConfig,
-    metrics: JSON.parse(row.metrics) as PerformanceMetrics,
-    equity: JSON.parse(row.equity) as EquityPoint[],
+    config: (typeof row.config === 'string'
+      ? JSON.parse(row.config)
+      : row.config) as BacktestConfig,
+    metrics: (typeof row.metrics === 'string'
+      ? JSON.parse(row.metrics)
+      : row.metrics) as PerformanceMetrics,
+    equity: (typeof row.equity === 'string'
+      ? JSON.parse(row.equity)
+      : row.equity) as EquityPoint[],
     trades,
-    createdAt: row.created_at,
+    createdAt: Number(row.created_at),
   };
 }
 
@@ -509,19 +381,23 @@ export interface BacktestSummary {
  * Get backtest summaries (optimized for history list)
  * Only loads essential fields without trades and equity arrays
  */
-export function getBacktestSummaries(limit: number = 50): BacktestSummary[] {
-  const database = getDb();
-  const select = database.prepare<[number], BacktestRunRow>(`
-    SELECT id, config, metrics, created_at
-    FROM backtest_runs
-    ORDER BY created_at DESC
-    LIMIT ?
-  `);
+export async function getBacktestSummaries(limit: number = 50): Promise<BacktestSummary[]> {
+  const p = getPool();
+  const { rows } = await p.query<BacktestRunRow>(
+    `SELECT id, config, metrics, created_at
+     FROM backtest_runs
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [limit]
+  );
 
-  const rows = select.all(limit);
   return rows.map((row) => {
-    const fullConfig = JSON.parse(row.config) as BacktestConfig;
-    const fullMetrics = JSON.parse(row.metrics) as PerformanceMetrics;
+    const fullConfig = (typeof row.config === 'string'
+      ? JSON.parse(row.config)
+      : row.config) as BacktestConfig;
+    const fullMetrics = (typeof row.metrics === 'string'
+      ? JSON.parse(row.metrics)
+      : row.metrics) as PerformanceMetrics;
 
     return {
       id: row.id,
@@ -534,7 +410,7 @@ export function getBacktestSummaries(limit: number = 50): BacktestSummary[] {
         totalReturnPercent: fullMetrics.totalReturnPercent,
         sharpeRatio: fullMetrics.sharpeRatio,
       },
-      createdAt: row.created_at,
+      createdAt: Number(row.created_at),
     };
   });
 }
@@ -542,52 +418,85 @@ export function getBacktestSummaries(limit: number = 50): BacktestSummary[] {
 /**
  * Get backtest history (most recent first)
  */
-export function getBacktestHistory(limit: number = 50): BacktestResult[] {
-  const database = getDb();
-  const select = database.prepare<[number], BacktestRunRow>(`
-    SELECT id, strategy_name, config, metrics, equity, created_at
-    FROM backtest_runs
-    ORDER BY created_at DESC
-    LIMIT ?
-  `);
+export async function getBacktestHistory(limit: number = 50): Promise<BacktestResult[]> {
+  const p = getPool();
+  const { rows } = await p.query<BacktestRunRow>(
+    `SELECT id, strategy_name, config, metrics, equity, created_at
+     FROM backtest_runs
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [limit]
+  );
 
-  const rows = select.all(limit);
-  return rows.map((row) => {
-    const trades = getTrades(row.id);
-    return {
+  const results: BacktestResult[] = [];
+  for (const row of rows) {
+    const trades = await getTrades(row.id);
+    results.push({
       id: row.id,
-      config: JSON.parse(row.config) as BacktestConfig,
-      metrics: JSON.parse(row.metrics) as PerformanceMetrics,
-      equity: JSON.parse(row.equity) as EquityPoint[],
+      config: (typeof row.config === 'string'
+        ? JSON.parse(row.config)
+        : row.config) as BacktestConfig,
+      metrics: (typeof row.metrics === 'string'
+        ? JSON.parse(row.metrics)
+        : row.metrics) as PerformanceMetrics,
+      equity: (typeof row.equity === 'string'
+        ? JSON.parse(row.equity)
+        : row.equity) as EquityPoint[],
       trades,
-      createdAt: row.created_at,
-    };
-  });
+      createdAt: Number(row.created_at),
+    });
+  }
+  return results;
 }
 
 /**
  * Delete a backtest run and its trades
  */
-export function deleteBacktestRun(id: string): boolean {
-  const database = getDb();
-  // Delete from both trade tables
-  database.prepare('DELETE FROM trades WHERE backtest_id = ?').run(id);
-  database.prepare('DELETE FROM trades_v2 WHERE backtest_id = ?').run(id);
-  const result = database.prepare('DELETE FROM backtest_runs WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deleteBacktestRun(id: string): Promise<boolean> {
+  const p = getPool();
+  const client = await p.connect();
+
+  try {
+    await client.query('BEGIN');
+    // Foreign key cascade will handle trades deletion if FK constraints are enabled,
+    // but we delete explicitly from both tables for safety
+    await client.query('DELETE FROM trades WHERE backtest_id = $1', [id]);
+    await client.query('DELETE FROM trades_v2 WHERE backtest_id = $1', [id]);
+    const result = await client.query('DELETE FROM backtest_runs WHERE id = $1', [id]);
+    await client.query('COMMIT');
+    return (result.rowCount ?? 0) > 0;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**
  * Delete all backtest runs and their trades
  */
-export function deleteAllBacktestRuns(): number {
-  const database = getDb();
-  const countResult = database.prepare('SELECT COUNT(*) as count FROM backtest_runs').get() as { count: number };
-  const count = countResult.count;
-  database.prepare('DELETE FROM trades').run();
-  database.prepare('DELETE FROM trades_v2').run();
-  database.prepare('DELETE FROM backtest_runs').run();
-  return count;
+export async function deleteAllBacktestRuns(): Promise<number> {
+  const p = getPool();
+  const client = await p.connect();
+
+  try {
+    await client.query('BEGIN');
+    const countResult = await client.query<{ count: string }>(
+      'SELECT COUNT(*) as count FROM backtest_runs'
+    );
+    const count = Number(countResult.rows[0]?.count ?? 0);
+    await client.query('DELETE FROM trades');
+    await client.query('DELETE FROM trades_v2');
+    await client.query('DELETE FROM backtest_runs');
+    await client.query('COMMIT');
+    return count;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ============================================================================
@@ -601,7 +510,7 @@ interface TradeV2Row {
   action: string;
   price: number;
   amount: number;
-  timestamp: number;
+  timestamp: string | number;
   pnl: number | null;
   pnl_percent: number | null;
   closed_position_id: string | null;
@@ -620,26 +529,26 @@ interface LegacyTradeRow {
   amount: number;
   pnl: number;
   pnl_percent: number;
-  entry_time: number;
-  exit_time: number;
+  entry_time: string | number;
+  exit_time: string | number;
 }
 
 /**
- * Get trades for a backtest run
- * Tries trades_v2 first, falls back to legacy trades table
+ * Get trades for a backtest run.
+ * Tries trades_v2 first, falls back to legacy trades table.
  */
-export function getTrades(backtestId: string): Trade[] {
-  const database = getDb();
+export async function getTrades(backtestId: string): Promise<Trade[]> {
+  const p = getPool();
 
   // Try new format first
-  const selectV2 = database.prepare<[string], TradeV2Row>(`
-    SELECT id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent, closed_position_id, balance_after, fee, fee_rate
-    FROM trades_v2
-    WHERE backtest_id = ?
-    ORDER BY timestamp ASC
-  `);
-
-  const v2Rows = selectV2.all(backtestId);
+  const { rows: v2Rows } = await p.query<TradeV2Row>(
+    `SELECT id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent,
+            closed_position_id, balance_after, fee, fee_rate
+     FROM trades_v2
+     WHERE backtest_id = $1
+     ORDER BY timestamp ASC`,
+    [backtestId]
+  );
 
   if (v2Rows.length > 0) {
     return v2Rows.map((row) => ({
@@ -648,7 +557,7 @@ export function getTrades(backtestId: string): Trade[] {
       action: row.action as TradeAction,
       price: row.price,
       amount: row.amount,
-      timestamp: row.timestamp,
+      timestamp: Number(row.timestamp),
       pnl: row.pnl ?? undefined,
       pnlPercent: row.pnl_percent ?? undefined,
       closedPositionId: row.closed_position_id ?? undefined,
@@ -659,14 +568,14 @@ export function getTrades(backtestId: string): Trade[] {
   }
 
   // Fall back to legacy format and convert
-  const selectLegacy = database.prepare<[string], LegacyTradeRow>(`
-    SELECT id, backtest_id, symbol, side, entry_price, exit_price, amount, pnl, pnl_percent, entry_time, exit_time
-    FROM trades
-    WHERE backtest_id = ?
-    ORDER BY entry_time ASC
-  `);
-
-  const legacyRows = selectLegacy.all(backtestId);
+  const { rows: legacyRows } = await p.query<LegacyTradeRow>(
+    `SELECT id, backtest_id, symbol, side, entry_price, exit_price, amount, pnl, pnl_percent,
+            entry_time, exit_time
+     FROM trades
+     WHERE backtest_id = $1
+     ORDER BY entry_time ASC`,
+    [backtestId]
+  );
 
   // Convert legacy trades to new format (each legacy trade becomes open + close)
   const convertedTrades: Trade[] = [];
@@ -687,7 +596,7 @@ export function getTrades(backtestId: string): Trade[] {
       action: isLong ? 'OPEN_LONG' : 'OPEN_SHORT',
       price: row.entry_price,
       amount: row.amount,
-      timestamp: row.entry_time,
+      timestamp: Number(row.entry_time),
       balanceAfter: runningBalance,
     });
 
@@ -704,7 +613,7 @@ export function getTrades(backtestId: string): Trade[] {
       action: isLong ? 'CLOSE_LONG' : 'CLOSE_SHORT',
       price: row.exit_price,
       amount: row.amount,
-      timestamp: row.exit_time,
+      timestamp: Number(row.exit_time),
       pnl: row.pnl,
       pnlPercent: row.pnl_percent,
       closedPositionId: `${row.id}-open`,
@@ -718,37 +627,52 @@ export function getTrades(backtestId: string): Trade[] {
 /**
  * Save trades for a backtest run (new format)
  */
-export function saveTrades(backtestId: string, trades: Trade[]): number {
-  const database = getDb();
-  const insert = database.prepare(`
-    INSERT INTO trades_v2 (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent, closed_position_id, balance_after, fee, fee_rate)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+export async function saveTrades(backtestId: string, trades: Trade[]): Promise<number> {
+  if (trades.length === 0) {
+    return 0;
+  }
 
-  const insertMany = database.transaction((tradeList: Trade[]) => {
-    let count = 0;
-    for (const trade of tradeList) {
-      insert.run(
-        trade.id,
-        backtestId,
-        trade.symbol,
-        trade.action,
-        trade.price,
-        trade.amount,
-        trade.timestamp,
-        trade.pnl ?? null,
-        trade.pnlPercent ?? null,
-        trade.closedPositionId ?? null,
-        trade.balanceAfter,
-        trade.fee ?? null,
-        trade.feeRate ?? null
+  const p = getPool();
+  const client = await p.connect();
+  let count = 0;
+
+  try {
+    await client.query('BEGIN');
+
+    for (const trade of trades) {
+      const result = await client.query(
+        `INSERT INTO trades_v2
+         (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent,
+          closed_position_id, balance_after, fee, fee_rate)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [
+          trade.id,
+          backtestId,
+          trade.symbol,
+          trade.action,
+          trade.price,
+          trade.amount,
+          trade.timestamp,
+          trade.pnl ?? null,
+          trade.pnlPercent ?? null,
+          trade.closedPositionId ?? null,
+          trade.balanceAfter,
+          trade.fee ?? null,
+          trade.feeRate ?? null,
+        ]
       );
-      count++;
+      count += result.rowCount ?? 0;
     }
-    return count;
-  });
 
-  return insertMany(trades);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return count;
 }
 
 // ============================================================================
@@ -760,14 +684,14 @@ interface OptimizedParamsRow {
   strategy_name: string;
   symbol: string;
   timeframe: string;
-  params: string;
-  metrics: string;
-  optimized_at: number;
-  config: string;
+  params: Record<string, unknown> | string;
+  metrics: PerformanceMetrics | string;
+  optimized_at: string | number;
+  config: Array<{ params: Record<string, unknown>; metrics: PerformanceMetrics }> | string;
   total_combinations: number;
   tested_combinations: number;
-  start_date: number | null;
-  end_date: number | null;
+  start_date: string | number | null;
+  end_date: string | number | null;
 }
 
 /**
@@ -792,72 +716,26 @@ export interface OptimizationResult {
   }>;
 }
 
-/**
- * Save optimized parameters to the database
- * Creates a new record for each optimization run (does not replace existing)
- */
-export function saveOptimizedParams(result: OptimizationResult): void {
-  const database = getDb();
-
-  const insert = database.prepare(`
-    INSERT INTO optimized_params
-    (id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  insert.run(
-    result.id,
-    result.strategyName,
-    result.symbol,
-    result.timeframe,
-    JSON.stringify(result.bestParams),
-    JSON.stringify(result.bestMetrics),
-    result.optimizedAt,
-    JSON.stringify(result.allResults ?? []),
-    result.totalCombinations,
-    result.testedCombinations,
-    result.startDate ?? null,
-    result.endDate ?? null
-  );
-}
-
-/**
- * Get optimized parameters by strategy name, symbol, and timeframe
- * Returns the most recent optimization run
- * @deprecated Use getOptimizationHistory() to get all runs
- */
-export function getOptimizedParams(
-  strategyName: string,
-  symbol: string,
-  timeframe: string
-): OptimizationResult | null {
-  const database = getDb();
-  const select = database.prepare<[string, string, string], OptimizedParamsRow>(`
-    SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date
-    FROM optimized_params
-    WHERE strategy_name = ? AND symbol = ? AND timeframe = ?
-    ORDER BY optimized_at DESC
-    LIMIT 1
-  `);
-
-  const row = select.get(strategyName, symbol, timeframe);
-  if (!row) {
-    return null;
-  }
-
+function rowToOptimizationResult(row: OptimizedParamsRow): OptimizationResult {
   return {
     id: row.id,
     strategyName: row.strategy_name,
     symbol: row.symbol,
     timeframe: row.timeframe,
-    bestParams: JSON.parse(row.params) as Record<string, unknown>,
-    bestMetrics: JSON.parse(row.metrics) as PerformanceMetrics,
-    optimizedAt: row.optimized_at,
+    bestParams: (typeof row.params === 'string'
+      ? JSON.parse(row.params)
+      : row.params) as Record<string, unknown>,
+    bestMetrics: (typeof row.metrics === 'string'
+      ? JSON.parse(row.metrics)
+      : row.metrics) as PerformanceMetrics,
+    optimizedAt: Number(row.optimized_at),
     totalCombinations: row.total_combinations,
     testedCombinations: row.tested_combinations,
-    startDate: row.start_date ?? undefined,
-    endDate: row.end_date ?? undefined,
-    allResults: JSON.parse(row.config) as Array<{
+    startDate: row.start_date != null ? Number(row.start_date) : undefined,
+    endDate: row.end_date != null ? Number(row.end_date) : undefined,
+    allResults: (typeof row.config === 'string'
+      ? JSON.parse(row.config)
+      : row.config) as Array<{
       params: Record<string, unknown>;
       metrics: PerformanceMetrics;
     }>,
@@ -865,94 +743,124 @@ export function getOptimizedParams(
 }
 
 /**
- * Get all optimization runs for a strategy/symbol/timeframe combination
- * Sorted by most recent first
+ * Save optimized parameters to the database.
+ * Creates a new record for each optimization run (does not replace existing).
  */
-export function getOptimizationHistory(
+export async function saveOptimizedParams(result: OptimizationResult): Promise<void> {
+  const p = getPool();
+
+  await p.query(
+    `INSERT INTO optimized_params
+     (id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config,
+      total_combinations, tested_combinations, start_date, end_date)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [
+      result.id,
+      result.strategyName,
+      result.symbol,
+      result.timeframe,
+      JSON.stringify(result.bestParams),
+      JSON.stringify(result.bestMetrics),
+      result.optimizedAt,
+      JSON.stringify(result.allResults ?? []),
+      result.totalCombinations,
+      result.testedCombinations,
+      result.startDate ?? null,
+      result.endDate ?? null,
+    ]
+  );
+}
+
+/**
+ * Get optimized parameters by strategy name, symbol, and timeframe.
+ * Returns the most recent optimization run.
+ * @deprecated Use getOptimizationHistory() to get all runs
+ */
+export async function getOptimizedParams(
   strategyName: string,
   symbol: string,
   timeframe: string
-): OptimizationResult[] {
-  const database = getDb();
-  const select = database.prepare<[string, string, string], OptimizedParamsRow>(`
-    SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date
-    FROM optimized_params
-    WHERE strategy_name = ? AND symbol = ? AND timeframe = ?
-    ORDER BY optimized_at DESC
-  `);
+): Promise<OptimizationResult | null> {
+  const p = getPool();
+  const { rows } = await p.query<OptimizedParamsRow>(
+    `SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config,
+            total_combinations, tested_combinations, start_date, end_date
+     FROM optimized_params
+     WHERE strategy_name = $1 AND symbol = $2 AND timeframe = $3
+     ORDER BY optimized_at DESC
+     LIMIT 1`,
+    [strategyName, symbol, timeframe]
+  );
 
-  const rows = select.all(strategyName, symbol, timeframe);
-  return rows.map((row) => ({
-    id: row.id,
-    strategyName: row.strategy_name,
-    symbol: row.symbol,
-    timeframe: row.timeframe,
-    bestParams: JSON.parse(row.params) as Record<string, unknown>,
-    bestMetrics: JSON.parse(row.metrics) as PerformanceMetrics,
-    optimizedAt: row.optimized_at,
-    totalCombinations: row.total_combinations,
-    testedCombinations: row.tested_combinations,
-    startDate: row.start_date ?? undefined,
-    endDate: row.end_date ?? undefined,
-    allResults: JSON.parse(row.config) as Array<{
-      params: Record<string, unknown>;
-      metrics: PerformanceMetrics;
-    }>,
-  }));
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return rowToOptimizationResult(row);
+}
+
+/**
+ * Get all optimization runs for a strategy/symbol/timeframe combination.
+ * Sorted by most recent first.
+ */
+export async function getOptimizationHistory(
+  strategyName: string,
+  symbol: string,
+  timeframe: string
+): Promise<OptimizationResult[]> {
+  const p = getPool();
+  const { rows } = await p.query<OptimizedParamsRow>(
+    `SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config,
+            total_combinations, tested_combinations, start_date, end_date
+     FROM optimized_params
+     WHERE strategy_name = $1 AND symbol = $2 AND timeframe = $3
+     ORDER BY optimized_at DESC`,
+    [strategyName, symbol, timeframe]
+  );
+
+  return rows.map(rowToOptimizationResult);
 }
 
 /**
  * Get all optimized parameters
  */
-export function getAllOptimizedParams(): OptimizationResult[] {
-  const database = getDb();
-  const select = database.prepare<[], OptimizedParamsRow>(`
-    SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config, total_combinations, tested_combinations, start_date, end_date
-    FROM optimized_params
-    ORDER BY optimized_at DESC
-  `);
+export async function getAllOptimizedParams(): Promise<OptimizationResult[]> {
+  const p = getPool();
+  const { rows } = await p.query<OptimizedParamsRow>(
+    `SELECT id, strategy_name, symbol, timeframe, params, metrics, optimized_at, config,
+            total_combinations, tested_combinations, start_date, end_date
+     FROM optimized_params
+     ORDER BY optimized_at DESC`
+  );
 
-  const rows = select.all();
-  return rows.map((row) => ({
-    id: row.id,
-    strategyName: row.strategy_name,
-    symbol: row.symbol,
-    timeframe: row.timeframe,
-    bestParams: JSON.parse(row.params) as Record<string, unknown>,
-    bestMetrics: JSON.parse(row.metrics) as PerformanceMetrics,
-    optimizedAt: row.optimized_at,
-    totalCombinations: row.total_combinations,
-    testedCombinations: row.tested_combinations,
-    startDate: row.start_date ?? undefined,
-    endDate: row.end_date ?? undefined,
-    allResults: JSON.parse(row.config) as Array<{
-      params: Record<string, unknown>;
-      metrics: PerformanceMetrics;
-    }>,
-  }));
+  return rows.map(rowToOptimizationResult);
 }
 
 /**
- * Delete optimized parameters by strategy/symbol/timeframe
- * Deletes ALL optimization runs for this combination
+ * Delete optimized parameters by strategy/symbol/timeframe.
+ * Deletes ALL optimization runs for this combination.
  */
-export function deleteOptimizedParams(strategyName: string, symbol: string, timeframe: string): boolean {
-  const database = getDb();
-  const result = database
-    .prepare('DELETE FROM optimized_params WHERE strategy_name = ? AND symbol = ? AND timeframe = ?')
-    .run(strategyName, symbol, timeframe);
-  return result.changes > 0;
+export async function deleteOptimizedParams(
+  strategyName: string,
+  symbol: string,
+  timeframe: string
+): Promise<boolean> {
+  const p = getPool();
+  const result = await p.query(
+    'DELETE FROM optimized_params WHERE strategy_name = $1 AND symbol = $2 AND timeframe = $3',
+    [strategyName, symbol, timeframe]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 /**
  * Delete a specific optimization run by ID
  */
-export function deleteOptimizationById(id: string): boolean {
-  const database = getDb();
-  const result = database
-    .prepare('DELETE FROM optimized_params WHERE id = ?')
-    .run(id);
-  return result.changes > 0;
+export async function deleteOptimizationById(id: string): Promise<boolean> {
+  const p = getPool();
+  const result = await p.query('DELETE FROM optimized_params WHERE id = $1', [id]);
+  return (result.rowCount ?? 0) > 0;
 }
 
 // ============================================================================
@@ -960,60 +868,75 @@ export function deleteOptimizationById(id: string): boolean {
 // ============================================================================
 
 interface FundingRateRow {
-  timestamp: number;
+  timestamp: string | number;
   funding_rate: number;
   mark_price: number | null;
 }
 
 /**
  * Save funding rates to the database.
- * Uses INSERT OR REPLACE to handle duplicates.
- * Returns the number of rows inserted/replaced.
+ * Uses ON CONFLICT DO UPDATE to handle duplicates.
+ * Returns the number of rows inserted/updated.
  */
-export function saveFundingRates(
+export async function saveFundingRates(
   rates: FundingRate[],
   exchange: string,
   symbol: string
-): number {
-  const database = getDb();
-  const insert = database.prepare(`
-    INSERT OR REPLACE INTO funding_rates (exchange, symbol, timestamp, funding_rate, mark_price)
-    VALUES (?, ?, ?, ?, ?)
-  `);
+): Promise<number> {
+  if (rates.length === 0) {
+    return 0;
+  }
 
-  const insertMany = database.transaction((list: FundingRate[]) => {
-    let count = 0;
-    for (const r of list) {
-      insert.run(exchange, symbol, r.timestamp, r.fundingRate, r.markPrice ?? null);
-      count++;
+  const p = getPool();
+  const client = await p.connect();
+  let count = 0;
+
+  try {
+    await client.query('BEGIN');
+
+    for (const r of rates) {
+      const result = await client.query(
+        `INSERT INTO funding_rates (exchange, symbol, timestamp, funding_rate, mark_price)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (exchange, symbol, timestamp)
+         DO UPDATE SET funding_rate = $4, mark_price = $5`,
+        [exchange, symbol, r.timestamp, r.fundingRate, r.markPrice ?? null]
+      );
+      count += result.rowCount ?? 0;
     }
-    return count;
-  });
 
-  return insertMany(rates);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return count;
 }
 
 /**
  * Get funding rates from the database for a given exchange/symbol/date range.
  * Returns rates in ascending timestamp order.
  */
-export function getFundingRates(
+export async function getFundingRates(
   exchange: string,
   symbol: string,
   start: number,
   end: number
-): FundingRate[] {
-  const database = getDb();
-  const select = database.prepare<[string, string, number, number], FundingRateRow>(`
-    SELECT timestamp, funding_rate, mark_price
-    FROM funding_rates
-    WHERE exchange = ? AND symbol = ? AND timestamp >= ? AND timestamp <= ?
-    ORDER BY timestamp ASC
-  `);
+): Promise<FundingRate[]> {
+  const p = getPool();
+  const { rows } = await p.query<FundingRateRow>(
+    `SELECT timestamp, funding_rate, mark_price
+     FROM funding_rates
+     WHERE exchange = $1 AND symbol = $2 AND timestamp >= $3 AND timestamp <= $4
+     ORDER BY timestamp ASC`,
+    [exchange, symbol, start, end]
+  );
 
-  const rows = select.all(exchange, symbol, start, end);
   return rows.map((row) => ({
-    timestamp: row.timestamp,
+    timestamp: Number(row.timestamp),
     fundingRate: row.funding_rate,
     markPrice: row.mark_price ?? undefined,
   }));
@@ -1022,20 +945,21 @@ export function getFundingRates(
 /**
  * Get the cached date range for funding rates of an exchange/symbol pair.
  */
-export function getFundingRateDateRange(
+export async function getFundingRateDateRange(
   exchange: string,
   symbol: string
-): { start: number | null; end: number | null } {
-  const database = getDb();
-  const select = database.prepare<[string, string], { min_ts: number | null; max_ts: number | null }>(`
-    SELECT MIN(timestamp) as min_ts, MAX(timestamp) as max_ts
-    FROM funding_rates
-    WHERE exchange = ? AND symbol = ?
-  `);
+): Promise<{ start: number | null; end: number | null }> {
+  const p = getPool();
+  const { rows } = await p.query<{ min_ts: string | null; max_ts: string | null }>(
+    `SELECT MIN(timestamp) as min_ts, MAX(timestamp) as max_ts
+     FROM funding_rates
+     WHERE exchange = $1 AND symbol = $2`,
+    [exchange, symbol]
+  );
 
-  const row = select.get(exchange, symbol);
+  const row = rows[0];
   return {
-    start: row?.min_ts ?? null,
-    end: row?.max_ts ?? null,
+    start: row?.min_ts != null ? Number(row.min_ts) : null,
+    end: row?.max_ts != null ? Number(row.max_ts) : null,
   };
 }

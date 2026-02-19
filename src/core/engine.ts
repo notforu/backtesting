@@ -243,7 +243,7 @@ export async function runBacktest(
 
   if (validatedConfig.mode === 'futures') {
     log(`Loading funding rates for ${validatedConfig.symbol}`, Date.now());
-    allFundingRates = getFundingRates(
+    allFundingRates = await getFundingRates(
       validatedConfig.exchange,
       validatedConfig.symbol,
       validatedConfig.startDate,
@@ -544,7 +544,7 @@ export async function runBacktest(
   // 12. Save to database
   if (options.saveResults) {
     log('Saving results to database', Date.now());
-    saveBacktestRun(result);
+    await saveBacktestRun(result);
   }
 
   // 13. Save to filesystem (always, regardless of saveResults flag)
@@ -588,7 +588,7 @@ async function fetchOrLoadCandles(
   let candles: Candle[];
 
   // Check what we have in cache
-  const cachedRange = getCandleDateRange(exchange, symbol, timeframe);
+  const cachedRange = await getCandleDateRange(exchange, symbol, timeframe);
 
   // Determine if cache is sufficient:
   // - For prediction markets (polymarket, manifold), data only exists from market creation
@@ -605,11 +605,11 @@ async function fetchOrLoadCandles(
 
   if (hasFullCoverage) {
     console.log('Using cached candles');
-    candles = getCandles(exchange, symbol, timeframe, startDate, endDate);
+    candles = await getCandles(exchange, symbol, timeframe, startDate, endDate);
   } else if (hasSufficientPMCoverage) {
     // PM markets: use cached data even if requested range extends beyond available data
     console.log(`Using cached candles (PM market, data from ${new Date(cachedRange.start!).toISOString().slice(0, 10)})`);
-    candles = getCandles(exchange, symbol, timeframe, cachedRange.start!, Math.min(endDate, Date.now()));
+    candles = await getCandles(exchange, symbol, timeframe, cachedRange.start!, Math.min(endDate, Date.now()));
   } else {
     // Fetch from exchange
     console.log('Fetching candles from exchange...');
@@ -624,7 +624,7 @@ async function fetchOrLoadCandles(
     // Cache the fetched candles
     if (candles.length > 0) {
       console.log(`Caching ${candles.length} candles`);
-      saveCandles(candles, exchange, symbol, timeframe);
+      await saveCandles(candles, exchange, symbol, timeframe);
     }
   }
 

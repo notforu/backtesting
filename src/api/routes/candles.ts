@@ -41,7 +41,7 @@ export async function candleRoutes(fastify: FastifyInstance) {
 
       // Check cache first (unless force refresh)
       if (!forceRefresh) {
-        const cachedRange = getCandleDateRange(exchange, symbol, timeframe);
+        const cachedRange = await getCandleDateRange(exchange, symbol, timeframe);
 
         // If we have data covering the requested range, use cache
         if (
@@ -50,7 +50,7 @@ export async function candleRoutes(fastify: FastifyInstance) {
           cachedRange.start <= start &&
           cachedRange.end >= end
         ) {
-          const candles = getCandles(exchange, symbol, timeframe as Timeframe, start, end);
+          const candles = await getCandles(exchange, symbol, timeframe as Timeframe, start, end);
           return reply.status(200).send({
             candles,
             source: 'cache',
@@ -70,7 +70,7 @@ export async function candleRoutes(fastify: FastifyInstance) {
 
       // Cache the fetched candles
       if (candles.length > 0) {
-        saveCandles(candles, exchange, symbol, timeframe as Timeframe);
+        await saveCandles(candles, exchange, symbol, timeframe as Timeframe);
       }
 
       return reply.status(200).send({
@@ -122,7 +122,7 @@ export async function candleRoutes(fastify: FastifyInstance) {
         ? (timeframe as Timeframe)
         : '1h';
 
-      const range = getCandleDateRange(exchange, symbol, validTimeframe);
+      const range = await getCandleDateRange(exchange, symbol, validTimeframe);
 
       return reply.status(200).send({
         exchange,

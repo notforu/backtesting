@@ -585,7 +585,7 @@ export async function runPairsBacktest(
       ...config,
       symbol: `${config.symbolA} / ${config.symbolB}`,
     };
-    saveBacktestRun({
+    await saveBacktestRun({
       id: result.id,
       config: saveConfig as any,
       trades: result.trades,
@@ -643,7 +643,7 @@ async function fetchOrLoadCandles(
   let candles: Candle[];
 
   // Check what we have in cache
-  const cachedRange = getCandleDateRange(exchange, symbol, timeframe);
+  const cachedRange = await getCandleDateRange(exchange, symbol, timeframe);
 
   // If we have complete coverage, use cache
   if (
@@ -653,7 +653,7 @@ async function fetchOrLoadCandles(
     cachedRange.end >= endDate
   ) {
     console.log(`Using cached candles for ${symbol}`);
-    candles = getCandles(exchange, symbol, timeframe, startDate, endDate);
+    candles = await getCandles(exchange, symbol, timeframe, startDate, endDate);
   } else {
     // Fetch from exchange
     console.log(`Fetching candles from exchange for ${symbol}...`);
@@ -668,7 +668,7 @@ async function fetchOrLoadCandles(
     // Cache the fetched candles
     if (candles.length > 0) {
       console.log(`Caching ${candles.length} candles for ${symbol}`);
-      saveCandles(candles, exchange, symbol, timeframe);
+      await saveCandles(candles, exchange, symbol, timeframe);
     }
   }
 

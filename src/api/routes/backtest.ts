@@ -85,7 +85,7 @@ export async function backtestRoutes(fastify: FastifyInstance) {
       const duration = Date.now() - startTime;
 
       // Fetch candles for the chart display
-      const candles = getCandles(
+      const candles = await getCandles(
         config.exchange,
         config.symbol,
         config.timeframe,
@@ -129,7 +129,7 @@ export async function backtestRoutes(fastify: FastifyInstance) {
   ) => {
     try {
       const { id } = request.params;
-      const result = getBacktestRun(id);
+      const result = await getBacktestRun(id);
 
       if (!result) {
         return reply.status(404).send({
@@ -142,14 +142,14 @@ export async function backtestRoutes(fastify: FastifyInstance) {
       // Check if this is a pairs result (has symbolA/symbolB)
       if (config.symbolA && config.symbolB) {
         // Fetch candles for both symbols
-        const candlesA = getCandles(
+        const candlesA = await getCandles(
           config.exchange,
           config.symbolA,
           config.timeframe,
           config.startDate,
           config.endDate
         );
-        const candlesB = getCandles(
+        const candlesB = await getCandles(
           config.exchange,
           config.symbolB,
           config.timeframe,
@@ -166,7 +166,7 @@ export async function backtestRoutes(fastify: FastifyInstance) {
       }
 
       // Single-market result
-      const candles = getCandles(
+      const candles = await getCandles(
         result.config.exchange,
         result.config.symbol,
         result.config.timeframe,
@@ -203,7 +203,7 @@ export async function backtestRoutes(fastify: FastifyInstance) {
     try {
       fastify.log.info('GET /api/backtest/history called');
       const { limit } = HistoryQuerySchema.parse(request.query);
-      const summaries = getBacktestSummaries(limit);
+      const summaries = await getBacktestSummaries(limit);
 
       // Transform to frontend format
       const results = summaries.map((summary) => ({
@@ -247,7 +247,7 @@ export async function backtestRoutes(fastify: FastifyInstance) {
     reply: FastifyReply
   ) => {
     try {
-      const count = deleteAllBacktestRuns();
+      const count = await deleteAllBacktestRuns();
       return reply.status(200).send({
         message: `Deleted ${count} backtest run${count !== 1 ? 's' : ''}`,
         count,
@@ -270,7 +270,7 @@ export async function backtestRoutes(fastify: FastifyInstance) {
   ) => {
     try {
       const { id } = request.params;
-      const deleted = deleteBacktestRun(id);
+      const deleted = await deleteBacktestRun(id);
 
       if (!deleted) {
         return reply.status(404).send({

@@ -129,7 +129,7 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
   ) => {
     try {
       const { strategyName, symbol, timeframe } = request.params;
-      const results = getOptimizationHistory(strategyName, symbol, timeframe);
+      const results = await getOptimizationHistory(strategyName, symbol, timeframe);
 
       if (results.length === 0) {
         return reply.status(404).send({
@@ -160,7 +160,7 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
   ) => {
     try {
       const { strategyName, symbol, timeframe } = request.params;
-      const result = getOptimizedParams(strategyName, symbol, timeframe);
+      const result = await getOptimizedParams(strategyName, symbol, timeframe);
 
       if (!result) {
         return reply.status(404).send({
@@ -190,7 +190,7 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
     reply: FastifyReply
   ) => {
     try {
-      const results = getAllOptimizedParams();
+      const results = await getAllOptimizedParams();
       return reply.status(200).send(results);
     } catch (error) {
       if (error instanceof Error) {
@@ -214,7 +214,7 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
   ) => {
     try {
       const { strategyName, symbol, timeframe } = request.params;
-      const deleted = deleteOptimizedParams(strategyName, symbol, timeframe);
+      const deleted = await deleteOptimizedParams(strategyName, symbol, timeframe);
 
       if (!deleted) {
         return reply.status(404).send({
@@ -247,7 +247,7 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
   ) => {
     try {
       const { id } = request.params;
-      const deleted = deleteOptimizationById(id);
+      const deleted = await deleteOptimizationById(id);
 
       if (!deleted) {
         return reply.status(404).send({

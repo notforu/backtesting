@@ -36,9 +36,9 @@ const TIMEFRAMES_TO_TEST: Timeframe[] = ['1h', '15m', '1m'];
 async function prefetchCandles(timeframe: Timeframe): Promise<void> {
   console.log(`  Pre-fetching ${timeframe} candles for ${SYMBOL}...`);
 
-  const cached = getCandleDateRange(EXCHANGE, SYMBOL, timeframe);
+  const cached = await getCandleDateRange(EXCHANGE, SYMBOL, timeframe);
   if (cached.start && cached.end && cached.start <= START_DATE && cached.end >= END_DATE) {
-    const existingCandles = getCandles(EXCHANGE, SYMBOL, timeframe, START_DATE, END_DATE);
+    const existingCandles = await getCandles(EXCHANGE, SYMBOL, timeframe, START_DATE, END_DATE);
     console.log(`  Using ${existingCandles.length} cached candles`);
     return;
   }
@@ -52,7 +52,7 @@ async function prefetchCandles(timeframe: Timeframe): Promise<void> {
   );
 
   if (candles.length > 0) {
-    saveCandles(candles, EXCHANGE, SYMBOL, timeframe);
+    await saveCandles(candles, EXCHANGE, SYMBOL, timeframe);
     console.log(`  Cached ${candles.length} ${timeframe} candles`);
   }
 }

@@ -359,7 +359,7 @@ async function cacheMarket(
     const candles = await provider.fetchCandles(symbol, '1h', CACHE_START_DATE, now);
 
     if (candles.length > 0) {
-      saveCandles(candles, 'polymarket', symbol, '1h');
+      await saveCandles(candles, 'polymarket', symbol, '1h');
 
       const realCandles = candles.filter((c) => c.volume > 0);
       const firstTs = candles[0].timestamp;

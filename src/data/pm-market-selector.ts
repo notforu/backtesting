@@ -9,7 +9,7 @@
  * suitable for mean-reversion than markets converging to 0 or 1.
  */
 
-import { getDb } from './db.js';
+import { getPool } from './db.js';
 
 // ============================================================================
 // Types
@@ -166,43 +166,44 @@ interface CachedSymbolSummary {
 /**
  * Get all PM symbols that have candles cached in the DB (1h timeframe).
  */
-function getCachedPMSymbols(): CachedSymbolSummary[] {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `
-      SELECT symbol,
-             COUNT(*) as candleCount,
-             SUM(CASE WHEN volume > 0 THEN 1 ELSE 0 END) as realCandleCount,
-             MIN(timestamp) as minTs,
-             MAX(timestamp) as maxTs
-      FROM candles
-      WHERE exchange = 'polymarket' AND timeframe = '1h'
-      GROUP BY symbol
-    `
-    )
-    .all() as CachedSymbolSummary[];
-
-  return rows;
+async function getCachedPMSymbols(): Promise<CachedSymbolSummary[]> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT symbol,
+            COUNT(*) as "candleCount",
+            SUM(CASE WHEN volume > 0 THEN 1 ELSE 0 END) as "realCandleCount",
+            MIN(timestamp) as "minTs",
+            MAX(timestamp) as "maxTs"
+     FROM candles
+     WHERE exchange = 'polymarket' AND timeframe = '1h'
+     GROUP BY symbol`
+  );
+  return result.rows.map((row) => ({
+    symbol: row.symbol,
+    candleCount: Number(row.candleCount),
+    realCandleCount: Number(row.realCandleCount),
+    minTs: Number(row.minTs),
+    maxTs: Number(row.maxTs),
+  }));
 }
 
 /**
  * Get candles for a specific PM symbol from DB cache.
  */
-function getSymbolCandles(symbol: string): CandleRow[] {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `
-      SELECT timestamp, close, volume
-      FROM candles
-      WHERE exchange = 'polymarket' AND symbol = ? AND timeframe = '1h'
-      ORDER BY timestamp ASC
-    `
-    )
-    .all(symbol) as CandleRow[];
-
-  return rows;
+async function getSymbolCandles(symbol: string): Promise<CandleRow[]> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT timestamp, close, volume
+     FROM candles
+     WHERE exchange = 'polymarket' AND symbol = $1 AND timeframe = '1h'
+     ORDER BY timestamp ASC`,
+    [symbol]
+  );
+  return result.rows.map((row) => ({
+    timestamp: Number(row.timestamp),
+    close: Number(row.close),
+    volume: Number(row.volume),
+  }));
 }
 
 // ============================================================================
@@ -415,7 +416,7 @@ export async function selectMarkets(
   }
 
   // Step 3: Get all cached PM symbols from DB
-  const cachedSymbols = getCachedPMSymbols();
+  const cachedSymbols = await getCachedPMSymbols();
 
   // Build slug -> cached summary map
   // PM symbols in DB are stored as "PM:slug-name"
@@ -462,7 +463,7 @@ export async function selectMarkets(
     if (dataSpanDays < opts.minDataDays) continue;
 
     // --- Load candles and compute metrics ---
-    const candles = getSymbolCandles(cached.symbol);
+    const candles = await getSymbolCandles(cached.symbol);
     if (candles.length < 20) continue;
 
     const metrics = computeOscillationMetrics(candles);

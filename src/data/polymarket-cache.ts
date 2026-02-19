@@ -1,38 +1,26 @@
 /**
  * Polymarket market metadata caching
- * Stores market information in SQLite database
+ * Stores market information in PostgreSQL database
  */
 
-import { getDb } from './db.js';
+import { getPool } from './db.js';
 import type { GammaMarket } from './providers/polymarket-types.js';
 
 /**
  * Get market metadata by slug
  */
-export function getMarketBySlug(slug: string): GammaMarket | null {
-  const database = getDb();
-  const select = database.prepare<[string], {
-    id: string;
-    question: string;
-    slug: string;
-    condition_id: string;
-    clob_token_ids: string;
-    end_date: string | null;
-    category: string | null;
-    liquidity: string | null;
-    active: number;
-    closed: number;
-    image: string | null;
-    volume: string | null;
-  }>(`
-    SELECT
+export async function getMarketBySlug(slug: string): Promise<GammaMarket | null> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT
       id, question, slug, condition_id, clob_token_ids,
       end_date, category, liquidity, active, closed, image, volume
     FROM polymarket_markets
-    WHERE slug = ?
-  `);
+    WHERE slug = $1`,
+    [slug]
+  );
 
-  const row = select.get(slug);
+  const row = result.rows[0];
   if (!row) {
     return null;
   }
@@ -46,8 +34,8 @@ export function getMarketBySlug(slug: string): GammaMarket | null {
     endDate: row.end_date ?? '',
     category: row.category ?? '',
     liquidity: row.liquidity ?? '',
-    active: row.active === 1,
-    closed: row.closed === 1,
+    active: row.active,
+    closed: row.closed,
     image: row.image ?? undefined,
     volume: row.volume ?? undefined,
   };
@@ -56,28 +44,40 @@ export function getMarketBySlug(slug: string): GammaMarket | null {
 /**
  * Save market metadata to cache
  */
-export function saveMarket(market: GammaMarket): void {
-  const database = getDb();
-  const insert = database.prepare(`
-    INSERT OR REPLACE INTO polymarket_markets
+export async function saveMarket(market: GammaMarket): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO polymarket_markets
     (id, question, slug, condition_id, clob_token_ids, end_date, category, liquidity, active, closed, image, volume, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  insert.run(
-    market.id,
-    market.question,
-    market.slug,
-    market.conditionId,
-    market.clobTokenIds,
-    market.endDate || null,
-    market.category || null,
-    market.liquidity || null,
-    market.active ? 1 : 0,
-    market.closed ? 1 : 0,
-    market.image ?? null,
-    market.volume ?? null,
-    Date.now()
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    ON CONFLICT (id) DO UPDATE SET
+      question = EXCLUDED.question,
+      slug = EXCLUDED.slug,
+      condition_id = EXCLUDED.condition_id,
+      clob_token_ids = EXCLUDED.clob_token_ids,
+      end_date = EXCLUDED.end_date,
+      category = EXCLUDED.category,
+      liquidity = EXCLUDED.liquidity,
+      active = EXCLUDED.active,
+      closed = EXCLUDED.closed,
+      image = EXCLUDED.image,
+      volume = EXCLUDED.volume,
+      updated_at = EXCLUDED.updated_at`,
+    [
+      market.id,
+      market.question,
+      market.slug,
+      market.conditionId,
+      market.clobTokenIds,
+      market.endDate || null,
+      market.category || null,
+      market.liquidity || null,
+      market.active,
+      market.closed,
+      market.image ?? null,
+      market.volume ?? null,
+      Date.now(),
+    ]
   );
 }
 
@@ -86,33 +86,20 @@ export function saveMarket(market: GammaMarket): void {
  * @param query - Search query string
  * @param limit - Maximum number of results (default: 20)
  */
-export function searchMarkets(query: string, limit: number = 20): GammaMarket[] {
-  const database = getDb();
-  const select = database.prepare<[string, string, number], {
-    id: string;
-    question: string;
-    slug: string;
-    condition_id: string;
-    clob_token_ids: string;
-    end_date: string | null;
-    category: string | null;
-    liquidity: string | null;
-    active: number;
-    closed: number;
-    image: string | null;
-    volume: string | null;
-  }>(`
-    SELECT
+export async function searchMarkets(query: string, limit: number = 20): Promise<GammaMarket[]> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT
       id, question, slug, condition_id, clob_token_ids,
       end_date, category, liquidity, active, closed, image, volume
     FROM polymarket_markets
-    WHERE question LIKE '%' || ? || '%' OR slug LIKE '%' || ? || '%'
+    WHERE question LIKE '%' || $1 || '%' OR slug LIKE '%' || $2 || '%'
     ORDER BY active DESC, updated_at DESC
-    LIMIT ?
-  `);
+    LIMIT $3`,
+    [query, query, limit]
+  );
 
-  const rows = select.all(query, query, limit);
-  return rows.map((row) => ({
+  return result.rows.map((row) => ({
     id: row.id,
     question: row.question,
     slug: row.slug,
@@ -121,8 +108,8 @@ export function searchMarkets(query: string, limit: number = 20): GammaMarket[] 
     endDate: row.end_date ?? '',
     category: row.category ?? '',
     liquidity: row.liquidity ?? '',
-    active: row.active === 1,
-    closed: row.closed === 1,
+    active: row.active,
+    closed: row.closed,
     image: row.image ?? undefined,
     volume: row.volume ?? undefined,
   }));
@@ -131,32 +118,19 @@ export function searchMarkets(query: string, limit: number = 20): GammaMarket[] 
 /**
  * Get markets by category
  */
-export function getMarketsByCategory(category: string): GammaMarket[] {
-  const database = getDb();
-  const select = database.prepare<[string], {
-    id: string;
-    question: string;
-    slug: string;
-    condition_id: string;
-    clob_token_ids: string;
-    end_date: string | null;
-    category: string | null;
-    liquidity: string | null;
-    active: number;
-    closed: number;
-    image: string | null;
-    volume: string | null;
-  }>(`
-    SELECT
+export async function getMarketsByCategory(category: string): Promise<GammaMarket[]> {
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT
       id, question, slug, condition_id, clob_token_ids,
       end_date, category, liquidity, active, closed, image, volume
     FROM polymarket_markets
-    WHERE category = ?
-    ORDER BY active DESC, updated_at DESC
-  `);
+    WHERE category = $1
+    ORDER BY active DESC, updated_at DESC`,
+    [category]
+  );
 
-  const rows = select.all(category);
-  return rows.map((row) => ({
+  return result.rows.map((row) => ({
     id: row.id,
     question: row.question,
     slug: row.slug,
@@ -165,8 +139,8 @@ export function getMarketsByCategory(category: string): GammaMarket[] {
     endDate: row.end_date ?? '',
     category: row.category ?? '',
     liquidity: row.liquidity ?? '',
-    active: row.active === 1,
-    closed: row.closed === 1,
+    active: row.active,
+    closed: row.closed,
     image: row.image ?? undefined,
     volume: row.volume ?? undefined,
   }));

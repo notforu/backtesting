@@ -2,6 +2,7 @@
 
 Track agent invocations to understand token consumption patterns.
 Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
+[2026-02-19 10:00] be-dev (sonnet) - Write and run scripts/run-fr-backtests-save.ts to persist ATOM/DOT 4h funding-rate-spike backtests to PostgreSQL
 
 ---
 
@@ -388,3 +389,13 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-19 10:00] fullstack-dev (sonnet) - Fix dashboard: bybit exchange, mode selector, API route
 [2026-02-19 10:00] docs-writer (haiku) - Create changelog for realism fixes and dashboard support
 [2026-02-19 10:15] docs-writer (haiku) - Write changelog for realism fixes + dashboard support
+[2026-02-19 06:39] commit (haiku) - futures mode support, funding rates, Bybit integration, and realism fixes
+[2026-02-19 00:00] be-dev (sonnet) - Phase 1 PostgreSQL migration: docker-compose postgres service, package.json pg deps, migrations/001_initial_schema.sql
+[2026-02-19 07:22] be-dev (sonnet) - Phase 2 PostgreSQL migration: full rewrite of src/data/db.ts from SQLite/better-sqlite3 to async pg with Pool, migrations runner, and all 23+ functions
+[2026-02-19 07:33] be-dev (sonnet) - Update all db callers to await async PostgreSQL functions (13 files)
+[2026-02-19 08:00] be-dev (sonnet) - Phase 1: PG infrastructure (docker-compose, package.json, migrations SQL)
+[2026-02-19 08:05] be-dev (sonnet) - Phase 2: Full rewrite of src/data/db.ts (SQLite→PostgreSQL, sync→async)
+[2026-02-19 08:15] be-dev (sonnet) - Phase 3+4: Cascade async updates across 13 caller files
+[2026-02-19 08:00] docs-writer (haiku) - Migrate SQLite to PostgreSQL changelog
+[2026-02-19 08:30] be-dev (sonnet) - Write one-time SQLite to PostgreSQL migration script at scripts/migrate-sqlite-to-pg.ts
+[2026-02-19 08:35] be-dev (sonnet) - Run FR backtests with saveResults:true and verify in DB

@@ -1,11 +1,32 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: backtesting-postgres
+    environment:
+      - POSTGRES_DB=backtesting
+      - POSTGRES_USER=backtesting
+      - POSTGRES_PASSWORD=backtesting
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backtesting"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   claude:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: claude-sandbox
+
+    depends_on:
+      postgres:
+        condition: service_healthy
 
     # Mount project folder as /workspace
     volumes:
@@ -16,6 +37,7 @@ services:
     # Pass API key from host environment (optional if using OAuth)
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DATABASE_URL=postgresql://backtesting:backtesting@postgres:5432/backtesting
 
     # Interactive terminal
     stdin_open: true
@@ -46,3 +68,4 @@ services:
 
 volumes:
   claude-credentials:
+  pgdata:

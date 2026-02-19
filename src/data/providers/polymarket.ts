@@ -198,7 +198,7 @@ export class PolymarketProvider implements DataProvider {
    */
   private async getMarketMetadata(slug: string): Promise<GammaMarket> {
     // Check cache first
-    const cached = getMarketBySlug(slug);
+    const cached = await getMarketBySlug(slug);
     if (cached) {
       return cached;
     }
@@ -221,7 +221,7 @@ export class PolymarketProvider implements DataProvider {
     const market = markets[0];
 
     // Save to cache
-    saveMarket(market);
+    await saveMarket(market);
 
     return market;
   }
@@ -340,7 +340,7 @@ export class PolymarketProvider implements DataProvider {
 
     // Cache all markets
     for (const market of markets) {
-      saveMarket(market);
+      await saveMarket(market);
     }
 
     // Return slugs with PM: prefix

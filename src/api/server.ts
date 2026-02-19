@@ -11,7 +11,7 @@ import { candleRoutes } from './routes/candles.js';
 import { optimizeRoutes } from './routes/optimize.js';
 import { polymarketRoutes } from './routes/polymarket.js';
 import { scanRoutes } from './routes/scan.js';
-import { getDb, closeDb } from '../data/db.js';
+import { initDb, closeDb } from '../data/db.js';
 
 const fastify = Fastify({
   logger: {
@@ -24,8 +24,8 @@ await fastify.register(cors, {
   origin: true,
 });
 
-// Initialize database connection
-getDb();
+// Initialize database connection (run migrations)
+await initDb();
 
 // Health check endpoint
 fastify.get('/api/health', async () => {
@@ -47,7 +47,7 @@ await fastify.register(scanRoutes);
 // Graceful shutdown
 const shutdown = async () => {
   console.log('\nShutting down gracefully...');
-  closeDb();
+  await closeDb();
   await fastify.close();
   process.exit(0);
 };

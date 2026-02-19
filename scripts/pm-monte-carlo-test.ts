@@ -16,7 +16,7 @@
 
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { getDb } from '../src/data/db.js';
+import { getPool } from '../src/data/db.js';
 
 // ============================================================================
 // CLI Argument Parsing
@@ -105,29 +105,44 @@ const INITIAL_CAPITAL = 10000;
 // Data Loading
 // ============================================================================
 
-function loadMarkets(minCandles: number): SymbolData[] {
-  const db = getDb();
+async function loadMarkets(minCandles: number): Promise<SymbolData[]> {
+  const pool = getPool();
 
-  const rows = db.prepare(`
-    SELECT symbol,
-           COUNT(*) as totalCount,
-           SUM(CASE WHEN volume > 0 THEN 1 ELSE 0 END) as realCount
-    FROM candles
-    WHERE exchange = 'polymarket' AND timeframe = '1h'
-    GROUP BY symbol
-    HAVING realCount >= ?
-    ORDER BY realCount DESC
-  `).all(minCandles) as Array<{ symbol: string; totalCount: number; realCount: number }>;
+  const summaryResult = await pool.query(
+    `SELECT symbol,
+            COUNT(*) as "totalCount",
+            SUM(CASE WHEN volume > 0 THEN 1 ELSE 0 END) as "realCount"
+     FROM candles
+     WHERE exchange = 'polymarket' AND timeframe = '1h'
+     GROUP BY symbol
+     HAVING SUM(CASE WHEN volume > 0 THEN 1 ELSE 0 END) >= $1
+     ORDER BY "realCount" DESC`,
+    [minCandles]
+  );
+
+  const rows = summaryResult.rows.map((row) => ({
+    symbol: row.symbol as string,
+    totalCount: Number(row.totalCount),
+    realCount: Number(row.realCount),
+  }));
 
   const markets: SymbolData[] = [];
 
   for (const row of rows) {
-    const candles = db.prepare(`
-      SELECT symbol, timestamp, close, volume
-      FROM candles
-      WHERE exchange = 'polymarket' AND timeframe = '1h' AND symbol = ?
-      ORDER BY timestamp ASC
-    `).all(row.symbol) as CandleRow[];
+    const candlesResult = await pool.query(
+      `SELECT symbol, timestamp, close, volume
+       FROM candles
+       WHERE exchange = 'polymarket' AND timeframe = '1h' AND symbol = $1
+       ORDER BY timestamp ASC`,
+      [row.symbol]
+    );
+
+    const candles: CandleRow[] = candlesResult.rows.map((r) => ({
+      symbol: r.symbol,
+      timestamp: Number(r.timestamp),
+      close: Number(r.close),
+      volume: Number(r.volume),
+    }));
 
     const realCandles = candles.filter(c => c.volume > 0);
 
@@ -738,7 +753,7 @@ async function main(): Promise<void> {
   const startTime = Date.now();
 
   // Load markets from DB
-  const markets = loadMarkets(minCandles);
+  const markets = await loadMarkets(minCandles);
 
   if (markets.length === 0) {
     console.log(`No markets found with >= ${minCandles} real candles.`);

@@ -188,7 +188,7 @@ async function main(): Promise<void> {
     }));
     process.exit(1);
   } finally {
-    closeDb();
+    await closeDb();
   }
 }
 

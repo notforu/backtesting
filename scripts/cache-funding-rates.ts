@@ -125,7 +125,7 @@ async function main(): Promise<void> {
 
     try {
       // Check existing cached range
-      const cached = getFundingRateDateRange(exchange, symbol);
+      const cached = await getFundingRateDateRange(exchange, symbol);
 
       let fetchStart = from;
       let fetchEnd = to;
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
       const rates = await provider.fetchFundingRateHistory(symbol, fetchStart, fetchEnd);
 
       if (rates.length > 0) {
-        const saved = saveFundingRates(rates, exchange, symbol);
+        const saved = await saveFundingRates(rates, exchange, symbol);
         totalFetched += saved;
 
         const firstDate = formatDate(rates[0].timestamp);
@@ -193,7 +193,7 @@ async function getCachedCount(
   end: number
 ): Promise<number> {
   const { getFundingRates } = await import('../src/data/db.js');
-  const rates = getFundingRates(exchange, symbol, start, end);
+  const rates = await getFundingRates(exchange, symbol, start, end);
   return rates.length;
 }
 
