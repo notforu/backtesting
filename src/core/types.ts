@@ -147,6 +147,16 @@ export const RollingMetricsSchema = z.object({
 export type RollingMetrics = z.infer<typeof RollingMetricsSchema>;
 
 // ============================================================================
+// Funding Rate (Futures)
+// ============================================================================
+
+export interface FundingRate {
+  timestamp: number;     // Unix ms, aligned to 8h funding interval
+  fundingRate: number;   // e.g. 0.0001 = 0.01%
+  markPrice?: number;    // Mark price at funding time (optional)
+}
+
+// ============================================================================
 // Backtest Configuration
 // ============================================================================
 
@@ -161,6 +171,7 @@ export const BacktestConfigSchema = z.object({
   initialCapital: z.number().positive(),
   exchange: z.string(),
   leverage: z.number().min(1).max(125).default(1).optional(),
+  mode: z.enum(['spot', 'futures']).default('spot').optional(),
 });
 
 export type BacktestConfig = z.infer<typeof BacktestConfigSchema>;
@@ -235,6 +246,16 @@ export interface SpreadDataPoint {
   timestamp: number;
   spread: number;
   zScore: number;
+}
+
+// ============================================================================
+// Funding Rate
+// ============================================================================
+
+export interface FundingRate {
+  timestamp: number;
+  fundingRate: number;
+  markPrice?: number;
 }
 
 export interface PairsBacktestResult {

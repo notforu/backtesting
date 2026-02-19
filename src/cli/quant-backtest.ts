@@ -159,6 +159,7 @@ async function main(): Promise<void> {
         initialCapital: args.capital ? Number(args.capital) : 10000,
         exchange: args.exchange || 'binance',
         params: strategyParams,
+        mode: args.mode as 'spot' | 'futures' | undefined,
       });
       const options: any = {
         enableLogging: false,

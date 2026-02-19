@@ -87,6 +87,7 @@ interface ConfigStore {
   initialCapital: number;
   exchange: string;
   leverage: number;
+  mode: 'spot' | 'futures';
   _configSource: 'dropdown' | 'history' | 'init';
 
   // Actions
@@ -101,6 +102,7 @@ interface ConfigStore {
   setInitialCapital: (capital: number) => void;
   setExchange: (exchange: string) => void;
   setLeverage: (leverage: number) => void;
+  setMode: (mode: 'spot' | 'futures') => void;
   getConfig: () => RunBacktestRequest;
   applyHistoryParams: (result: BacktestResult | PairsBacktestResult) => void;
   reset: () => void;
@@ -131,6 +133,7 @@ const defaultConfigState = {
   initialCapital: 10000,
   exchange: 'binance',
   leverage: 1,
+  mode: 'spot' as const,
   _configSource: 'init' as const,
 };
 
@@ -151,6 +154,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
   setInitialCapital: (initialCapital) => set({ initialCapital }),
   setExchange: (exchange) => set({ exchange }),
   setLeverage: (leverage) => set({ leverage }),
+  setMode: (mode) => set({ mode }),
 
   getConfig: () => {
     const state = get();
@@ -163,6 +167,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
       endDate: state.endDate,
       initialCapital: state.initialCapital,
       exchange: state.exchange,
+      mode: state.mode,
     };
   },
 
@@ -195,6 +200,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
         initialCapital: config.initialCapital,
         exchange: config.exchange,
         leverage: 1,
+        mode: config.mode || 'spot',
         _configSource: 'history',
       });
     }

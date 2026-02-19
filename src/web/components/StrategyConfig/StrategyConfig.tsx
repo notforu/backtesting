@@ -163,6 +163,7 @@ export function StrategyConfig() {
     initialCapital,
     exchange,
     leverage,
+    mode,
     setStrategy,
     updateParam,
     setSymbol,
@@ -173,6 +174,7 @@ export function StrategyConfig() {
     setInitialCapital,
     setExchange,
     setLeverage,
+    setMode,
     setParams,
     getConfig,
   } = useConfigStore();
@@ -268,7 +270,7 @@ export function StrategyConfig() {
       runPairsBacktestMutation.mutate(req);
     } else {
       const config = getConfig();
-      const req = { ...config, exchange: exchange || 'binance' };
+      const req = { ...config, exchange: exchange || 'binance', mode };
       console.log('[Backtest] Running single:', JSON.stringify(req, null, 2));
       runBacktestMutation.mutate(req);
     }
@@ -372,9 +374,25 @@ export function StrategyConfig() {
           className={inputClass}
         >
           <option value="binance">Binance</option>
+          <option value="bybit">Bybit</option>
           <option value="polymarket">Polymarket</option>
         </select>
       </div>
+
+      {/* Mode Selection (spot/futures) */}
+      {exchange !== 'polymarket' && (
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Mode</label>
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value as 'spot' | 'futures')}
+            className={inputClass}
+          >
+            <option value="spot">Spot</option>
+            <option value="futures">Futures</option>
+          </select>
+        </div>
+      )}
 
       {/* Symbol & Timeframe */}
       <div className="grid grid-cols-2 gap-3">
@@ -420,7 +438,7 @@ export function StrategyConfig() {
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-              placeholder="BTCUSDT"
+              placeholder={mode === 'futures' ? 'BTC/USDT:USDT' : 'BTCUSDT'}
               className={inputClass}
               list="symbols"
             />
@@ -429,6 +447,9 @@ export function StrategyConfig() {
                 <option key={s} value={s} />
               ))}
             </datalist>
+            {mode === 'futures' && (
+              <p className="text-xs text-gray-500 mt-1">Use futures format: e.g. BTC/USDT:USDT</p>
+            )}
           </div>
         )}
         <div>

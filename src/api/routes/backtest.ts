@@ -26,6 +26,7 @@ const RunBacktestRequestSchema = z.object({
   endDate: z.number().or(z.string().transform((s) => new Date(s).getTime())),
   initialCapital: z.number().positive().default(10000),
   exchange: z.string().default('binance'),
+  mode: z.enum(['spot', 'futures']).default('spot').optional(),
 });
 
 type RunBacktestRequest = z.infer<typeof RunBacktestRequestSchema>;
@@ -75,6 +76,7 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         endDate: parsed.endDate,
         initialCapital: parsed.initialCapital,
         exchange: parsed.exchange,
+        mode: parsed.mode,
       });
 
       // Run the backtest and track duration

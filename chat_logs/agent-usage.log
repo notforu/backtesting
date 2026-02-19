@@ -382,3 +382,9 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-17 15:00] be-dev (manual) - Fixed optimizer PM caching bug in engine.ts + optimizer.ts
 [2026-02-17 15:00] quant:optimize - Re-running 4 WF survivor optimizations with caching fix
 [2026-02-17 15:30] docs-writer (haiku) - Changelog for PM optimizer fix + optimization results
+[2026-02-19 00:00] fullstack-dev (sonnet) - Add bybit exchange, mode selector (spot/futures), and FundingRate type to enable funding-rate-spike strategy in UI
+[2026-02-19 00:30] be-dev (sonnet) - Fix two backtest realism issues: futures slippage default 0.05% and intra-bar SL/TP using candle high/low
+[2026-02-19 10:00] be-dev (sonnet) - Fix engine realism: default futures slippage + intra-bar SL/TP
+[2026-02-19 10:00] fullstack-dev (sonnet) - Fix dashboard: bybit exchange, mode selector, API route
+[2026-02-19 10:00] docs-writer (haiku) - Create changelog for realism fixes and dashboard support
+[2026-02-19 10:15] docs-writer (haiku) - Write changelog for realism fixes + dashboard support

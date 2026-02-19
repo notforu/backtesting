@@ -14,6 +14,7 @@ import type {
   PerformanceMetrics,
   EquityPoint,
   TradeAction,
+  FundingRate,
 } from '../core/types.js';
 
 // Store database in project data/ directory for persistent caching
@@ -161,9 +162,22 @@ function initializeTables(database: Database.Database): void {
       updated_at INTEGER NOT NULL
     );
 
+    -- Funding rates (perpetual futures)
+    CREATE TABLE IF NOT EXISTS funding_rates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      exchange TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      funding_rate REAL NOT NULL,
+      mark_price REAL,
+      UNIQUE(exchange, symbol, timestamp)
+    );
+
     -- Indexes for efficient lookups
     CREATE INDEX IF NOT EXISTS idx_candles_lookup
       ON candles(exchange, symbol, timeframe, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_funding_rates_lookup
+      ON funding_rates(exchange, symbol, timestamp);
     CREATE INDEX IF NOT EXISTS idx_trades_backtest
       ON trades(backtest_id);
     CREATE INDEX IF NOT EXISTS idx_trades_v2_backtest
@@ -939,4 +953,89 @@ export function deleteOptimizationById(id: string): boolean {
     .prepare('DELETE FROM optimized_params WHERE id = ?')
     .run(id);
   return result.changes > 0;
+}
+
+// ============================================================================
+// Funding Rate Operations
+// ============================================================================
+
+interface FundingRateRow {
+  timestamp: number;
+  funding_rate: number;
+  mark_price: number | null;
+}
+
+/**
+ * Save funding rates to the database.
+ * Uses INSERT OR REPLACE to handle duplicates.
+ * Returns the number of rows inserted/replaced.
+ */
+export function saveFundingRates(
+  rates: FundingRate[],
+  exchange: string,
+  symbol: string
+): number {
+  const database = getDb();
+  const insert = database.prepare(`
+    INSERT OR REPLACE INTO funding_rates (exchange, symbol, timestamp, funding_rate, mark_price)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  const insertMany = database.transaction((list: FundingRate[]) => {
+    let count = 0;
+    for (const r of list) {
+      insert.run(exchange, symbol, r.timestamp, r.fundingRate, r.markPrice ?? null);
+      count++;
+    }
+    return count;
+  });
+
+  return insertMany(rates);
+}
+
+/**
+ * Get funding rates from the database for a given exchange/symbol/date range.
+ * Returns rates in ascending timestamp order.
+ */
+export function getFundingRates(
+  exchange: string,
+  symbol: string,
+  start: number,
+  end: number
+): FundingRate[] {
+  const database = getDb();
+  const select = database.prepare<[string, string, number, number], FundingRateRow>(`
+    SELECT timestamp, funding_rate, mark_price
+    FROM funding_rates
+    WHERE exchange = ? AND symbol = ? AND timestamp >= ? AND timestamp <= ?
+    ORDER BY timestamp ASC
+  `);
+
+  const rows = select.all(exchange, symbol, start, end);
+  return rows.map((row) => ({
+    timestamp: row.timestamp,
+    fundingRate: row.funding_rate,
+    markPrice: row.mark_price ?? undefined,
+  }));
+}
+
+/**
+ * Get the cached date range for funding rates of an exchange/symbol pair.
+ */
+export function getFundingRateDateRange(
+  exchange: string,
+  symbol: string
+): { start: number | null; end: number | null } {
+  const database = getDb();
+  const select = database.prepare<[string, string], { min_ts: number | null; max_ts: number | null }>(`
+    SELECT MIN(timestamp) as min_ts, MAX(timestamp) as max_ts
+    FROM funding_rates
+    WHERE exchange = ? AND symbol = ?
+  `);
+
+  const row = select.get(exchange, symbol);
+  return {
+    start: row?.min_ts ?? null,
+    end: row?.max_ts ?? null,
+  };
 }

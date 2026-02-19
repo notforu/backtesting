@@ -218,6 +218,7 @@ export interface RunBacktestRequest {
   endDate: string;
   initialCapital: number;
   exchange?: string;
+  mode?: 'spot' | 'futures';
 }
 
 export interface ApiError {

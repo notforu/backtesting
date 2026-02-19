@@ -3,7 +3,7 @@
  * All trading strategies must implement this interface
  */
 
-import type { Candle, Position, Order } from '../core/types.js';
+import type { Candle, Position, Order, FundingRate } from '../core/types.js';
 
 // ============================================================================
 // Memory-Efficient Candle View
@@ -192,6 +192,18 @@ export interface StrategyContext {
    * Current short position, or null if none
    */
   shortPosition: Position | null;
+
+  // ===== Futures / Funding Rate Data =====
+  /**
+   * All funding rates for the backtest period (futures mode only, undefined in spot mode)
+   */
+  fundingRates?: FundingRate[];
+
+  /**
+   * Funding rate at the current bar's timestamp (null if no funding event this bar)
+   * Only populated in futures mode.
+   */
+  currentFundingRate?: FundingRate | null;
 
   // ===== Trading Actions =====
   /**

@@ -12,6 +12,7 @@ import type {
   Order,
   Timeframe,
   TradeAction,
+  FundingRate,
 } from './types.js';
 import { BacktestConfigSchema, timeframeToMs } from './types.js';
 import { Portfolio } from './portfolio.js';
@@ -21,7 +22,7 @@ import { loadStrategy } from '../strategy/loader.js';
 import { validateStrategyParams, type StrategyContext, type LogEntry, type CandleView } from '../strategy/base.js';
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
 import { getProvider } from '../data/providers/index.js';
-import { getCandles, saveCandles, saveBacktestRun, getCandleDateRange } from '../data/db.js';
+import { getCandles, saveCandles, saveBacktestRun, getCandleDateRange, getFundingRates } from '../data/db.js';
 import { saveResultToFile } from './result-storage.js';
 
 /**
@@ -184,6 +185,14 @@ export async function runBacktest(
   // Validate configuration
   const validatedConfig = BacktestConfigSchema.parse(config);
 
+  // Apply default futures slippage only when caller has not explicitly set slippagePercent
+  if (validatedConfig.mode === 'futures' && engineConfig.broker?.slippagePercent === undefined) {
+    options.broker = {
+      ...options.broker,
+      slippagePercent: 0.05, // 0.05% default slippage for futures
+    };
+  }
+
   // Ensure we have an ID
   if (!validatedConfig.id) {
     validatedConfig.id = uuidv4();
@@ -226,6 +235,28 @@ export async function runBacktest(
   }
 
   log(`Loaded ${candles.length} candles`, Date.now());
+
+  // Load funding rates for futures mode
+  let fundingRateMap: Map<number, FundingRate> | null = null;
+  let allFundingRates: FundingRate[] = [];
+  let totalFundingIncome = 0;
+
+  if (validatedConfig.mode === 'futures') {
+    log(`Loading funding rates for ${validatedConfig.symbol}`, Date.now());
+    allFundingRates = getFundingRates(
+      validatedConfig.exchange,
+      validatedConfig.symbol,
+      validatedConfig.startDate,
+      validatedConfig.endDate
+    );
+    log(`Loaded ${allFundingRates.length} funding rates`, Date.now());
+
+    // Build map for O(1) lookup by timestamp
+    fundingRateMap = new Map();
+    for (const fr of allFundingRates) {
+      fundingRateMap.set(fr.timestamp, fr);
+    }
+  }
 
   // 3. Get trading fees (skip API call if skipFeeFetch is set)
   let feeRate = options.broker?.feeRate ?? 0.001; // Default 0.1% taker fee
@@ -299,6 +330,10 @@ export async function runBacktest(
       longPosition: portfolioState.longPosition,
       shortPosition: portfolioState.shortPosition,
 
+      // Funding rate data (futures mode)
+      fundingRates: fundingRateMap ? allFundingRates : undefined,
+      currentFundingRate: fundingRateMap ? (fundingRateMap.get(candles[currentIndex].timestamp) ?? null) : undefined,
+
       // Trading actions
       openLong(amount: number): void {
         if (amount > 0) {
@@ -365,6 +400,31 @@ export async function runBacktest(
       if (liqTrade) {
         trades.push(liqTrade);
         log(`LIQUIDATION: Position closed at ${candle.close}`, candle.timestamp);
+      }
+    }
+
+    // Process funding payments (futures mode)
+    if (fundingRateMap && validatedConfig.mode === 'futures') {
+      const fr = fundingRateMap.get(candle.timestamp);
+      if (fr) {
+        const longPos = portfolio.longPosition;
+        const shortPos = portfolio.shortPosition;
+
+        if (longPos) {
+          // Long pays when rate positive, receives when negative
+          const markPrice = fr.markPrice ?? candle.close;
+          const payment = -longPos.amount * markPrice * fr.fundingRate;
+          portfolio.applyFundingPayment(payment);
+          totalFundingIncome += payment;
+        }
+
+        if (shortPos) {
+          // Short receives when rate positive, pays when negative
+          const markPrice = fr.markPrice ?? candle.close;
+          const payment = shortPos.amount * markPrice * fr.fundingRate;
+          portfolio.applyFundingPayment(payment);
+          totalFundingIncome += payment;
+        }
       }
     }
 
@@ -463,6 +523,12 @@ export async function runBacktest(
   log(`Calculating metrics from ${trades.length} trades`, Date.now());
   const metrics = calculateMetrics(trades, equity, validatedConfig.initialCapital, validatedConfig.timeframe);
   const rollingMetrics = calculateRollingMetrics(trades, equity, validatedConfig.initialCapital);
+
+  // Add funding income metrics for futures mode
+  if (validatedConfig.mode === 'futures') {
+    (metrics as Record<string, unknown>).totalFundingIncome = totalFundingIncome;
+    (metrics as Record<string, unknown>).tradingPnl = metrics.totalReturn - totalFundingIncome;
+  }
 
   // 11. Build result
   const result: BacktestResult = {

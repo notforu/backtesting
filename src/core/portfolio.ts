@@ -482,6 +482,16 @@ export class Portfolio {
   }
 
   /**
+   * Apply a funding payment to the portfolio cash balance.
+   * Positive payment = receive funds; negative payment = pay funds.
+   * Used in futures mode where funding is paid/received every 8 hours.
+   * @param payment - Payment amount in quote currency (can be negative)
+   */
+  applyFundingPayment(payment: number): void {
+    this._cash += payment;
+  }
+
+  /**
    * Reset portfolio to initial state
    */
   reset(): void {
