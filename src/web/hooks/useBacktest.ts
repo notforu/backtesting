@@ -3,7 +3,7 @@
  * Provides declarative data fetching with caching and automatic refetching.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getStrategies,
   getStrategy,
@@ -24,10 +24,10 @@ import type {
   CandleRequest,
   StrategyInfo,
   StrategyDetails,
-  BacktestSummary,
   BacktestResult,
   PairsBacktestResult,
   Candle,
+  PaginatedHistory,
 } from '../types';
 
 // Query keys for cache management
@@ -72,13 +72,21 @@ export function useStrategy(name: string) {
 // History Hooks
 // ============================================================================
 
+const PAGE_SIZE = 10;
+
 /**
- * Fetch backtest history
+ * Fetch backtest history with infinite loading
  */
 export function useHistory() {
-  return useQuery<BacktestSummary[], Error>({
+  return useInfiniteQuery<PaginatedHistory, Error>({
     queryKey: queryKeys.history,
-    queryFn: getHistory,
+    queryFn: ({ pageParam = 0 }) => getHistory({ limit: PAGE_SIZE, offset: pageParam as number }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.hasMore) return undefined;
+      const totalLoaded = allPages.reduce((sum, page) => sum + page.results.length, 0);
+      return totalLoaded;
+    },
     staleTime: 1000 * 30, // 30 seconds
   });
 }
@@ -223,6 +231,60 @@ export function useSymbols(exchange: string) {
     queryFn: () => getSymbols(exchange),
     enabled: !!exchange,
     staleTime: 1000 * 60 * 30, // 30 minutes
+  });
+}
+
+/**
+ * Fetch candles at a specific resolution for multi-resolution chart
+ */
+export function useResolutionCandles(params: {
+  exchange: string;
+  symbol: string;
+  timeframe: string;
+  startDate: string;
+  endDate: string;
+} | null) {
+  return useQuery<Candle[], Error>({
+    queryKey: ['resolution-candles', params],
+    queryFn: async () => {
+      if (!params) return [];
+      const queryParams = new URLSearchParams({
+        exchange: params.exchange,
+        symbol: params.symbol,
+        timeframe: params.timeframe,
+        start: params.startDate,
+        end: params.endDate,
+      });
+      const response = await fetch(`/api/candles?${queryParams.toString()}`);
+      if (!response.ok) throw new Error(`Failed to fetch candles: ${response.statusText}`);
+      const data = await response.json();
+      // API returns { candles, source, count } - extract candles array
+      return data.candles || data;
+    },
+    enabled: !!params,
+    staleTime: 1000 * 60 * 10, // 10 minutes
+  });
+}
+
+/**
+ * Fetch funding rates for a given exchange/symbol/date range
+ */
+export function useFundingRates(params: {
+  exchange: string;
+  symbol: string;
+  start: number;
+  end: number;
+} | null) {
+  return useQuery({
+    queryKey: ['funding-rates', params],
+    queryFn: async () => {
+      if (!params) return [];
+      const { getFundingRates } = await import('../api/client');
+      const data = await getFundingRates(params);
+      return data.rates;
+    },
+    enabled: !!params,
+    staleTime: 1000 * 60 * 10, // 10 minutes
   });
 }
 

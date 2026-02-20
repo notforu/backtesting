@@ -457,6 +457,17 @@ export async function runBacktest(
     // Process pending orders
     const { orders: processedOrders, trades: newTrades } = broker.processPendingOrders(candle);
     filledOrders.push(...processedOrders);
+
+    // Attach nearest funding rate to each new trade (futures mode only)
+    if (allFundingRates.length > 0) {
+      for (const trade of newTrades) {
+        const nearest = allFundingRates.reduce((prev, curr) =>
+          Math.abs(curr.timestamp - trade.timestamp) < Math.abs(prev.timestamp - trade.timestamp) ? curr : prev
+        );
+        trade.fundingRate = nearest.fundingRate;
+      }
+    }
+
     trades.push(...newTrades);
 
     // Call onOrderFilled for each filled order
@@ -509,6 +520,17 @@ export async function runBacktest(
       candles[totalBars - 1]
     );
     filledOrders.push(...finalOrders);
+
+    // Attach nearest funding rate to each final trade (futures mode only)
+    if (allFundingRates.length > 0) {
+      for (const trade of finalTrades) {
+        const nearest = allFundingRates.reduce((prev, curr) =>
+          Math.abs(curr.timestamp - trade.timestamp) < Math.abs(prev.timestamp - trade.timestamp) ? curr : prev
+        );
+        trade.fundingRate = nearest.fundingRate;
+      }
+    }
+
     trades.push(...finalTrades);
   }
 

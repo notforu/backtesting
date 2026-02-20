@@ -3,7 +3,8 @@
  * Displays candlestick chart with trade markers.
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useResolutionCandles, useFundingRates } from '../../hooks/useBacktest';
 import {
   createChart,
   createSeriesMarkers,
@@ -16,6 +17,7 @@ import {
   ColorType,
   CrosshairMode,
   CandlestickSeries,
+  LineSeries,
 } from 'lightweight-charts';
 import type { Candle, Trade } from '../../types';
 
@@ -24,6 +26,12 @@ interface ChartProps {
   trades: Trade[];
   height?: number;
   isPolymarket?: boolean;
+  isFutures?: boolean;
+  backtestTimeframe?: string;
+  exchange?: string;
+  symbol?: string;
+  startDate?: number;
+  endDate?: number;
 }
 
 // Convert timestamp to TradingView time format
@@ -57,11 +65,57 @@ const chartColors = {
 
 type CandlestickSeriesApi = ISeriesApi<'Candlestick'>;
 
-export function Chart({ candles, trades, height = 500, isPolymarket = false }: ChartProps) {
+function estimateCandles(start: number, end: number, timeframe: string): number {
+  const diffMs = end - start;
+  const tfMs: Record<string, number> = {
+    '1m': 60000, '5m': 300000, '15m': 900000,
+    '1h': 3600000, '4h': 14400000, '1d': 86400000,
+  };
+  return Math.ceil(diffMs / (tfMs[timeframe] ?? 3600000));
+}
+
+export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate }: ChartProps) {
+  const [displayTimeframe, setDisplayTimeframe] = useState<string | null>(null);
+  const [showFundingRate, setShowFundingRate] = useState(false);
+  const [chartWindowStart, setChartWindowStart] = useState<number | null>(null);
+  const [chartWindowEnd, setChartWindowEnd] = useState<number | null>(null);
+  const [showDateRangeSelector, setShowDateRangeSelector] = useState(false);
+
+  const needsDateLimiter = displayTimeframe === '1m' || displayTimeframe === '5m';
+  const effectiveStart = needsDateLimiter && chartWindowStart ? chartWindowStart : startDate;
+  const effectiveEnd = needsDateLimiter && chartWindowEnd ? chartWindowEnd : endDate;
+
+  // Fetch candles at selected resolution
+  const resolutionParams = displayTimeframe && exchange && symbol && effectiveStart && effectiveEnd ? {
+    exchange,
+    symbol,
+    timeframe: displayTimeframe,
+    startDate: new Date(effectiveStart).toISOString(),
+    endDate: new Date(effectiveEnd).toISOString(),
+  } : null;
+
+  const { data: resolutionCandles, isLoading: isLoadingResolution } = useResolutionCandles(resolutionParams);
+
+  // Fetch funding rates when in futures mode
+  const fundingRateParams = isFutures && exchange && symbol && startDate && endDate ? {
+    exchange,
+    symbol,
+    start: startDate,
+    end: endDate,
+  } : null;
+  const { data: fundingRates } = useFundingRates(fundingRateParams);
+
+  // Use resolution candles if available, otherwise use backtest candles
+  const displayCandles = displayTimeframe && resolutionCandles ? resolutionCandles : candles;
+
+  // Available timeframes
+  const timeframes = ['1m', '5m', '15m', '1h', '4h', '1d'];
+
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<CandlestickSeriesApi | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const frSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
   // Create chart on mount
   useEffect(() => {
@@ -151,6 +205,7 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false }: C
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      frSeriesRef.current = null;
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -160,16 +215,24 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false }: C
 
   // Update candle data
   useEffect(() => {
-    if (!candleSeriesRef.current || candles.length === 0) return;
+    if (!candleSeriesRef.current || displayCandles.length === 0) return;
 
-    const formattedCandles = formatCandles(candles);
+    const formattedCandles = formatCandles(displayCandles);
     candleSeriesRef.current.setData(formattedCandles);
 
     // Fit content after data update
     if (chartRef.current) {
       chartRef.current.timeScale().fitContent();
     }
-  }, [candles]);
+  }, [displayCandles]);
+
+  // Reset resolution when backtest changes
+  useEffect(() => {
+    setDisplayTimeframe(null);
+    setShowDateRangeSelector(false);
+    setChartWindowStart(null);
+    setChartWindowEnd(null);
+  }, [backtestTimeframe, symbol]);
 
   // Update trade markers
   useEffect(() => {
@@ -220,6 +283,47 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false }: C
     }
   }, [height]);
 
+  // Funding rate series toggle
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    if (showFundingRate && fundingRates && fundingRates.length > 0) {
+      // Create FR series if not already created
+      if (!frSeriesRef.current) {
+        const frSeries = chartRef.current.addSeries(LineSeries, {
+          color: '#F59E0B', // amber-500
+          lineWidth: 1,
+          priceScaleId: 'funding-rate',
+          priceFormat: {
+            type: 'custom',
+            formatter: (price: number) => `${(price * 100).toFixed(4)}%`,
+          },
+        });
+
+        // Configure the FR price scale (separate axis in bottom 25% of chart)
+        chartRef.current.priceScale('funding-rate').applyOptions({
+          scaleMargins: { top: 0.7, bottom: 0.05 },
+          borderVisible: false,
+        });
+
+        frSeriesRef.current = frSeries;
+      }
+
+      // Set FR data
+      const frData = fundingRates.map((fr) => ({
+        time: (fr.timestamp / 1000) as Time,
+        value: fr.fundingRate,
+      }));
+      frSeriesRef.current.setData(frData);
+    } else {
+      // Remove FR series if it exists
+      if (frSeriesRef.current && chartRef.current) {
+        chartRef.current.removeSeries(frSeriesRef.current);
+        frSeriesRef.current = null;
+      }
+    }
+  }, [showFundingRate, fundingRates]);
+
   // Zoom controls
   const handleZoomIn = useCallback(() => {
     if (!chartRef.current) return;
@@ -256,8 +360,123 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false }: C
 
   return (
     <div className="relative rounded-lg bg-gray-900 border border-gray-700 overflow-hidden">
+      {/* Resolution selector */}
+      {backtestTimeframe && candles.length > 0 && (
+        <div className="absolute top-2 left-2 z-10 flex gap-0.5 bg-gray-800/90 rounded p-0.5">
+          {timeframes.map((tf) => (
+            <button
+              key={tf}
+              onClick={() => {
+                const newTf = tf === backtestTimeframe && !displayTimeframe ? null :
+                  tf === displayTimeframe ? null : tf;
+                setDisplayTimeframe(newTf);
+
+                if (newTf === '1m' && endDate && startDate) {
+                  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+                  setChartWindowStart(Math.max(startDate, endDate - sevenDays));
+                  setChartWindowEnd(endDate);
+                  setShowDateRangeSelector(true);
+                } else if (newTf === '5m' && endDate && startDate) {
+                  const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+                  setChartWindowStart(Math.max(startDate, endDate - thirtyDays));
+                  setChartWindowEnd(endDate);
+                  setShowDateRangeSelector(true);
+                } else {
+                  setShowDateRangeSelector(false);
+                  setChartWindowStart(null);
+                  setChartWindowEnd(null);
+                }
+              }}
+              className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
+                (displayTimeframe === tf || (!displayTimeframe && tf === backtestTimeframe))
+                  ? 'bg-primary-600 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              } ${tf === backtestTimeframe ? 'font-bold' : ''}`}
+            >
+              {tf}
+            </button>
+          ))}
+          {isLoadingResolution && (
+            <div className="flex items-center px-1">
+              <svg className="animate-spin h-3 w-3 text-primary-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Date range selector for high-resolution timeframes */}
+      {showDateRangeSelector && startDate && endDate && (
+        <div className="absolute top-10 left-2 z-10 flex items-center gap-2 bg-gray-800/95 rounded p-2 text-xs">
+          <span className="text-gray-400">Window:</span>
+          <input
+            type="date"
+            value={chartWindowStart ? new Date(chartWindowStart).toISOString().split('T')[0] : ''}
+            min={new Date(startDate).toISOString().split('T')[0]}
+            max={chartWindowEnd ? new Date(chartWindowEnd).toISOString().split('T')[0] : new Date(endDate).toISOString().split('T')[0]}
+            onChange={(e) => setChartWindowStart(new Date(e.target.value).getTime())}
+            className="bg-gray-700 text-white rounded px-1.5 py-0.5 text-xs border border-gray-600"
+          />
+          <span className="text-gray-500">to</span>
+          <input
+            type="date"
+            value={chartWindowEnd ? new Date(chartWindowEnd).toISOString().split('T')[0] : ''}
+            min={chartWindowStart ? new Date(chartWindowStart).toISOString().split('T')[0] : new Date(startDate).toISOString().split('T')[0]}
+            max={new Date(endDate).toISOString().split('T')[0]}
+            onChange={(e) => setChartWindowEnd(new Date(e.target.value).getTime())}
+            className="bg-gray-700 text-white rounded px-1.5 py-0.5 text-xs border border-gray-600"
+          />
+          {/* Quick presets */}
+          <div className="flex gap-0.5 ml-1">
+            {['7d', '30d', '90d'].map((preset) => {
+              const days = parseInt(preset);
+              const presetStart = Math.max(startDate, endDate - days * 24 * 60 * 60 * 1000);
+              const isActive = chartWindowStart === presetStart && chartWindowEnd === endDate;
+              return (
+                <button
+                  key={preset}
+                  onClick={() => {
+                    setChartWindowStart(presetStart);
+                    setChartWindowEnd(endDate);
+                  }}
+                  className={`px-1.5 py-0.5 rounded text-xs transition-colors ${
+                    isActive ? 'bg-primary-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {preset}
+                </button>
+              );
+            })}
+          </div>
+          {/* Candle count estimate */}
+          {chartWindowStart && chartWindowEnd && (
+            <span className={`text-xs ml-1 ${
+              estimateCandles(chartWindowStart, chartWindowEnd, displayTimeframe ?? '1m') > 50000
+                ? 'text-amber-400' : 'text-gray-500'
+            }`}>
+              ~{estimateCandles(chartWindowStart, chartWindowEnd, displayTimeframe ?? '1m').toLocaleString()} candles
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Chart toolbar */}
       <div className="absolute top-2 right-2 z-10 flex gap-1">
+        {isFutures && (
+          <button
+            onClick={() => setShowFundingRate(!showFundingRate)}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              showFundingRate
+                ? 'bg-amber-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+            }`}
+            title="Toggle Funding Rate overlay"
+          >
+            FR
+          </button>
+        )}
         <button
           onClick={handleZoomIn}
           className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"

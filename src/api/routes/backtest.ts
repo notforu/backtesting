@@ -11,9 +11,11 @@ import type { PairsBacktestConfig } from '../../core/types.js';
 import {
   getBacktestRun,
   getBacktestSummaries,
+  getBacktestGroups,
   deleteBacktestRun,
   deleteAllBacktestRuns,
   getCandles,
+  type HistoryFilters,
 } from '../../data/index.js';
 
 // Request schema for running a backtest
@@ -33,7 +35,21 @@ type RunBacktestRequest = z.infer<typeof RunBacktestRequestSchema>;
 
 // Query params for history
 const HistoryQuerySchema = z.object({
-  limit: z.string().optional().transform((s) => (s ? parseInt(s, 10) : 50)),
+  limit: z.string().optional().transform((s) => (s ? parseInt(s, 10) : 10)),
+  offset: z.string().optional().transform((s) => (s ? parseInt(s, 10) : 0)),
+  strategy: z.string().optional(),
+  symbol: z.string().optional(),
+  timeframe: z.string().optional(),
+  exchange: z.string().optional(),
+  mode: z.string().optional(),
+  fromDate: z.string().optional().transform((s) => (s ? parseInt(s, 10) : undefined)),
+  toDate: z.string().optional().transform((s) => (s ? parseInt(s, 10) : undefined)),
+  minSharpe: z.string().optional().transform((s) => (s ? parseFloat(s) : undefined)),
+  maxSharpe: z.string().optional().transform((s) => (s ? parseFloat(s) : undefined)),
+  minReturn: z.string().optional().transform((s) => (s ? parseFloat(s) : undefined)),
+  maxReturn: z.string().optional().transform((s) => (s ? parseFloat(s) : undefined)),
+  sortBy: z.string().optional(),
+  sortDir: z.enum(['asc', 'desc']).optional(),
 });
 
 // Request schema for pairs backtest
@@ -197,15 +213,46 @@ export async function backtestRoutes(fastify: FastifyInstance) {
    * List all backtest runs (returns summaries for efficiency)
    */
   fastify.get('/api/backtest/history', async (
-    request: FastifyRequest<{ Querystring: { limit?: string } }>,
+    request: FastifyRequest<{ Querystring: Record<string, string> }>,
     reply: FastifyReply
   ) => {
     try {
       fastify.log.info('GET /api/backtest/history called');
-      const { limit } = HistoryQuerySchema.parse(request.query);
-      const summaries = await getBacktestSummaries(limit);
+      const {
+        limit,
+        offset,
+        strategy,
+        symbol,
+        timeframe,
+        exchange,
+        mode,
+        fromDate,
+        toDate,
+        minSharpe,
+        maxSharpe,
+        minReturn,
+        maxReturn,
+        sortBy,
+        sortDir,
+      } = HistoryQuerySchema.parse(request.query);
 
-      // Transform to frontend format
+      const { summaries, total } = await getBacktestSummaries(limit, offset, {
+        strategy,
+        symbol,
+        timeframe,
+        exchange,
+        mode,
+        fromDate,
+        toDate,
+        minSharpe,
+        maxSharpe,
+        minReturn,
+        maxReturn,
+        sortBy: sortBy as HistoryFilters['sortBy'],
+        sortDir,
+      });
+
+      // Transform to frontend format with extended fields
       const results = summaries.map((summary) => ({
         id: summary.id,
         strategyName: summary.config.strategyName,
@@ -214,10 +261,25 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         totalReturnPercent: summary.metrics.totalReturnPercent,
         sharpeRatio: summary.metrics.sharpeRatio,
         runAt: new Date(summary.createdAt).toISOString(),
+        // Extended fields
+        exchange: summary.config.exchange,
+        startDate: summary.config.startDate,
+        endDate: summary.config.endDate,
+        params: summary.config.params,
+        mode: summary.config.mode,
+        maxDrawdownPercent: summary.metrics.maxDrawdownPercent,
+        winRate: summary.metrics.winRate,
+        profitFactor: summary.metrics.profitFactor,
+        totalTrades: summary.metrics.totalTrades,
+        totalFees: summary.metrics.totalFees,
       }));
 
-      fastify.log.info(`Returning ${results.length} backtest summaries`);
-      return reply.status(200).send(results);
+      fastify.log.info(`Returning ${results.length} backtest summaries (total: ${total})`);
+      return reply.status(200).send({
+        results,
+        total,
+        hasMore: offset + results.length < total,
+      });
     } catch (error) {
       // Log full error with stack trace
       fastify.log.error({
@@ -235,6 +297,34 @@ export async function backtestRoutes(fastify: FastifyInstance) {
       return reply.status(500).send({
         error: 'Unknown error occurred',
       });
+    }
+  });
+
+  /**
+   * GET /api/backtest/history/groups
+   * Get backtest runs grouped by symbol
+   */
+  fastify.get('/api/backtest/history/groups', async (
+    request: FastifyRequest<{ Querystring: Record<string, string> }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const query = request.query;
+      const filters: HistoryFilters = {
+        ...(query.strategy ? { strategy: query.strategy } : {}),
+        ...(query.timeframe ? { timeframe: query.timeframe } : {}),
+        ...(query.exchange ? { exchange: query.exchange } : {}),
+        ...(query.mode ? { mode: query.mode } : {}),
+        ...(query.minSharpe ? { minSharpe: parseFloat(query.minSharpe) } : {}),
+        ...(query.minReturn ? { minReturn: parseFloat(query.minReturn) } : {}),
+      };
+      const groups = await getBacktestGroups(filters);
+      return reply.status(200).send({ groups });
+    } catch (error) {
+      if (error instanceof Error) {
+        return reply.status(500).send({ error: error.message });
+      }
+      return reply.status(500).send({ error: 'Unknown error occurred' });
     }
   });
 

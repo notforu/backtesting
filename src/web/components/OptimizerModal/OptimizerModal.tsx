@@ -63,6 +63,10 @@ export function OptimizerModal() {
   const [minTrades, setMinTrades] = useState<number>(10);
   const [maxCombinations, setMaxCombinations] = useState(100);
   const [batchSize, setBatchSize] = useState(4);
+  const [saveAllRuns, setSaveAllRuns] = useState(false);
+  const [mode, setMode] = useState<'spot' | 'futures'>('spot');
+  const [multiSymbols, setMultiSymbols] = useState('');
+  const [multiTimeframes, setMultiTimeframes] = useState<string[]>([]);
 
   // Parameter ranges state - initialized from strategy params
   const [paramRanges, setParamRanges] = useState<Record<string, ParamRange>>({});
@@ -152,6 +156,10 @@ export function OptimizerModal() {
         minTrades,
         maxCombinations,
         batchSize,
+        saveAllRuns,
+        mode,
+        ...(multiSymbols.trim() ? { symbols: multiSymbols.split(',').map(s => s.trim()).filter(Boolean) } : {}),
+        ...(multiTimeframes.length > 0 ? { timeframes: multiTimeframes } : {}),
       },
       {
         onSuccess: (result) => {
@@ -412,16 +420,89 @@ export function OptimizerModal() {
               </div>
             </div>
 
+            {/* Mode and Save All Runs */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-400 mb-0.5">Mode</label>
+                <select
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as 'spot' | 'futures')}
+                  className={smallInputClass}
+                  disabled={isOptimizing}
+                >
+                  <option value="spot">Spot</option>
+                  <option value="futures">Futures</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer pb-1">
+                  <input
+                    type="checkbox"
+                    checked={saveAllRuns}
+                    onChange={(e) => setSaveAllRuns(e.target.checked)}
+                    disabled={isOptimizing}
+                    className="rounded border-gray-600 bg-gray-700 text-purple-500 focus:ring-purple-500"
+                  />
+                  Save all runs to history
+                </label>
+              </div>
+            </div>
+
+            {/* Multi-Symbol Input */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-0.5">
+                Multiple Symbols <span className="text-gray-600">(comma-separated, optional)</span>
+              </label>
+              <input
+                type="text"
+                value={multiSymbols}
+                onChange={(e) => setMultiSymbols(e.target.value)}
+                placeholder="e.g. BTC/USDT:USDT, ETH/USDT:USDT, SOL/USDT:USDT"
+                className={smallInputClass}
+                disabled={isOptimizing}
+              />
+            </div>
+
+            {/* Multi-Timeframe Checkboxes */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">
+                Multiple Timeframes <span className="text-gray-600">(optional)</span>
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {(['15m', '1h', '4h'] as const).map((tf) => (
+                  <label key={tf} className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={multiTimeframes.includes(tf)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setMultiTimeframes(prev => [...prev, tf]);
+                        } else {
+                          setMultiTimeframes(prev => prev.filter(t => t !== tf));
+                        }
+                      }}
+                      disabled={isOptimizing}
+                      className="rounded border-gray-600 bg-gray-700 text-purple-500 focus:ring-purple-500"
+                    />
+                    {tf}
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {/* Combination Count Warning */}
             {totalCombinations > 0 && (
               <div className={`rounded p-2 text-xs ${
-                totalCombinations > 1000
+                totalCombinations > 1000 || (saveAllRuns && totalCombinations > 100)
                   ? 'bg-yellow-900/30 border border-yellow-700'
                   : 'bg-blue-900/30 border border-blue-700'
               }`}>
-                <span className={totalCombinations > 1000 ? 'text-yellow-300' : 'text-blue-300'}>
+                <span className={totalCombinations > 1000 || (saveAllRuns && totalCombinations > 100) ? 'text-yellow-300' : 'text-blue-300'}>
                   Will test ~{totalCombinations.toLocaleString()} combinations
+                  {multiSymbols.trim() ? ` x ${multiSymbols.split(',').filter(Boolean).length} symbols` : ''}
+                  {multiTimeframes.length > 0 ? ` x ${multiTimeframes.length} timeframes` : ''}
                   {totalCombinations > 1000 && ' (may take a while)'}
+                  {saveAllRuns && totalCombinations > 100 && ' - saving all runs will create many history entries'}
                 </span>
               </div>
             )}

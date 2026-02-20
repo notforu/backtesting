@@ -295,8 +295,8 @@ export async function saveBacktestRun(result: BacktestResult): Promise<void> {
       await client.query(
         `INSERT INTO trades_v2
          (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent,
-          closed_position_id, balance_after, fee, fee_rate)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          closed_position_id, balance_after, fee, fee_rate, funding_rate)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           trade.id,
           result.id,
@@ -311,6 +311,7 @@ export async function saveBacktestRun(result: BacktestResult): Promise<void> {
           trade.balanceAfter,
           trade.fee ?? null,
           trade.feeRate ?? null,
+          trade.fundingRate ?? null,
         ]
       );
     }
@@ -369,32 +370,154 @@ export interface BacktestSummary {
     strategyName: string;
     symbol: string;
     timeframe: string;
+    exchange?: string;
+    startDate?: number;
+    endDate?: number;
+    params?: Record<string, unknown>;
+    mode?: string;
   };
   metrics: {
     totalReturnPercent: number;
     sharpeRatio: number;
+    maxDrawdownPercent?: number;
+    winRate?: number;
+    profitFactor?: number;
+    totalTrades?: number;
+    totalFees?: number;
   };
   createdAt: number;
 }
 
 /**
- * Get backtest summaries (optimized for history list)
- * Only loads essential fields without trades and equity arrays
+ * Filters for querying backtest history
  */
-export async function getBacktestSummaries(limit: number = 50): Promise<BacktestSummary[]> {
+export interface HistoryFilters {
+  strategy?: string;
+  symbol?: string;
+  timeframe?: string;
+  exchange?: string;
+  mode?: string;
+  fromDate?: number;
+  toDate?: number;
+  minSharpe?: number;
+  maxSharpe?: number;
+  minReturn?: number;
+  maxReturn?: number;
+  sortBy?: 'runAt' | 'sharpeRatio' | 'totalReturnPercent' | 'maxDrawdownPercent' | 'winRate' | 'totalTrades';
+  sortDir?: 'asc' | 'desc';
+}
+
+/**
+ * Get backtest summaries (optimized for history list)
+ * Only loads essential fields without trades and equity arrays.
+ * Supports rich filtering and sorting via optional filters parameter.
+ */
+export async function getBacktestSummaries(
+  limit: number = 10,
+  offset: number = 0,
+  filters: HistoryFilters = {}
+): Promise<{ summaries: BacktestSummary[]; total: number }> {
   const p = getPool();
+
+  // Build WHERE conditions dynamically using parameterized values
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.strategy) {
+    params.push(filters.strategy);
+    conditions.push(`strategy_name = $${params.length}`);
+  }
+
+  if (filters.symbol) {
+    params.push(filters.symbol);
+    conditions.push(`config->>'symbol' = $${params.length}`);
+  }
+
+  if (filters.timeframe) {
+    params.push(filters.timeframe);
+    conditions.push(`config->>'timeframe' = $${params.length}`);
+  }
+
+  if (filters.exchange) {
+    params.push(filters.exchange);
+    conditions.push(`config->>'exchange' = $${params.length}`);
+  }
+
+  if (filters.mode) {
+    params.push(filters.mode);
+    conditions.push(`config->>'mode' = $${params.length}`);
+  }
+
+  if (filters.fromDate !== undefined) {
+    params.push(filters.fromDate);
+    conditions.push(`created_at >= $${params.length}`);
+  }
+
+  if (filters.toDate !== undefined) {
+    params.push(filters.toDate);
+    conditions.push(`created_at <= $${params.length}`);
+  }
+
+  if (filters.minSharpe !== undefined) {
+    params.push(filters.minSharpe);
+    conditions.push(`(metrics->>'sharpeRatio')::float >= $${params.length}`);
+  }
+
+  if (filters.maxSharpe !== undefined) {
+    params.push(filters.maxSharpe);
+    conditions.push(`(metrics->>'sharpeRatio')::float <= $${params.length}`);
+  }
+
+  if (filters.minReturn !== undefined) {
+    params.push(filters.minReturn);
+    conditions.push(`(metrics->>'totalReturnPercent')::float >= $${params.length}`);
+  }
+
+  if (filters.maxReturn !== undefined) {
+    params.push(filters.maxReturn);
+    conditions.push(`(metrics->>'totalReturnPercent')::float <= $${params.length}`);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  // Determine ORDER BY clause - whitelist allowed columns to prevent injection
+  const sortByMap: Record<string, string> = {
+    runAt: 'created_at',
+    sharpeRatio: "(metrics->>'sharpeRatio')::float",
+    totalReturnPercent: "(metrics->>'totalReturnPercent')::float",
+    maxDrawdownPercent: "(metrics->>'maxDrawdownPercent')::float",
+    winRate: "(metrics->>'winRate')::float",
+    totalTrades: "(metrics->>'totalTrades')::float",
+  };
+
+  const sortColumn = (filters.sortBy && sortByMap[filters.sortBy]) || 'created_at';
+  const sortDir = filters.sortDir === 'asc' ? 'ASC' : 'DESC';
+  const orderClause = `ORDER BY ${sortColumn} ${sortDir}`;
+
+  // Count query (uses same WHERE but no LIMIT/OFFSET)
+  const countResult = await p.query<{ count: string }>(
+    `SELECT COUNT(*) FROM backtest_runs ${whereClause}`,
+    params
+  );
+  const total = Number(countResult.rows[0].count);
+
+  // Data query - add LIMIT/OFFSET as additional params
+  const limitParam = params.length + 1;
+  const offsetParam = params.length + 2;
+
   const { rows } = await p.query<BacktestRunRow>(
     `SELECT id, config, metrics, created_at
      FROM backtest_runs
-     ORDER BY created_at DESC
-     LIMIT $1`,
-    [limit]
+     ${whereClause}
+     ${orderClause}
+     LIMIT $${limitParam} OFFSET $${offsetParam}`,
+    [...params, limit, offset]
   );
 
-  return rows.map((row) => {
+  const summaries = rows.map((row) => {
     const fullConfig = (typeof row.config === 'string'
       ? JSON.parse(row.config)
-      : row.config) as BacktestConfig;
+      : row.config) as BacktestConfig & { exchange?: string; mode?: string; params?: Record<string, unknown> };
     const fullMetrics = (typeof row.metrics === 'string'
       ? JSON.parse(row.metrics)
       : row.metrics) as PerformanceMetrics;
@@ -405,14 +528,103 @@ export async function getBacktestSummaries(limit: number = 50): Promise<Backtest
         strategyName: fullConfig.strategyName,
         symbol: fullConfig.symbol,
         timeframe: fullConfig.timeframe,
+        exchange: fullConfig.exchange,
+        startDate: typeof fullConfig.startDate === 'number' ? fullConfig.startDate : undefined,
+        endDate: typeof fullConfig.endDate === 'number' ? fullConfig.endDate : undefined,
+        params: fullConfig.params,
+        mode: fullConfig.mode,
       },
       metrics: {
         totalReturnPercent: fullMetrics.totalReturnPercent,
         sharpeRatio: fullMetrics.sharpeRatio,
+        maxDrawdownPercent: fullMetrics.maxDrawdownPercent,
+        winRate: fullMetrics.winRate,
+        profitFactor: fullMetrics.profitFactor,
+        totalTrades: fullMetrics.totalTrades,
+        totalFees: fullMetrics.totalFees,
       },
       createdAt: Number(row.created_at),
     };
   });
+
+  return { summaries, total };
+}
+
+/**
+ * Get backtest runs grouped by symbol with aggregate stats.
+ * Used for the "Group by Asset" view in the explorer.
+ */
+export interface BacktestGroup {
+  symbol: string;
+  count: number;
+  bestSharpe: number;
+  bestReturn: number;
+  timeframes: string[];
+}
+
+export async function getBacktestGroups(
+  filters: HistoryFilters = {}
+): Promise<BacktestGroup[]> {
+  const p = getPool();
+
+  // Build WHERE conditions (reuse same filter logic)
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.strategy) {
+    params.push(filters.strategy);
+    conditions.push(`strategy_name = $${params.length}`);
+  }
+  if (filters.timeframe) {
+    params.push(filters.timeframe);
+    conditions.push(`config->>'timeframe' = $${params.length}`);
+  }
+  if (filters.exchange) {
+    params.push(filters.exchange);
+    conditions.push(`config->>'exchange' = $${params.length}`);
+  }
+  if (filters.mode) {
+    params.push(filters.mode);
+    conditions.push(`config->>'mode' = $${params.length}`);
+  }
+  if (filters.minSharpe !== undefined) {
+    params.push(filters.minSharpe);
+    conditions.push(`(metrics->>'sharpeRatio')::float >= $${params.length}`);
+  }
+  if (filters.minReturn !== undefined) {
+    params.push(filters.minReturn);
+    conditions.push(`(metrics->>'totalReturnPercent')::float >= $${params.length}`);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const { rows } = await p.query<{
+    symbol: string;
+    count: string;
+    best_sharpe: number;
+    best_return: number;
+    timeframes: string[];
+  }>(
+    `SELECT
+       config->>'symbol' AS symbol,
+       COUNT(*) AS count,
+       MAX((metrics->>'sharpeRatio')::float) AS best_sharpe,
+       MAX((metrics->>'totalReturnPercent')::float) AS best_return,
+       ARRAY_AGG(DISTINCT config->>'timeframe') AS timeframes
+     FROM backtest_runs
+     ${whereClause}
+     GROUP BY config->>'symbol'
+     ORDER BY MAX((metrics->>'sharpeRatio')::float) DESC`,
+    params
+  );
+
+  return rows.map(row => ({
+    symbol: row.symbol,
+    count: Number(row.count),
+    bestSharpe: row.best_sharpe ?? 0,
+    bestReturn: row.best_return ?? 0,
+    timeframes: row.timeframes || [],
+  }));
 }
 
 /**
@@ -517,6 +729,7 @@ interface TradeV2Row {
   balance_after: number;
   fee: number | null;
   fee_rate: number | null;
+  funding_rate: number | null;
 }
 
 interface LegacyTradeRow {
@@ -543,7 +756,7 @@ export async function getTrades(backtestId: string): Promise<Trade[]> {
   // Try new format first
   const { rows: v2Rows } = await p.query<TradeV2Row>(
     `SELECT id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent,
-            closed_position_id, balance_after, fee, fee_rate
+            closed_position_id, balance_after, fee, fee_rate, funding_rate
      FROM trades_v2
      WHERE backtest_id = $1
      ORDER BY timestamp ASC`,
@@ -564,6 +777,7 @@ export async function getTrades(backtestId: string): Promise<Trade[]> {
       balanceAfter: row.balance_after,
       fee: row.fee ?? undefined,
       feeRate: row.fee_rate ?? undefined,
+      fundingRate: row.funding_rate ?? undefined,
     }));
   }
 
@@ -643,8 +857,8 @@ export async function saveTrades(backtestId: string, trades: Trade[]): Promise<n
       const result = await client.query(
         `INSERT INTO trades_v2
          (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent,
-          closed_position_id, balance_after, fee, fee_rate)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          closed_position_id, balance_after, fee, fee_rate, funding_rate)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           trade.id,
           backtestId,
@@ -659,6 +873,7 @@ export async function saveTrades(backtestId: string, trades: Trade[]): Promise<n
           trade.balanceAfter,
           trade.fee ?? null,
           trade.feeRate ?? null,
+          trade.fundingRate ?? null,
         ]
       );
       count += result.rowCount ?? 0;

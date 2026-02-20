@@ -3,6 +3,7 @@
  * Provides the layout structure with sidebar, chart, and dashboard.
  */
 
+import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Chart } from './components/Chart';
 import { PairsChart } from './components/PairsChart';
@@ -13,8 +14,10 @@ import { StrategyConfig } from './components/StrategyConfig';
 import { History } from './components/History';
 import { OptimizerModal } from './components/OptimizerModal';
 import { ScannerResults } from './components/ScannerResults';
-import { useBacktestStore } from './stores/backtestStore';
+import { HistoryExplorer } from './components/HistoryExplorer';
+import { useBacktestStore, useConfigStore } from './stores/backtestStore';
 import { useScannerStore } from './stores/scannerStore';
+import { useLoadBacktest } from './hooks/useBacktest';
 import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult } from './types';
 
 const queryClient = new QueryClient({
@@ -38,10 +41,20 @@ function isPairsResult(result: unknown): result is PairsBacktestResult {
 }
 
 function AppContent() {
-  const { currentResult } = useBacktestStore();
+  const { currentResult, selectedBacktestId } = useBacktestStore();
+  const { applyHistoryParams } = useConfigStore();
+  const { loadBacktest } = useLoadBacktest();
   const { scanResults } = useScannerStore();
   const isPairs = currentResult && isPairsResult(currentResult);
   const showScanner = scanResults.length > 0;
+  const [showExplorer, setShowExplorer] = useState(false);
+
+  const handleSelectRun = async (id: string) => {
+    const result = await loadBacktest(id);
+    if (result) {
+      applyHistoryParams(result);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col">
@@ -67,8 +80,8 @@ function AppContent() {
             </h1>
           </div>
 
-          {/* Status indicator */}
-          <div className="flex items-center gap-2 text-sm">
+          {/* Status indicator + actions */}
+          <div className="flex items-center gap-4 text-sm">
             {currentResult && (
               <span className="text-gray-400">
                 Last run:{' '}
@@ -83,6 +96,15 @@ function AppContent() {
                 </span>
               </span>
             )}
+            <button
+              onClick={() => setShowExplorer(true)}
+              className="px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+              </svg>
+              Explore Runs
+            </button>
           </div>
         </div>
       </header>
@@ -150,6 +172,15 @@ function AppContent() {
                   trades={currentResult?.trades ?? []}
                   height={450}
                   isPolymarket={(currentResult as BacktestResult)?.config.exchange === 'polymarket'}
+                  isFutures={
+                    (currentResult as any)?.config?.mode === 'futures' ||
+                    (currentResult as BacktestResult)?.metrics?.totalFundingIncome !== undefined
+                  }
+                  backtestTimeframe={(currentResult as BacktestResult)?.config.timeframe}
+                  exchange={(currentResult as BacktestResult)?.config.exchange}
+                  symbol={(currentResult as BacktestResult)?.config.symbol}
+                  startDate={(() => { const sd = (currentResult as BacktestResult)?.config.startDate; return sd != null ? (typeof sd === 'number' ? sd : new Date(sd).getTime()) : undefined; })()}
+                  endDate={(() => { const ed = (currentResult as BacktestResult)?.config.endDate; return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : undefined; })()}
                 />
               )}
             </section>
@@ -180,6 +211,33 @@ function AppContent() {
                 <h2 className="text-lg font-semibold text-white mb-4">
                   Trades ({currentResult.trades.length})
                 </h2>
+
+                {/* PnL Clarity Banner - shown only in futures mode when funding income data is available */}
+                {currentResult.metrics.totalFundingIncome !== undefined && (
+                  <div className="mb-4 p-3 bg-blue-900/30 border border-blue-700/50 rounded-lg flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-400">Trading P&amp;L: </span>
+                      <span className={`font-semibold ${(currentResult.metrics.tradingPnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {(currentResult.metrics.tradingPnl ?? 0) >= 0 ? '+' : ''}${(currentResult.metrics.tradingPnl ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="text-gray-600 hidden sm:block">|</div>
+                    <div>
+                      <span className="text-gray-400">Funding Income: </span>
+                      <span className={`font-semibold ${(currentResult.metrics.totalFundingIncome ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {(currentResult.metrics.totalFundingIncome ?? 0) >= 0 ? '+' : ''}${(currentResult.metrics.totalFundingIncome ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="text-gray-600 hidden sm:block">|</div>
+                    <div>
+                      <span className="text-gray-400">Total Return: </span>
+                      <span className={`font-semibold ${currentResult.metrics.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {currentResult.metrics.totalReturn >= 0 ? '+' : ''}${currentResult.metrics.totalReturn.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -191,6 +249,9 @@ function AppContent() {
                         <th className="pb-2 pr-4">P&L</th>
                         <th className="pb-2 pr-4">P&L %</th>
                         <th className="pb-2 pr-4">Cost</th>
+                        {currentResult.metrics.totalFundingIncome !== undefined && (
+                          <th className="pb-2 pr-4">FR Rate</th>
+                        )}
                         <th className="pb-2 pr-4">Balance</th>
                         <th className="pb-2">Time</th>
                       </tr>
@@ -198,6 +259,7 @@ function AppContent() {
                     <tbody>
                       {currentResult.trades.slice(0, 100).map((trade, index) => {
                         const hasClosePnl = isCloseTrade(trade);
+                        const isFutures = currentResult.metrics.totalFundingIncome !== undefined;
 
                         return (
                           <tr
@@ -249,6 +311,19 @@ function AppContent() {
                             <td className="py-2 pr-4 text-gray-400">
                               {(trade.fee || trade.slippage) ? `$${((trade.fee ?? 0) + (trade.slippage ?? 0)).toFixed(2)}` : '-'}
                             </td>
+                            {isFutures && (
+                              <td className={`py-2 pr-4 font-mono text-xs ${
+                                trade.fundingRate == null
+                                  ? 'text-gray-600'
+                                  : trade.fundingRate >= 0
+                                    ? 'text-green-400'
+                                    : 'text-red-400'
+                              }`}>
+                                {trade.fundingRate != null
+                                  ? `${trade.fundingRate >= 0 ? '+' : ''}${(trade.fundingRate * 100).toFixed(4)}%`
+                                  : '-'}
+                              </td>
+                            )}
                             <td className="py-2 pr-4 text-gray-300">
                               ${trade.balanceAfter.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
@@ -286,6 +361,14 @@ function AppContent() {
           </span>
         </div>
       </footer>
+
+      {/* History Explorer Modal */}
+      <HistoryExplorer
+        isOpen={showExplorer}
+        onClose={() => setShowExplorer(false)}
+        onSelectRun={handleSelectRun}
+        selectedId={selectedBacktestId}
+      />
     </div>
   );
 }

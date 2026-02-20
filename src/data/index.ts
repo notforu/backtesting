@@ -25,6 +25,11 @@ export {
   deleteOptimizedParams,
   type OptimizationResult,
   type BacktestSummary,
+  type HistoryFilters,
+  getBacktestGroups,
+  type BacktestGroup,
+  getFundingRates,
+  getFundingRateDateRange,
 } from './db.js';
 
 // Providers

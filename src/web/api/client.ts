@@ -5,7 +5,7 @@
 
 import type {
   BacktestResult,
-  BacktestSummary,
+  PaginatedHistory,
   Candle,
   CandleRequest,
   RunBacktestRequest,
@@ -116,10 +116,74 @@ export async function getBacktest(id: string): Promise<BacktestResult> {
 }
 
 /**
- * Get list of all past backtest runs
+ * Filter and sort parameters for backtest history queries
  */
-export async function getHistory(): Promise<BacktestSummary[]> {
-  return apiFetch<BacktestSummary[]>('/backtest/history');
+export interface HistoryParams {
+  limit?: number;
+  offset?: number;
+  strategy?: string;
+  symbol?: string;
+  timeframe?: string;
+  exchange?: string;
+  mode?: string;
+  fromDate?: number;
+  toDate?: number;
+  minSharpe?: number;
+  maxSharpe?: number;
+  minReturn?: number;
+  maxReturn?: number;
+  sortBy?: 'runAt' | 'sharpeRatio' | 'totalReturnPercent' | 'maxDrawdownPercent' | 'winRate' | 'totalTrades';
+  sortDir?: 'asc' | 'desc';
+}
+
+/**
+ * Get list of past backtest runs with pagination, filtering, and sorting
+ */
+export async function getHistory(params?: HistoryParams): Promise<PaginatedHistory> {
+  const queryParams = new URLSearchParams();
+  if (params?.limit !== undefined) queryParams.append('limit', String(params.limit));
+  if (params?.offset !== undefined) queryParams.append('offset', String(params.offset));
+  if (params?.strategy) queryParams.append('strategy', params.strategy);
+  if (params?.symbol) queryParams.append('symbol', params.symbol);
+  if (params?.timeframe) queryParams.append('timeframe', params.timeframe);
+  if (params?.exchange) queryParams.append('exchange', params.exchange);
+  if (params?.mode) queryParams.append('mode', params.mode);
+  if (params?.fromDate !== undefined) queryParams.append('fromDate', String(params.fromDate));
+  if (params?.toDate !== undefined) queryParams.append('toDate', String(params.toDate));
+  if (params?.minSharpe !== undefined) queryParams.append('minSharpe', String(params.minSharpe));
+  if (params?.maxSharpe !== undefined) queryParams.append('maxSharpe', String(params.maxSharpe));
+  if (params?.minReturn !== undefined) queryParams.append('minReturn', String(params.minReturn));
+  if (params?.maxReturn !== undefined) queryParams.append('maxReturn', String(params.maxReturn));
+  if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+  if (params?.sortDir) queryParams.append('sortDir', params.sortDir);
+  const queryString = queryParams.toString();
+  return apiFetch<PaginatedHistory>(`/backtest/history${queryString ? `?${queryString}` : ''}`);
+}
+
+/**
+ * Get backtest runs grouped by symbol
+ */
+export interface BacktestGroup {
+  symbol: string;
+  count: number;
+  bestSharpe: number;
+  bestReturn: number;
+  timeframes: string[];
+}
+
+export async function getHistoryGroups(params?: {
+  strategy?: string;
+  timeframe?: string;
+  mode?: string;
+  minSharpe?: number;
+}): Promise<{ groups: BacktestGroup[] }> {
+  const queryParams = new URLSearchParams();
+  if (params?.strategy) queryParams.append('strategy', params.strategy);
+  if (params?.timeframe) queryParams.append('timeframe', params.timeframe);
+  if (params?.mode) queryParams.append('mode', params.mode);
+  if (params?.minSharpe !== undefined) queryParams.append('minSharpe', String(params.minSharpe));
+  const qs = queryParams.toString();
+  return apiFetch<{ groups: BacktestGroup[] }>(`/backtest/history/groups${qs ? `?${qs}` : ''}`);
 }
 
 /**
@@ -530,6 +594,30 @@ export async function runScan(
       }
     }
   }
+}
+
+// ============================================================================
+// Funding Rate Endpoints
+// ============================================================================
+
+/**
+ * Fetch funding rate data for a given exchange/symbol/date range
+ */
+export async function getFundingRates(params: {
+  exchange: string;
+  symbol: string;
+  start: number;
+  end: number;
+}): Promise<{ rates: Array<{ timestamp: number; fundingRate: number; markPrice?: number }> }> {
+  const queryParams = new URLSearchParams({
+    exchange: params.exchange,
+    symbol: params.symbol,
+    start: String(params.start),
+    end: String(params.end),
+  });
+  return apiFetch<{ rates: Array<{ timestamp: number; fundingRate: number; markPrice?: number }> }>(
+    `/funding-rates?${queryParams.toString()}`
+  );
 }
 
 // ============================================================================

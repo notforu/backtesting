@@ -92,6 +92,9 @@ export const TradeSchema = z.object({
 
   // Slippage tracking
   slippage: z.number().optional(), // Slippage cost in quote currency
+
+  // Funding rate at trade time (futures mode only)
+  fundingRate: z.number().optional(),
 });
 
 export type Trade = z.infer<typeof TradeSchema>;
@@ -204,6 +207,10 @@ export const PerformanceMetricsSchema = z.object({
   exposureTime: z.number(),
   totalFees: z.number(), // Sum of all fees paid
   totalSlippage: z.number().optional(), // Sum of all slippage costs
+
+  // Futures mode: breakdown of returns by source
+  totalFundingIncome: z.number().optional(),
+  tradingPnl: z.number().optional(),
 });
 
 export type PerformanceMetrics = z.infer<typeof PerformanceMetricsSchema>;
@@ -246,16 +253,6 @@ export interface SpreadDataPoint {
   timestamp: number;
   spread: number;
   zScore: number;
-}
-
-// ============================================================================
-// Funding Rate
-// ============================================================================
-
-export interface FundingRate {
-  timestamp: number;
-  fundingRate: number;
-  markPrice?: number;
 }
 
 export interface PairsBacktestResult {

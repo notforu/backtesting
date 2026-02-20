@@ -18,7 +18,8 @@
     "quant:walk-forward": "tsx src/cli/quant-walk-forward.ts",
     "quant:optimize": "tsx src/cli/quant-optimize.ts",
     "quant:score": "tsx src/cli/quant-score.ts",
-    "paper-trade": "tsx scripts/pm-paper-trade.ts"
+    "paper-trade": "tsx scripts/pm-paper-trade.ts",
+    "quant:cache-candles": "tsx scripts/cache-candles.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

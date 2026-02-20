@@ -37,6 +37,10 @@ export interface OptimizationConfig {
   // Pairs trading specific (optional)
   symbolB?: string; // Second symbol for pairs trading
   leverage?: number; // Leverage for pairs trading (default: 1)
+
+  // Additional options
+  saveAllRuns?: boolean; // Save every backtest run to history
+  mode?: 'spot' | 'futures'; // Trading mode
 }
 
 /**
@@ -94,6 +98,8 @@ export async function runOptimization(
     maxCombinations = 500,
     batchSize = 4,
     minTrades = 10,
+    saveAllRuns = false,
+    mode,
   } = config;
 
   // Load strategy to get parameter definitions
@@ -170,9 +176,9 @@ export async function runOptimization(
   let bestResult: { params: Record<string, unknown>; metrics: PerformanceMetrics } | null = null;
   let bestMetricValue = -Infinity;
 
-  // Engine config for backtests (no saving, no logging, use cached fee rate)
+  // Engine config for backtests (no logging, use cached fee rate)
   const engineConfig: EngineConfig = {
-    saveResults: false,
+    saveResults: saveAllRuns, // Save every run when requested
     enableLogging: false,
     skipFeeFetch: true, // Skip API calls, use cached fee rate below
     broker: {
@@ -221,6 +227,7 @@ export async function runOptimization(
               endDate,
               initialCapital,
               exchange,
+              mode,
             },
             engineConfig
           );
@@ -304,6 +311,82 @@ export async function runOptimization(
   console.log(`Best params:`, bestResult.params);
 
   return optimizationResult;
+}
+
+// ============================================================================
+// Multi-Symbol/Timeframe Optimization
+// ============================================================================
+
+/**
+ * Multi-symbol/timeframe optimization progress
+ */
+export interface MultiOptimizationProgress extends OptimizationProgress {
+  currentSymbol?: string;
+  currentTimeframe?: string;
+  overallCurrent?: number;
+  overallTotal?: number;
+}
+
+/**
+ * Run optimization across multiple symbols and timeframes
+ * @param config - Base optimization config
+ * @param symbols - Array of symbols to test
+ * @param timeframes - Array of timeframes to test
+ * @param onProgress - Optional progress callback
+ * @returns Array of optimization results
+ */
+export async function runMultiOptimization(
+  config: OptimizationConfig,
+  symbols: string[],
+  timeframes: Timeframe[],
+  onProgress?: (progress: MultiOptimizationProgress) => void
+): Promise<OptimizationResult[]> {
+  const results: OptimizationResult[] = [];
+  const totalJobs = symbols.length * timeframes.length;
+  let completedJobs = 0;
+
+  for (const symbol of symbols) {
+    for (const timeframe of timeframes) {
+      try {
+        const result = await runOptimization(
+          { ...config, symbol, timeframe },
+          (progress) => {
+            if (onProgress) {
+              onProgress({
+                ...progress,
+                currentSymbol: symbol,
+                currentTimeframe: timeframe,
+                overallCurrent: completedJobs,
+                overallTotal: totalJobs,
+              });
+            }
+          }
+        );
+        results.push(result);
+      } catch (error) {
+        console.warn(
+          `Optimization failed for ${symbol} ${timeframe}:`,
+          error instanceof Error ? error.message : error
+        );
+      }
+      completedJobs++;
+
+      // Report overall progress
+      if (onProgress) {
+        onProgress({
+          current: 0,
+          total: 0,
+          percent: (completedJobs / totalJobs) * 100,
+          currentSymbol: symbol,
+          currentTimeframe: timeframe,
+          overallCurrent: completedJobs,
+          overallTotal: totalJobs,
+        });
+      }
+    }
+  }
+
+  return results;
 }
 
 // ============================================================================

@@ -4,7 +4,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z, ZodError } from 'zod';
-import { runOptimization } from '../../core/optimizer.js';
+import { runOptimization, runMultiOptimization } from '../../core/optimizer.js';
 import {
   getOptimizedParams,
   getOptimizationHistory,
@@ -28,6 +28,10 @@ const OptimizeRequestSchema = z.object({
   minTrades: z.number().positive().optional().default(15),
   symbolB: z.string().optional(),
   leverage: z.number().positive().optional().default(1),
+  saveAllRuns: z.boolean().optional().default(false),
+  mode: z.enum(['spot', 'futures']).optional(),
+  symbols: z.array(z.string()).optional(),
+  timeframes: z.array(z.enum(['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'])).optional(),
 });
 
 type OptimizeRequest = z.infer<typeof OptimizeRequestSchema>;
@@ -50,43 +54,83 @@ export async function optimizeRoutes(fastify: FastifyInstance) {
       reply.raw.setHeader('Cache-Control', 'no-cache');
       reply.raw.setHeader('Connection', 'keep-alive');
 
-      // Send initial status
       reply.raw.write(`data: ${JSON.stringify({ type: 'start', message: 'Starting optimization...' })}\n\n`);
 
-      // Run the optimization with progress callback
       const startTime = Date.now();
-      const result = await runOptimization(
-        {
-          strategyName: parsed.strategyName,
-          symbol: parsed.symbol,
-          timeframe: parsed.timeframe,
-          startDate: parsed.startDate,
-          endDate: parsed.endDate,
-          initialCapital: parsed.initialCapital,
-          exchange: parsed.exchange,
-          optimizeFor: parsed.optimizeFor,
-          maxCombinations: parsed.maxCombinations,
-          batchSize: parsed.batchSize,
-          minTrades: parsed.minTrades,
-          symbolB: parsed.symbolB,
-          leverage: parsed.leverage,
-        },
-        // Progress callback - send SSE events
-        (progress) => {
-          try {
-            reply.raw.write(`data: ${JSON.stringify({ type: 'progress', ...progress })}\n\n`);
-          } catch (err) {
-            console.error('Error sending progress update:', err);
-          }
-        }
-      );
-      const duration = Date.now() - startTime;
 
-      // Send completion event with final result
-      reply.raw.write(`data: ${JSON.stringify({
-        type: 'complete',
-        result: { ...result, duration }
-      })}\n\n`);
+      const baseConfig = {
+        strategyName: parsed.strategyName,
+        symbol: parsed.symbol,
+        timeframe: parsed.timeframe,
+        startDate: parsed.startDate,
+        endDate: parsed.endDate,
+        initialCapital: parsed.initialCapital,
+        exchange: parsed.exchange,
+        optimizeFor: parsed.optimizeFor,
+        maxCombinations: parsed.maxCombinations,
+        batchSize: parsed.batchSize,
+        minTrades: parsed.minTrades,
+        symbolB: parsed.symbolB,
+        leverage: parsed.leverage,
+        saveAllRuns: parsed.saveAllRuns,
+        mode: parsed.mode,
+      };
+
+      // Check if multi-symbol/timeframe optimization
+      const multiSymbols = parsed.symbols && parsed.symbols.length > 0 ? parsed.symbols : null;
+      const multiTimeframes = parsed.timeframes && parsed.timeframes.length > 0 ? parsed.timeframes : null;
+
+      if (multiSymbols || multiTimeframes) {
+        // Multi-symbol/timeframe optimization
+        const symbols = multiSymbols || [parsed.symbol];
+        const timeframes = multiTimeframes || [parsed.timeframe];
+
+        const results = await runMultiOptimization(
+          baseConfig,
+          symbols,
+          timeframes as any,
+          (progress) => {
+            try {
+              reply.raw.write(`data: ${JSON.stringify({
+                type: 'progress',
+                ...progress,
+              })}\n\n`);
+            } catch (err) {
+              console.error('Error sending progress update:', err);
+            }
+          }
+        );
+
+        const duration = Date.now() - startTime;
+
+        reply.raw.write(`data: ${JSON.stringify({
+          type: 'complete',
+          result: {
+            results,
+            totalJobs: symbols.length * timeframes.length,
+            completedJobs: results.length,
+            duration,
+          },
+        })}\n\n`);
+      } else {
+        // Single optimization (existing behavior)
+        const result = await runOptimization(
+          baseConfig,
+          (progress) => {
+            try {
+              reply.raw.write(`data: ${JSON.stringify({ type: 'progress', ...progress })}\n\n`);
+            } catch (err) {
+              console.error('Error sending progress update:', err);
+            }
+          }
+        );
+        const duration = Date.now() - startTime;
+
+        reply.raw.write(`data: ${JSON.stringify({
+          type: 'complete',
+          result: { ...result, duration }
+        })}\n\n`);
+      }
 
       // Close the connection
       reply.raw.end();

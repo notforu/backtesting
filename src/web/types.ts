@@ -85,6 +85,9 @@ export interface Trade {
 
   // Slippage information
   slippage?: number; // Slippage cost in quote currency
+
+  // Funding rate at trade time (futures mode only)
+  fundingRate?: number;
 }
 
 export interface EquityPoint {
@@ -173,6 +176,10 @@ export interface PerformanceMetrics {
   exposureTime: number;
   totalFees: number;
   totalSlippage?: number;
+
+  // Futures mode: breakdown of returns by source
+  totalFundingIncome?: number;
+  tradingPnl?: number;
 }
 
 export interface BacktestResult {
@@ -195,6 +202,23 @@ export interface BacktestSummary {
   totalReturnPercent: number;
   sharpeRatio: number;
   runAt: string;
+  // Extended fields (optional for backward compatibility with old runs)
+  exchange?: string;
+  startDate?: number;
+  endDate?: number;
+  params?: Record<string, unknown>;
+  maxDrawdownPercent?: number;
+  winRate?: number;
+  profitFactor?: number;
+  totalTrades?: number;
+  totalFees?: number;
+  mode?: 'spot' | 'futures';
+}
+
+export interface PaginatedHistory {
+  results: BacktestSummary[];
+  total: number;
+  hasMore: boolean;
 }
 
 // ============================================================================
@@ -250,6 +274,10 @@ export interface OptimizationRequest {
   minTrades?: number;
   maxCombinations?: number;
   batchSize?: number;
+  saveAllRuns?: boolean;
+  mode?: 'spot' | 'futures';
+  symbols?: string[];
+  timeframes?: string[];
 }
 
 export interface OptimizationResult {
