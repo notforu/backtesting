@@ -18,7 +18,7 @@ import {
   saveBacktestRun,
   type HistoryFilters,
 } from '../../data/index.js';
-import { calculateMetrics, generateEquityCurve } from '../../analysis/metrics.js';
+import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../../analysis/metrics.js';
 
 // Request schema for running a backtest
 const RunBacktestRequestSchema = z.object({
@@ -663,14 +663,7 @@ export async function backtestRoutes(fastify: FastifyInstance) {
           totalFundingIncome,
           tradingPnl: totalTradingPnl,
         } as any,
-        rollingMetrics: {
-          timestamps: [],
-          cumulativeReturn: [],
-          drawdown: [],
-          rollingSharpe: [],
-          cumulativeWinRate: [],
-          cumulativeProfitFactor: [],
-        },
+        rollingMetrics: calculateRollingMetrics(allTrades, combinedEquity, initialCapital),
         createdAt: Date.now(),
       };
 

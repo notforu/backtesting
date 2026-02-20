@@ -299,6 +299,7 @@ function AppContent() {
                     symbol={(currentResult as BacktestResult)?.config.symbol}
                     startDate={(() => { const sd = (currentResult as BacktestResult)?.config.startDate; return sd != null ? (typeof sd === 'number' ? sd : new Date(sd).getTime()) : undefined; })()}
                     endDate={(() => { const ed = (currentResult as BacktestResult)?.config.endDate; return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : undefined; })()}
+                    rollingMetrics={(currentResult as BacktestResult)?.rollingMetrics}
                   />
                 </>
               )}

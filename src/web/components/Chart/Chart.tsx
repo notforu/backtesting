@@ -18,8 +18,10 @@ import {
   CrosshairMode,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
+  AreaSeries,
 } from 'lightweight-charts';
-import type { Candle, Trade } from '../../types';
+import type { Candle, Trade, RollingMetrics } from '../../types';
 
 interface ChartProps {
   candles: Candle[];
@@ -32,6 +34,7 @@ interface ChartProps {
   symbol?: string;
   startDate?: number;
   endDate?: number;
+  rollingMetrics?: RollingMetrics;
 }
 
 // Convert timestamp to TradingView time format
@@ -74,12 +77,31 @@ function estimateCandles(start: number, end: number, timeframe: string): number 
   return Math.ceil(diffMs / (tfMs[timeframe] ?? 3600000));
 }
 
-export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate }: ChartProps) {
+export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, rollingMetrics }: ChartProps) {
   const [displayTimeframe, setDisplayTimeframe] = useState<string | null>(null);
   const [showFundingRate, setShowFundingRate] = useState(false);
+  const [showROI, setShowROI] = useState(false);
+  const [showDrawdown, setShowDrawdown] = useState(false);
+  const [showSharpe, setShowSharpe] = useState(false);
+  const [showWinRate, setShowWinRate] = useState(false);
   const [chartWindowStart, setChartWindowStart] = useState<number | null>(null);
   const [chartWindowEnd, setChartWindowEnd] = useState<number | null>(null);
   const [showDateRangeSelector, setShowDateRangeSelector] = useState(false);
+  const [tooltipData, setTooltipData] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    time: string;
+    open?: number;
+    high?: number;
+    low?: number;
+    close?: number;
+    fundingRate?: number;
+    roi?: number;
+    drawdown?: number;
+    sharpe?: number;
+    winRate?: number;
+  } | null>(null);
 
   const needsDateLimiter = displayTimeframe === '1m' || displayTimeframe === '5m';
   const effectiveStart = needsDateLimiter && chartWindowStart ? chartWindowStart : startDate;
@@ -116,6 +138,13 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
   const candleSeriesRef = useRef<CandlestickSeriesApi | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const frSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const roiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const ddSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
+  const sharpeSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const winRateSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+
+  // Derived: whether any overlay (FR or metric) is active
+  const hasAnyOverlay = showFundingRate || showROI || showDrawdown || showSharpe || showWinRate;
 
   // Create chart on mount
   useEffect(() => {
@@ -191,6 +220,41 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
     const seriesMarkers = createSeriesMarkers(candleSeries, []);
     markersRef.current = seriesMarkers;
 
+    // Subscribe to crosshair move for tooltip
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.time || !param.point || param.point.x < 0 || param.point.y < 0) {
+        setTooltipData(null);
+        return;
+      }
+
+      const candleData = param.seriesData.get(candleSeries);
+      const frData = frSeriesRef.current ? param.seriesData.get(frSeriesRef.current) : undefined;
+      const roiData = roiSeriesRef.current ? param.seriesData.get(roiSeriesRef.current) : undefined;
+      const ddData = ddSeriesRef.current ? param.seriesData.get(ddSeriesRef.current) : undefined;
+      const sharpeData = sharpeSeriesRef.current ? param.seriesData.get(sharpeSeriesRef.current) : undefined;
+      const wrData = winRateSeriesRef.current ? param.seriesData.get(winRateSeriesRef.current) : undefined;
+
+      const timestamp = (param.time as number) * 1000;
+      const date = new Date(timestamp);
+      const timeStr = date.toLocaleString();
+
+      setTooltipData({
+        visible: true,
+        x: param.point.x,
+        y: param.point.y,
+        time: timeStr,
+        open: candleData && 'open' in candleData ? (candleData as { open: number }).open : undefined,
+        high: candleData && 'high' in candleData ? (candleData as { high: number }).high : undefined,
+        low: candleData && 'low' in candleData ? (candleData as { low: number }).low : undefined,
+        close: candleData && 'close' in candleData ? (candleData as { close: number }).close : undefined,
+        fundingRate: frData && 'value' in frData ? (frData as { value: number }).value : undefined,
+        roi: roiData && 'value' in roiData ? (roiData as { value: number }).value : undefined,
+        drawdown: ddData && 'value' in ddData ? (ddData as { value: number }).value : undefined,
+        sharpe: sharpeData && 'value' in sharpeData ? (sharpeData as { value: number }).value : undefined,
+        winRate: wrData && 'value' in wrData ? (wrData as { value: number }).value : undefined,
+      });
+    });
+
     // Handle resize
     const handleResize = () => {
       if (containerRef.current && chartRef.current) {
@@ -206,6 +270,10 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
     return () => {
       window.removeEventListener('resize', handleResize);
       frSeriesRef.current = null;
+      roiSeriesRef.current = null;
+      ddSeriesRef.current = null;
+      sharpeSeriesRef.current = null;
+      winRateSeriesRef.current = null;
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -242,6 +310,20 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
       setShowFundingRate(false);
     }
   }, [isFutures]);
+
+  // Adjust candle price scale margins based on whether any overlay is active
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (hasAnyOverlay) {
+      chartRef.current.priceScale('right').applyOptions({
+        scaleMargins: { top: 0.05, bottom: 0.28 },
+      });
+    } else {
+      chartRef.current.priceScale('right').applyOptions({
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+      });
+    }
+  }, [hasAnyOverlay]);
 
   // Update trade markers
   useEffect(() => {
@@ -311,11 +393,6 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
           borderVisible: false,
         });
 
-        // Push candles up to make room for FR histogram at bottom
-        chartRef.current.priceScale('right').applyOptions({
-          scaleMargins: { top: 0.05, bottom: 0.28 },
-        });
-
         frSeriesRef.current = frSeries;
       }
 
@@ -331,14 +408,139 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
         chartRef.current.removeSeries(frSeriesRef.current);
         frSeriesRef.current = null;
       }
-      // Restore candle price scale
-      if (chartRef.current) {
-        chartRef.current.priceScale('right').applyOptions({
-          scaleMargins: { top: 0.1, bottom: 0.1 },
-        });
-      }
     }
   }, [showFundingRate, fundingRates]);
+
+  // ROI overlay
+  useEffect(() => {
+    if (!chartRef.current || !rollingMetrics) return;
+
+    if (showROI && rollingMetrics.timestamps.length > 0) {
+      if (!roiSeriesRef.current) {
+        roiSeriesRef.current = chartRef.current.addSeries(LineSeries, {
+          color: '#3B82F6',
+          lineWidth: 1,
+          priceScaleId: 'overlay-roi',
+          priceFormat: { type: 'custom', formatter: (p: number) => `${p.toFixed(1)}%` },
+          lastValueVisible: false,
+        });
+        chartRef.current.priceScale('overlay-roi').applyOptions({
+          scaleMargins: { top: 0.75, bottom: 0.02 },
+          borderVisible: false,
+        });
+      }
+      roiSeriesRef.current.setData(
+        rollingMetrics.timestamps.map((t, i) => ({
+          time: (t / 1000) as Time,
+          value: rollingMetrics.cumulativeReturn[i],
+        }))
+      );
+    } else {
+      if (roiSeriesRef.current && chartRef.current) {
+        chartRef.current.removeSeries(roiSeriesRef.current);
+        roiSeriesRef.current = null;
+      }
+    }
+  }, [showROI, rollingMetrics]);
+
+  // Drawdown overlay
+  useEffect(() => {
+    if (!chartRef.current || !rollingMetrics) return;
+
+    if (showDrawdown && rollingMetrics.timestamps.length > 0) {
+      if (!ddSeriesRef.current) {
+        ddSeriesRef.current = chartRef.current.addSeries(AreaSeries, {
+          topColor: 'rgba(239, 68, 68, 0.0)',
+          bottomColor: 'rgba(239, 68, 68, 0.3)',
+          lineColor: '#EF4444',
+          lineWidth: 1,
+          priceScaleId: 'overlay-dd',
+          priceFormat: { type: 'custom', formatter: (p: number) => `${p.toFixed(1)}%` },
+          lastValueVisible: false,
+          invertFilledArea: true,
+        });
+        chartRef.current.priceScale('overlay-dd').applyOptions({
+          scaleMargins: { top: 0.75, bottom: 0.02 },
+          borderVisible: false,
+        });
+      }
+      ddSeriesRef.current.setData(
+        rollingMetrics.timestamps.map((t, i) => ({
+          time: (t / 1000) as Time,
+          value: -Math.abs(rollingMetrics.drawdown[i]),
+        }))
+      );
+    } else {
+      if (ddSeriesRef.current && chartRef.current) {
+        chartRef.current.removeSeries(ddSeriesRef.current);
+        ddSeriesRef.current = null;
+      }
+    }
+  }, [showDrawdown, rollingMetrics]);
+
+  // Sharpe overlay
+  useEffect(() => {
+    if (!chartRef.current || !rollingMetrics) return;
+
+    if (showSharpe && rollingMetrics.timestamps.length > 0) {
+      if (!sharpeSeriesRef.current) {
+        sharpeSeriesRef.current = chartRef.current.addSeries(LineSeries, {
+          color: '#8B5CF6',
+          lineWidth: 1,
+          priceScaleId: 'overlay-sharpe',
+          priceFormat: { type: 'custom', formatter: (p: number) => p.toFixed(2) },
+          lastValueVisible: false,
+        });
+        chartRef.current.priceScale('overlay-sharpe').applyOptions({
+          scaleMargins: { top: 0.75, bottom: 0.02 },
+          borderVisible: false,
+        });
+      }
+      sharpeSeriesRef.current.setData(
+        rollingMetrics.timestamps.map((t, i) => ({
+          time: (t / 1000) as Time,
+          value: rollingMetrics.rollingSharpe[i],
+        }))
+      );
+    } else {
+      if (sharpeSeriesRef.current && chartRef.current) {
+        chartRef.current.removeSeries(sharpeSeriesRef.current);
+        sharpeSeriesRef.current = null;
+      }
+    }
+  }, [showSharpe, rollingMetrics]);
+
+  // Win rate overlay
+  useEffect(() => {
+    if (!chartRef.current || !rollingMetrics) return;
+
+    if (showWinRate && rollingMetrics.timestamps.length > 0) {
+      if (!winRateSeriesRef.current) {
+        winRateSeriesRef.current = chartRef.current.addSeries(LineSeries, {
+          color: '#F59E0B',
+          lineWidth: 1,
+          priceScaleId: 'overlay-wr',
+          priceFormat: { type: 'custom', formatter: (p: number) => `${p.toFixed(1)}%` },
+          lastValueVisible: false,
+        });
+        chartRef.current.priceScale('overlay-wr').applyOptions({
+          scaleMargins: { top: 0.75, bottom: 0.02 },
+          borderVisible: false,
+        });
+      }
+      winRateSeriesRef.current.setData(
+        rollingMetrics.timestamps.map((t, i) => ({
+          time: (t / 1000) as Time,
+          value: rollingMetrics.cumulativeWinRate[i],
+        }))
+      );
+    } else {
+      if (winRateSeriesRef.current && chartRef.current) {
+        chartRef.current.removeSeries(winRateSeriesRef.current);
+        winRateSeriesRef.current = null;
+      }
+    }
+  }, [showWinRate, rollingMetrics]);
 
   // Zoom controls
   const handleZoomIn = useCallback(() => {
@@ -493,6 +695,46 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
             FR
           </button>
         )}
+        {rollingMetrics && rollingMetrics.timestamps.length > 0 && (
+          <>
+            <button
+              onClick={() => setShowROI(!showROI)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                showROI ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+              title="Toggle ROI overlay"
+            >
+              ROI
+            </button>
+            <button
+              onClick={() => setShowDrawdown(!showDrawdown)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                showDrawdown ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+              title="Toggle Drawdown overlay"
+            >
+              DD
+            </button>
+            <button
+              onClick={() => setShowSharpe(!showSharpe)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                showSharpe ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+              title="Toggle Rolling Sharpe overlay"
+            >
+              SR
+            </button>
+            <button
+              onClick={() => setShowWinRate(!showWinRate)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                showWinRate ? 'bg-amber-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+              title="Toggle Win Rate overlay"
+            >
+              WR
+            </button>
+          </>
+        )}
         <button
           onClick={handleZoomIn}
           className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
@@ -524,6 +766,51 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
 
       {/* Chart container */}
       <div ref={containerRef} style={{ height }} />
+
+      {/* Crosshair Tooltip */}
+      {tooltipData && tooltipData.visible && (
+        <div
+          className="absolute z-20 pointer-events-none bg-gray-800/95 border border-gray-600 rounded px-2.5 py-1.5 text-xs"
+          style={{
+            left: Math.min(tooltipData.x + 16, (containerRef.current?.clientWidth ?? 800) - 200),
+            top: 8,
+          }}
+        >
+          <div className="text-gray-400 mb-1">{tooltipData.time}</div>
+          {tooltipData.open !== undefined && (
+            <div className="grid grid-cols-4 gap-x-3 text-gray-300">
+              <span>O <span className="text-white">{tooltipData.open.toFixed(2)}</span></span>
+              <span>H <span className="text-white">{tooltipData.high?.toFixed(2)}</span></span>
+              <span>L <span className="text-white">{tooltipData.low?.toFixed(2)}</span></span>
+              <span>C <span className={tooltipData.close !== undefined && tooltipData.open !== undefined && tooltipData.close >= tooltipData.open ? 'text-green-400' : 'text-red-400'}>{tooltipData.close?.toFixed(2)}</span></span>
+            </div>
+          )}
+          {tooltipData.fundingRate !== undefined && (
+            <div className="mt-1 border-t border-gray-700 pt-1">
+              <span className="text-gray-400">FR </span>
+              <span className={tooltipData.fundingRate >= 0 ? 'text-green-400' : 'text-red-400'}>
+                {(tooltipData.fundingRate * 100).toFixed(4)}%
+              </span>
+            </div>
+          )}
+          {(tooltipData.roi !== undefined || tooltipData.drawdown !== undefined || tooltipData.sharpe !== undefined || tooltipData.winRate !== undefined) && (
+            <div className="mt-1 border-t border-gray-700 pt-1 flex flex-wrap gap-x-3">
+              {tooltipData.roi !== undefined && (
+                <span><span className="text-gray-400">ROI </span><span className="text-blue-400">{tooltipData.roi.toFixed(1)}%</span></span>
+              )}
+              {tooltipData.drawdown !== undefined && (
+                <span><span className="text-gray-400">DD </span><span className="text-red-400">{tooltipData.drawdown.toFixed(1)}%</span></span>
+              )}
+              {tooltipData.sharpe !== undefined && (
+                <span><span className="text-gray-400">SR </span><span className="text-purple-400">{tooltipData.sharpe.toFixed(2)}</span></span>
+              )}
+              {tooltipData.winRate !== undefined && (
+                <span><span className="text-gray-400">WR </span><span className="text-amber-400">{tooltipData.winRate.toFixed(1)}%</span></span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Empty state */}
       {candles.length === 0 && (

@@ -16,6 +16,7 @@ import type {
   EquityPoint,
   TradeAction,
   FundingRate,
+  RollingMetrics,
 } from '../core/types.js';
 
 const { Pool } = pg;
@@ -263,6 +264,7 @@ interface BacktestRunRow {
   config: BacktestConfig | string;
   metrics: PerformanceMetrics | string;
   equity: EquityPoint[] | string;
+  rolling_metrics?: RollingMetrics | string | null;
   created_at: string | number;
 }
 
@@ -278,14 +280,15 @@ export async function saveBacktestRun(result: BacktestResult): Promise<void> {
 
     // Insert the run
     await client.query(
-      `INSERT INTO backtest_runs (id, strategy_name, config, metrics, equity, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO backtest_runs (id, strategy_name, config, metrics, equity, rolling_metrics, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         result.id,
         result.config.strategyName,
         JSON.stringify(result.config),
         JSON.stringify(result.metrics),
         JSON.stringify(result.equity),
+        result.rollingMetrics != null ? JSON.stringify(result.rollingMetrics) : null,
         result.createdAt,
       ]
     );
@@ -332,7 +335,7 @@ export async function saveBacktestRun(result: BacktestResult): Promise<void> {
 export async function getBacktestRun(id: string): Promise<BacktestResult | null> {
   const p = getPool();
   const { rows } = await p.query<BacktestRunRow>(
-    `SELECT id, strategy_name, config, metrics, equity, created_at
+    `SELECT id, strategy_name, config, metrics, equity, rolling_metrics, created_at
      FROM backtest_runs
      WHERE id = $1`,
     [id]
@@ -356,6 +359,11 @@ export async function getBacktestRun(id: string): Promise<BacktestResult | null>
     equity: (typeof row.equity === 'string'
       ? JSON.parse(row.equity)
       : row.equity) as EquityPoint[],
+    rollingMetrics: row.rolling_metrics
+      ? (typeof row.rolling_metrics === 'string'
+        ? JSON.parse(row.rolling_metrics)
+        : row.rolling_metrics) as RollingMetrics
+      : undefined,
     trades,
     createdAt: Number(row.created_at),
   };
