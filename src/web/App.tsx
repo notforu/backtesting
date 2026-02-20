@@ -3,7 +3,7 @@
  * Provides the layout structure with sidebar, chart, and dashboard.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Chart } from './components/Chart';
 import { PairsChart } from './components/PairsChart';
@@ -15,10 +15,9 @@ import { History } from './components/History';
 import { OptimizerModal } from './components/OptimizerModal';
 import { ScannerResults } from './components/ScannerResults';
 import { HistoryExplorer } from './components/HistoryExplorer';
-import { FundingRateChart } from './components/FundingRateChart';
 import { useBacktestStore, useConfigStore } from './stores/backtestStore';
 import { useScannerStore } from './stores/scannerStore';
-import { useLoadBacktest, useFundingRates, useCandles } from './hooks/useBacktest';
+import { useLoadBacktest, useCandles } from './hooks/useBacktest';
 import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult, type Timeframe } from './types';
 
 const queryClient = new QueryClient({
@@ -59,10 +58,6 @@ function AppContent() {
   const showScanner = scanResults.length > 0;
   const [showExplorer, setShowExplorer] = useState(false);
 
-  // Chart synchronization state
-  const [chartVisibleRange, setChartVisibleRange] = useState<{ from: number; to: number } | null>(null);
-  const [syncSource, setSyncSource] = useState<'price' | 'fr' | null>(null);
-
   // Multi-asset state
   const [selectedAssetIndex, setSelectedAssetIndex] = useState<number>(-1); // -1 = portfolio view
 
@@ -79,12 +74,6 @@ function AppContent() {
   useEffect(() => {
     setSelectedAssetIndex(-1);
   }, [currentResult?.id]);
-
-  // Check if current result is futures mode
-  const isFutures = currentResult && (
-    (currentResult as any)?.config?.mode === 'futures' ||
-    (currentResult as BacktestResult)?.metrics?.totalFundingIncome !== undefined
-  );
 
   // Fetch candles for selected asset in multi-asset view
   const candleParams = selectedAsset && currentResult ? {
@@ -104,45 +93,12 @@ function AppContent() {
   } : null;
   const { data: assetCandles } = useCandles(candleParams);
 
-  // Fetch funding rates for futures mode
-  // For multi-asset, fetch FR for selected asset. For single asset, use config.symbol
-  const fundingRateParams = isFutures && currentResult && !isPairs ? {
-    exchange: (currentResult as BacktestResult).config.exchange,
-    symbol: selectedAsset ? selectedAsset.symbol : (currentResult as BacktestResult).config.symbol,
-    start: (() => {
-      const sd = (currentResult as BacktestResult).config.startDate;
-      return sd != null ? (typeof sd === 'number' ? sd : new Date(sd).getTime()) : 0;
-    })(),
-    end: (() => {
-      const ed = (currentResult as BacktestResult).config.endDate;
-      return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : 0;
-    })(),
-  } : null;
-  const { data: fundingRatesData } = useFundingRates(fundingRateParams);
-
   const handleSelectRun = async (id: string) => {
     const result = await loadBacktest(id);
     if (result) {
       applyHistoryParams(result);
     }
   };
-
-  // Chart synchronization handlers
-  const handlePriceRangeChange = useCallback((range: { from: number; to: number } | null) => {
-    if (syncSource === 'fr') return; // Ignore if this was triggered by FR chart
-    setSyncSource('price');
-    setChartVisibleRange(range);
-    // Clear source after a tick to allow future updates
-    requestAnimationFrame(() => setSyncSource(null));
-  }, [syncSource]);
-
-  const handleFrRangeChange = useCallback((range: { from: number; to: number } | null) => {
-    if (syncSource === 'price') return; // Ignore if this was triggered by price chart
-    setSyncSource('fr');
-    setChartVisibleRange(range);
-    // Clear source after a tick to allow future updates
-    requestAnimationFrame(() => setSyncSource(null));
-  }, [syncSource]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col">
@@ -310,24 +266,10 @@ function AppContent() {
                         const ed = (currentResult as BacktestResult).config.endDate;
                         return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : undefined;
                       })()}
-                      onVisibleLogicalRangeChange={handlePriceRangeChange}
-                      visibleLogicalRange={syncSource === 'fr' ? chartVisibleRange : undefined}
                     />
                   ) : (
                     <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
                       Loading candles for {selectedAsset.label}...
-                    </div>
-                  )}
-
-                  {/* Funding Rate Sub-Chart for selected asset */}
-                  {isFutures && fundingRatesData && fundingRatesData.length > 0 && (
-                    <div className="mt-4">
-                      <FundingRateChart
-                        fundingRates={fundingRatesData}
-                        height={120}
-                        onVisibleLogicalRangeChange={handleFrRangeChange}
-                        visibleLogicalRange={syncSource === 'price' ? chartVisibleRange : undefined}
-                      />
                     </div>
                   )}
                 </>
@@ -357,21 +299,7 @@ function AppContent() {
                     symbol={(currentResult as BacktestResult)?.config.symbol}
                     startDate={(() => { const sd = (currentResult as BacktestResult)?.config.startDate; return sd != null ? (typeof sd === 'number' ? sd : new Date(sd).getTime()) : undefined; })()}
                     endDate={(() => { const ed = (currentResult as BacktestResult)?.config.endDate; return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : undefined; })()}
-                    onVisibleLogicalRangeChange={handlePriceRangeChange}
-                    visibleLogicalRange={syncSource === 'fr' ? chartVisibleRange : undefined}
                   />
-
-                  {/* Funding Rate Sub-Chart for futures mode */}
-                  {isFutures && fundingRatesData && fundingRatesData.length > 0 && (
-                    <div className="mt-4">
-                      <FundingRateChart
-                        fundingRates={fundingRatesData}
-                        height={120}
-                        onVisibleLogicalRangeChange={handleFrRangeChange}
-                        visibleLogicalRange={syncSource === 'price' ? chartVisibleRange : undefined}
-                      />
-                    </div>
-                  )}
                 </>
               )}
             </section>

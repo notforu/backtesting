@@ -22,8 +22,7 @@ interface FundingRate {
 interface FundingRateChartProps {
   fundingRates: FundingRate[];
   height?: number;
-  onVisibleLogicalRangeChange?: (range: { from: number; to: number } | null) => void;
-  visibleLogicalRange?: { from: number; to: number } | null;
+  onChartReady?: (chart: IChartApi | null) => void;
 }
 
 // Convert timestamp to TradingView time format
@@ -43,8 +42,7 @@ const chartColors = {
 export function FundingRateChart({
   fundingRates,
   height = 120,
-  onVisibleLogicalRangeChange,
-  visibleLogicalRange
+  onChartReady,
 }: FundingRateChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -116,14 +114,8 @@ export function FundingRateChart({
     chartRef.current = chart;
     seriesRef.current = histogramSeries;
 
-    // Subscribe to visible logical range changes for synchronization
-    if (onVisibleLogicalRangeChange) {
-      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-        if (range) {
-          onVisibleLogicalRangeChange({ from: range.from, to: range.to });
-        }
-      });
-    }
+    // Notify parent that chart is ready for imperative sync
+    onChartReady?.(chart);
 
     // Handle resize
     const handleResize = () => {
@@ -139,18 +131,12 @@ export function FundingRateChart({
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      onChartReady?.(null);
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
     };
   }, []);
-
-  // Apply external visible range changes (for synchronization)
-  useEffect(() => {
-    if (chartRef.current && visibleLogicalRange) {
-      chartRef.current.timeScale().setVisibleLogicalRange(visibleLogicalRange);
-    }
-  }, [visibleLogicalRange]);
 
   // Update funding rate data
   useEffect(() => {

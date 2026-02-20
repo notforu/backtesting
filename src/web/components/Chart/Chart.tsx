@@ -17,7 +17,7 @@ import {
   ColorType,
   CrosshairMode,
   CandlestickSeries,
-  LineSeries,
+  HistogramSeries,
 } from 'lightweight-charts';
 import type { Candle, Trade } from '../../types';
 
@@ -32,8 +32,6 @@ interface ChartProps {
   symbol?: string;
   startDate?: number;
   endDate?: number;
-  onVisibleLogicalRangeChange?: (range: { from: number; to: number } | null) => void;
-  visibleLogicalRange?: { from: number; to: number } | null;
 }
 
 // Convert timestamp to TradingView time format
@@ -76,7 +74,7 @@ function estimateCandles(start: number, end: number, timeframe: string): number 
   return Math.ceil(diffMs / (tfMs[timeframe] ?? 3600000));
 }
 
-export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, onVisibleLogicalRangeChange, visibleLogicalRange }: ChartProps) {
+export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate }: ChartProps) {
   const [displayTimeframe, setDisplayTimeframe] = useState<string | null>(null);
   const [showFundingRate, setShowFundingRate] = useState(false);
   const [chartWindowStart, setChartWindowStart] = useState<number | null>(null);
@@ -117,7 +115,7 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<CandlestickSeriesApi | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  const frSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const frSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
 
   // Create chart on mount
   useEffect(() => {
@@ -193,15 +191,6 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
     const seriesMarkers = createSeriesMarkers(candleSeries, []);
     markersRef.current = seriesMarkers;
 
-    // Subscribe to visible logical range changes for synchronization
-    if (onVisibleLogicalRangeChange) {
-      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-        if (range) {
-          onVisibleLogicalRangeChange({ from: range.from, to: range.to });
-        }
-      });
-    }
-
     // Handle resize
     const handleResize = () => {
       if (containerRef.current && chartRef.current) {
@@ -244,6 +233,15 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
     setChartWindowStart(null);
     setChartWindowEnd(null);
   }, [backtestTimeframe, symbol]);
+
+  // Auto-show funding rate histogram in futures mode
+  useEffect(() => {
+    if (isFutures) {
+      setShowFundingRate(true);
+    } else {
+      setShowFundingRate(false);
+    }
+  }, [isFutures]);
 
   // Update trade markers
   useEffect(() => {
@@ -294,23 +292,13 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
     }
   }, [height]);
 
-  // Apply external visible range changes (for synchronization)
-  useEffect(() => {
-    if (chartRef.current && visibleLogicalRange) {
-      chartRef.current.timeScale().setVisibleLogicalRange(visibleLogicalRange);
-    }
-  }, [visibleLogicalRange]);
-
-  // Funding rate series toggle
+  // Funding rate histogram toggle
   useEffect(() => {
     if (!chartRef.current) return;
 
     if (showFundingRate && fundingRates && fundingRates.length > 0) {
-      // Create FR series if not already created
       if (!frSeriesRef.current) {
-        const frSeries = chartRef.current.addSeries(LineSeries, {
-          color: '#F59E0B', // amber-500
-          lineWidth: 1,
+        const frSeries = chartRef.current.addSeries(HistogramSeries, {
           priceScaleId: 'funding-rate',
           priceFormat: {
             type: 'custom',
@@ -318,26 +306,36 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
           },
         });
 
-        // Configure the FR price scale (separate axis in bottom 25% of chart)
         chartRef.current.priceScale('funding-rate').applyOptions({
-          scaleMargins: { top: 0.7, bottom: 0.05 },
+          scaleMargins: { top: 0.75, bottom: 0.02 },
           borderVisible: false,
+        });
+
+        // Push candles up to make room for FR histogram at bottom
+        chartRef.current.priceScale('right').applyOptions({
+          scaleMargins: { top: 0.05, bottom: 0.28 },
         });
 
         frSeriesRef.current = frSeries;
       }
 
-      // Set FR data
+      // Set FR data with per-bar green/red coloring
       const frData = fundingRates.map((fr) => ({
         time: (fr.timestamp / 1000) as Time,
         value: fr.fundingRate,
+        color: fr.fundingRate >= 0 ? '#22C55E' : '#EF4444',
       }));
       frSeriesRef.current.setData(frData);
     } else {
-      // Remove FR series if it exists
       if (frSeriesRef.current && chartRef.current) {
         chartRef.current.removeSeries(frSeriesRef.current);
         frSeriesRef.current = null;
+      }
+      // Restore candle price scale
+      if (chartRef.current) {
+        chartRef.current.priceScale('right').applyOptions({
+          scaleMargins: { top: 0.1, bottom: 0.1 },
+        });
       }
     }
   }, [showFundingRate, fundingRates]);
