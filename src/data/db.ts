@@ -295,8 +295,8 @@ export async function saveBacktestRun(result: BacktestResult): Promise<void> {
       await client.query(
         `INSERT INTO trades_v2
          (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent,
-          closed_position_id, balance_after, fee, fee_rate, funding_rate)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          closed_position_id, balance_after, fee, fee_rate, funding_rate, funding_income)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [
           trade.id,
           result.id,
@@ -312,6 +312,7 @@ export async function saveBacktestRun(result: BacktestResult): Promise<void> {
           trade.fee ?? null,
           trade.feeRate ?? null,
           trade.fundingRate ?? null,
+          trade.fundingIncome ?? null,
         ]
       );
     }
@@ -730,6 +731,7 @@ interface TradeV2Row {
   fee: number | null;
   fee_rate: number | null;
   funding_rate: number | null;
+  funding_income: number | null;
 }
 
 interface LegacyTradeRow {
@@ -756,7 +758,7 @@ export async function getTrades(backtestId: string): Promise<Trade[]> {
   // Try new format first
   const { rows: v2Rows } = await p.query<TradeV2Row>(
     `SELECT id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent,
-            closed_position_id, balance_after, fee, fee_rate, funding_rate
+            closed_position_id, balance_after, fee, fee_rate, funding_rate, funding_income
      FROM trades_v2
      WHERE backtest_id = $1
      ORDER BY timestamp ASC`,
@@ -778,6 +780,7 @@ export async function getTrades(backtestId: string): Promise<Trade[]> {
       fee: row.fee ?? undefined,
       feeRate: row.fee_rate ?? undefined,
       fundingRate: row.funding_rate ?? undefined,
+      fundingIncome: row.funding_income ?? undefined,
     }));
   }
 
@@ -857,8 +860,8 @@ export async function saveTrades(backtestId: string, trades: Trade[]): Promise<n
       const result = await client.query(
         `INSERT INTO trades_v2
          (id, backtest_id, symbol, action, price, amount, timestamp, pnl, pnl_percent,
-          closed_position_id, balance_after, fee, fee_rate, funding_rate)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          closed_position_id, balance_after, fee, fee_rate, funding_rate, funding_income)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [
           trade.id,
           backtestId,
@@ -874,6 +877,7 @@ export async function saveTrades(backtestId: string, trades: Trade[]): Promise<n
           trade.fee ?? null,
           trade.feeRate ?? null,
           trade.fundingRate ?? null,
+          trade.fundingIncome ?? null,
         ]
       );
       count += result.rowCount ?? 0;

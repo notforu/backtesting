@@ -88,6 +88,9 @@ export interface Trade {
 
   // Funding rate at trade time (futures mode only)
   fundingRate?: number;
+
+  // Funding income accumulated during position (futures mode, close trades only)
+  fundingIncome?: number;
 }
 
 export interface EquityPoint {
@@ -120,7 +123,7 @@ export interface StrategyParam {
   min?: number;
   max?: number;
   step?: number;
-  options?: Array<{ value: string | number; label: string }>;
+  options?: string[] | Array<{ value: string | number; label: string }>;
   description?: string;
 }
 
@@ -129,12 +132,14 @@ export interface StrategyInfo {
   description: string;
   version: string;
   isPairs?: boolean;
+  isMultiAsset?: boolean;
 }
 
 export interface StrategyDetails extends StrategyInfo {
   params: StrategyParam[];
   sourceFile: string;
   isPairs?: boolean;
+  isMultiAsset?: boolean;
 }
 
 // ============================================================================
@@ -346,6 +351,16 @@ export interface RunPairsBacktestRequest {
   initialCapital: number;
   exchange?: string;
   leverage?: number;
+}
+
+export interface RunMultiAssetBacktestRequest {
+  strategyName: string;
+  assets: string; // Comma-separated 'SYMBOL@TF'
+  startDate: string;
+  endDate: string;
+  initialCapital: number;
+  exchange: string;
+  params: Record<string, unknown>;
 }
 
 // ============================================================================

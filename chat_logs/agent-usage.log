@@ -85,7 +85,7 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-01-25 21:33] be-dev (manual) - Fix missing optimized_params table in database schema
 [2026-01-25 21:34] docs-writer (haiku) - Create changelog for optimization endpoint fix
 [2026-01-25 12:51] orchestrator (sonnet) - Memory optimization task breakdown and delegation
-[2026-01-25 12:56] be-dev (sonnet) - Implement CandleView pattern to fix O(n²) memory issue
+[2026-01-25 12:56] be-dev (sonnet) - Implement CandleView pattern to fix O(n^2) memory issue
 [2026-01-25 12:57] be-dev (sonnet) - Implemented CandleView pattern to fix memory issue (base.ts, engine.ts, optimizer.ts, 3 strategies)
 [2026-01-25 13:00] docs-writer (haiku) - Create changelog for CandleView memory optimization
 [2026-01-25 12:58] docs-writer (haiku) - Created changelog for CandleView memory optimization
@@ -209,7 +209,6 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-07 18:08] fe-dev (sonnet) - Create Performance Evolution Charts component with tabbed metrics visualization
 [2026-02-07 18:09] be-dev (sonnet) - Implement Phase 1 - Leverage Support (LeveragedPortfolio, margin tracking, liquidation)
 [2026-02-07 18:10] be-dev (sonnet) - Add rolling metrics backend for performance evolution charts
- default (sonnet) - Delegating Phase 2 Pairs Backtest Engine implementation to orchestrator
 [2026-02-07 18:05] orchestrator (sonnet) - Phase 1: Leverage Support orchestration (failed - no delegation)
 [2026-02-07 18:08] be-dev (sonnet) - Phase 1: Implement leverage support (LeveragedPortfolio, types, engine)
 [2026-02-07 18:05] orchestrator (sonnet) - Phase 4: Performance Charts orchestration (failed - no delegation)
@@ -235,7 +234,6 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-09 17:25] quant (sonnet) - Grid search optimization for pairs-zscore-scalper strategy
 [2026-02-09 17:25] quant (sonnet) - Grid search optimization and backtest verification for pairs-zscore-scalper strategy on SOL/USDT-AVAX/USDT
 [2026-02-09 17:25] quant (sonnet) - Grid search optimization for pairs-zscore-scalper strategy
- be-dev (sonnet) - Implement pairs-kalman-reversion strategy with Kalman filter hedge ratio
 [2026-02-09 17:35] quant (sonnet) - Implement and optimize pairs-bollinger-reversion strategy
 [2026-02-09 10:30] quant (sonnet) - Implement + optimize pairs-kalman-reversion strategy
 [2026-02-09 10:30] quant (sonnet) - Implement + optimize pairs-bollinger-reversion strategy
@@ -245,7 +243,6 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-09 14:32] quant (sonnet) - Implementing pairs-htf-mean-reversion strategy with multi-regime filtering
 [2026-02-09 14:33] be-dev (sonnet) - Creating pairs-htf-mean-reversion strategy file
 [2026-02-09 17:36] orchestrator (sonnet) - Delegate pairs-rsi-divergence implementation to be-dev
- quant (sonnet) - Implemented and optimized pairs-kalman-reversion strategy
 [2026-02-09 17:45] quant (sonnet) - Implemented and optimized pairs-rsi-divergence strategy
 [2026-02-09 14:45] quant (sonnet) - Completed pairs-htf-mean-reversion implementation and optimization
 [2026-02-09 17:50] docs-writer (haiku) - Create changelog for four pairs trading strategy variants (Kalman, Bollinger, RSI, HTF)
@@ -308,15 +305,14 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-14 06:15] be-dev (sonnet) - Add slippage cost tracking to trades, metrics, and dashboard
 [2026-02-15 23:52] be-dev (sonnet) - Fix trade duration and Sharpe/Sortino annualization bugs, add PM utils
 [2026-02-16 07:56] be-dev (sonnet) - Redesign 3 PM strategies with tighter filters: lower extremes, cooldowns, profit filters, volume filters, minSpreadStd
-[2026-02-16 08:07] orchestrator (sonnet) - PM backtesting improvements: add --slippage CLI param, lower default slippage 2%→1%, tune pm-cross-platform-arb defaults
-[2026-02-16 08:07] be-dev (sonnet) - PM backtesting improvements: add --slippage CLI param, lower default slippage 2%→1%, tune pm-cross-platform-arb defaults
-
+[2026-02-16 08:07] orchestrator (sonnet) - PM backtesting improvements: add --slippage CLI param, lower default slippage 2%->1%, tune pm-cross-platform-arb defaults
+[2026-02-16 08:07] be-dev (sonnet) - PM backtesting improvements: add --slippage CLI param, lower default slippage 2%->1%, tune pm-cross-platform-arb defaults
 [2026-02-16 08:00] Explore (sonnet) - Explore PM strategy code, providers, and data
 [2026-02-16 08:02] be-dev (sonnet) - Fix PM engine bugs: trade duration, Sharpe annualization, create pm-utils.ts
 [2026-02-16 08:03] be-dev (sonnet) - Redesign 3 PM strategies with profit filters, cooldowns, volume filters
 [2026-02-16 08:04] be-dev (opus) - Fetch new PM market data from Polymarket (stopped - API struggles)
 [2026-02-16 08:06] orchestrator (sonnet) - PM slippage + CLI fixes (couldn't delegate, read-only analysis)
-[2026-02-16 08:07] be-dev (sonnet) - Apply PM slippage 2%→1%, add --slippage CLI param, tune cross-arb defaults
+[2026-02-16 08:07] be-dev (sonnet) - Apply PM slippage 2%->1%, add --slippage CLI param, tune cross-arb defaults
 [2026-02-16 08:10] docs-writer (haiku) - Create changelog for PM strategy overhaul
 [2026-02-16 08:20] Explore (sonnet) - Explore orchestrator agent configuration
 [2026-02-16 08:22] orchestrator (sonnet) - Test orchestrator Task tool (confirmed: no Task tool at runtime)
@@ -394,8 +390,60 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-19 07:22] be-dev (sonnet) - Phase 2 PostgreSQL migration: full rewrite of src/data/db.ts from SQLite/better-sqlite3 to async pg with Pool, migrations runner, and all 23+ functions
 [2026-02-19 07:33] be-dev (sonnet) - Update all db callers to await async PostgreSQL functions (13 files)
 [2026-02-19 08:00] be-dev (sonnet) - Phase 1: PG infrastructure (docker-compose, package.json, migrations SQL)
-[2026-02-19 08:05] be-dev (sonnet) - Phase 2: Full rewrite of src/data/db.ts (SQLite→PostgreSQL, sync→async)
+[2026-02-19 08:05] be-dev (sonnet) - Phase 2: Full rewrite of src/data/db.ts (SQLite->PostgreSQL, sync->async)
 [2026-02-19 08:15] be-dev (sonnet) - Phase 3+4: Cascade async updates across 13 caller files
 [2026-02-19 08:00] docs-writer (haiku) - Migrate SQLite to PostgreSQL changelog
 [2026-02-19 08:30] be-dev (sonnet) - Write one-time SQLite to PostgreSQL migration script at scripts/migrate-sqlite-to-pg.ts
 [2026-02-19 08:35] be-dev (sonnet) - Run FR backtests with saveResults:true and verify in DB
+[2026-02-19 08:15] commit (haiku) - SQLite to PostgreSQL migration: async/await pattern, 33 files, full schema migration
+[2026-02-19 09:00] be-dev (sonnet) - History pagination backend (getBacktestSummaries offset+total) + candle cache script
+[2026-02-19 00:00] fe-dev (sonnet) - Implement frontend pagination for backtest history using useInfiniteQuery
+[2026-02-19 11:30] be-dev (sonnet) - Add saveAllRuns/mode to OptimizationConfig, add runMultiOptimization function, update optimize API route for multi-symbol grid search
+[2026-02-19 12:00] fe-dev (sonnet) - Implement multi-resolution chart with timeframe selector and optimizer modal enhancements (multi-symbol, multi-timeframe, mode, saveAllRuns)
+[2026-02-19 22:30] be-dev (sonnet) - F1 backend pagination + F3 candle cache script
+[2026-02-19 22:35] fe-dev (sonnet) - F1 frontend pagination with useInfiniteQuery
+[2026-02-19 22:35] be-dev (sonnet) - F2 optimizer multi-symbol/saveAllRuns backend
+[2026-02-19 22:35] fe-dev (sonnet) - F4 multi-resolution chart + F2 optimizer modal enhancements
+[2026-02-19 22:30] docs-writer (haiku) - Create changelog for 4 features: pagination, multi-symbol grid search, candle cache, multi-resolution chart
+[2026-02-19 12:45] ui-tester (sonnet) - Visual verification of multi-resolution chart feature, history Load More button, history count format, and Optimizer modal fields
+[2026-02-19 23:15] ui-tester (sonnet) - Verify chart resolution feature (found startDate/endDate bug)
+[2026-02-19 23:20] docs-writer (haiku) - Create changelog for 4 features
+[2026-02-19 23:30] ui-tester (sonnet) - Re-verify chart resolution fix (PASS - start/end params correct)
+[2026-02-19 23:45] runner (manual) - Massive FR grid search: 26 symbols x 2 TFs x 50 params = 5,200 runs in 119 min
+[2026-02-19 15:11] runner (haiku) - Queried PostgreSQL for grid search results
+[2026-02-19 16:16] be-dev (sonnet) - Extend backtest history API with rich filtering, sorting, and extended summary fields
+[2026-02-19 16:17] be-dev (sonnet) - Add funding rate to trades, PnL clarity (trading vs funding income)
+[2026-02-19 16:18] be-dev (sonnet) - Add funding rate API endpoint and frontend chart overlay
+[2026-02-19 16:21] fe-dev (sonnet) - Build History Runs Explorer Modal component
+[2026-02-19 16:35] fe-dev (sonnet) - Add date range limiter to Chart to prevent browser freeze on 1m/5m resolution
+[2026-02-19 16:18] be-dev (sonnet) - Extend history API with filters, sorting, extended fields
+[2026-02-19 16:18] be-dev (sonnet) - Add funding rate to trades + PnL clarity banner
+[2026-02-19 16:18] be-dev (sonnet) - Add funding rate API endpoint + chart overlay
+[2026-02-19 16:18] fe-dev (sonnet) - Fix 1m chart performance with date range limiter
+[2026-02-19 16:22] fe-dev (sonnet) - Build History Runs Explorer Modal component
+[2026-02-19 16:30] docs-writer (haiku) - Create comprehensive changelog for 5 features: History API Filters + Runs Explorer, Funding Rate in Trades + PnL Clarity, Funding Rate Chart Overlay, 1m Chart Performance Fix
+[2026-02-20 03:01] main (opus) - Fix params toggle in AssetGroup and FR column null check in App.tsx
+[2026-02-20 07:36] commit (haiku) - feat: add history explorer, funding rate overlays, pagination
+[2026-02-20 14:00] quant-lead (opus) - Research and design FR-Spike-Aggr multi-asset portfolio strategy: ranked 26 assets, identified N=5 conservative portfolio, created implementation spec with orchestration script
+[2026-02-20 14:00] quant-lead (opus) - Research and design FR-Spike-Aggr multi-asset portfolio strategy: ranked 26 assets, identified N=5 conservative portfolio, created implementation spec
+[2026-02-20 14:00] architect (opus) - Design multi-asset FR strategy architecture: multi-engine, per-trade funding tracking, FR sub-chart, asset selector, PnL breakdown
+[2026-02-20 14:00] Explore (haiku) - Comprehensive exploration of FR implementation across engine, portfolio, types, frontend, API
+[2026-02-20 14:30] fe-dev (sonnet) - Implement funding rate PnL breakdown in trades table and dedicated funding rate sub-chart
+[2026-02-20 09:15] be-dev (sonnet) - Fix funding rate tracking: add fundingIncome per trade, create migration 003, update engine/types/db
+[2026-02-20 09:11] main (sonnet) - Multi-asset FR strategy infrastructure implementation delegation to be-dev
+[2026-02-20 14:45] be-dev (sonnet) - Create multi-asset FR spike aggregator backtest script
+[2026-02-20 09:29] fe-dev (sonnet) - Add multi-asset support to frontend with asset selector tabs
+[2026-02-20 09:44] be-dev (sonnet) - Fix saveTrades() missing funding_income column in INSERT
+[2026-02-20 09:51] ui-tester (sonnet) - Visual verification of funding rate features
+[2026-02-20 09:25] be-dev (sonnet) - Create fr-spike-aggr multi-asset backtest script
+[2026-02-20 09:30] fe-dev (sonnet) - Build multi-asset UI with asset selector tabs in App.tsx
+[2026-02-20 09:35] ui-tester (sonnet) - Visual verification of all FR features (first pass)
+[2026-02-20 09:40] be-dev (haiku) - Fix saveTrades missing fundingIncome column
+[2026-02-20 09:45] ui-tester (sonnet) - Final visual verification (all 4 FR features passed)
+[2026-02-20 09:30] docs-writer (haiku) - Create changelog for multi-asset FR spike strategy + funding rate UI features
+[2026-02-20 11:58] fe-dev (sonnet) - Implement bidirectional chart synchronization between price chart and funding rate chart
+[2026-02-20 13:21] fe-dev (haiku) - Fix select param rendering to handle string arrays and object arrays
+[2026-02-20 13:30] sonnet (haiku) - Fix unused variable errors in /workspace/src/api/routes/backtest.ts
+[2026-02-20 13:35] fe-dev (sonnet) - Fix getCandles: rename startDate/endDate to start/end params, extract candles array from response
+[2026-02-20 13:34] fe-dev (sonnet) - Fix getCandles param name mismatch and response extraction
+[2026-02-20 13:35] ui-tester (sonnet) - Visual test multi-asset fr-spike-aggr UI flow

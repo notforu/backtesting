@@ -3,7 +3,7 @@
  * Provides the layout structure with sidebar, chart, and dashboard.
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Chart } from './components/Chart';
 import { PairsChart } from './components/PairsChart';
@@ -15,10 +15,11 @@ import { History } from './components/History';
 import { OptimizerModal } from './components/OptimizerModal';
 import { ScannerResults } from './components/ScannerResults';
 import { HistoryExplorer } from './components/HistoryExplorer';
+import { FundingRateChart } from './components/FundingRateChart';
 import { useBacktestStore, useConfigStore } from './stores/backtestStore';
 import { useScannerStore } from './stores/scannerStore';
-import { useLoadBacktest } from './hooks/useBacktest';
-import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult } from './types';
+import { useLoadBacktest, useFundingRates, useCandles } from './hooks/useBacktest';
+import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult, type Timeframe } from './types';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,6 +41,15 @@ function isPairsResult(result: unknown): result is PairsBacktestResult {
   return false;
 }
 
+// Helper to parse multi-asset string from config params
+function parseMultiAssets(assetsStr: string): Array<{ symbol: string; timeframe: string; label: string }> {
+  return assetsStr.split(',').map(a => {
+    const [symbol, timeframe] = a.trim().split('@');
+    const label = symbol.replace('/USDT:USDT', '');
+    return { symbol, timeframe, label };
+  });
+}
+
 function AppContent() {
   const { currentResult, selectedBacktestId } = useBacktestStore();
   const { applyHistoryParams } = useConfigStore();
@@ -49,12 +59,90 @@ function AppContent() {
   const showScanner = scanResults.length > 0;
   const [showExplorer, setShowExplorer] = useState(false);
 
+  // Chart synchronization state
+  const [chartVisibleRange, setChartVisibleRange] = useState<{ from: number; to: number } | null>(null);
+  const [syncSource, setSyncSource] = useState<'price' | 'fr' | null>(null);
+
+  // Multi-asset state
+  const [selectedAssetIndex, setSelectedAssetIndex] = useState<number>(-1); // -1 = portfolio view
+
+  // Detect multi-asset and parse assets
+  const isMultiAsset = currentResult && (currentResult as BacktestResult)?.config?.symbol === 'MULTI';
+  const multiAssets = isMultiAsset && (currentResult as any).config?.params?.assets
+    ? parseMultiAssets((currentResult as any).config.params.assets)
+    : [];
+  const selectedAsset = selectedAssetIndex >= 0 && selectedAssetIndex < multiAssets.length
+    ? multiAssets[selectedAssetIndex]
+    : null;
+
+  // Reset selected asset when result changes
+  useEffect(() => {
+    setSelectedAssetIndex(-1);
+  }, [currentResult?.id]);
+
+  // Check if current result is futures mode
+  const isFutures = currentResult && (
+    (currentResult as any)?.config?.mode === 'futures' ||
+    (currentResult as BacktestResult)?.metrics?.totalFundingIncome !== undefined
+  );
+
+  // Fetch candles for selected asset in multi-asset view
+  const candleParams = selectedAsset && currentResult ? {
+    exchange: (currentResult as BacktestResult).config.exchange,
+    symbol: selectedAsset.symbol,
+    timeframe: selectedAsset.timeframe as Timeframe,
+    startDate: (() => {
+      const sd = (currentResult as BacktestResult).config.startDate;
+      const timestamp = sd != null ? (typeof sd === 'number' ? sd : new Date(sd).getTime()) : 0;
+      return new Date(timestamp).toISOString().split('T')[0];
+    })(),
+    endDate: (() => {
+      const ed = (currentResult as BacktestResult).config.endDate;
+      const timestamp = ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : 0;
+      return new Date(timestamp).toISOString().split('T')[0];
+    })(),
+  } : null;
+  const { data: assetCandles } = useCandles(candleParams);
+
+  // Fetch funding rates for futures mode
+  // For multi-asset, fetch FR for selected asset. For single asset, use config.symbol
+  const fundingRateParams = isFutures && currentResult && !isPairs ? {
+    exchange: (currentResult as BacktestResult).config.exchange,
+    symbol: selectedAsset ? selectedAsset.symbol : (currentResult as BacktestResult).config.symbol,
+    start: (() => {
+      const sd = (currentResult as BacktestResult).config.startDate;
+      return sd != null ? (typeof sd === 'number' ? sd : new Date(sd).getTime()) : 0;
+    })(),
+    end: (() => {
+      const ed = (currentResult as BacktestResult).config.endDate;
+      return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : 0;
+    })(),
+  } : null;
+  const { data: fundingRatesData } = useFundingRates(fundingRateParams);
+
   const handleSelectRun = async (id: string) => {
     const result = await loadBacktest(id);
     if (result) {
       applyHistoryParams(result);
     }
   };
+
+  // Chart synchronization handlers
+  const handlePriceRangeChange = useCallback((range: { from: number; to: number } | null) => {
+    if (syncSource === 'fr') return; // Ignore if this was triggered by FR chart
+    setSyncSource('price');
+    setChartVisibleRange(range);
+    // Clear source after a tick to allow future updates
+    requestAnimationFrame(() => setSyncSource(null));
+  }, [syncSource]);
+
+  const handleFrRangeChange = useCallback((range: { from: number; to: number } | null) => {
+    if (syncSource === 'price') return; // Ignore if this was triggered by price chart
+    setSyncSource('fr');
+    setChartVisibleRange(range);
+    // Clear source after a tick to allow future updates
+    requestAnimationFrame(() => setSyncSource(null));
+  }, [syncSource]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col">
@@ -126,15 +214,18 @@ function AppContent() {
             <section>
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-lg font-semibold text-white">
-                  {isPairs ? 'Pairs Charts' : 'Chart'}
+                  {isPairs ? 'Pairs Charts' : isMultiAsset ? 'Multi-Asset Portfolio' : 'Chart'}
                 </h2>
                 {currentResult && (
                   <div className="flex items-center gap-4 text-sm text-gray-400">
                     <span>
                       {isPairs
                         ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
-                        : (currentResult as BacktestResult).config.symbol}{' '}
-                      / {currentResult.config.timeframe}
+                        : isMultiAsset && selectedAsset
+                          ? `${selectedAsset.label} / ${selectedAsset.timeframe}`
+                          : isMultiAsset
+                            ? `${multiAssets.length} assets`
+                            : `${(currentResult as BacktestResult).config.symbol} / ${currentResult.config.timeframe}`}
                     </span>
                     <span>
                       {new Date(currentResult.config.startDate).toLocaleDateString()}{' '}
@@ -144,11 +235,44 @@ function AppContent() {
                     <span>
                       {isPairs
                         ? `${(currentResult as PairsBacktestResult).candlesA.length} candles`
-                        : `${(currentResult as BacktestResult).candles?.length ?? 0} candles`}
+                        : isMultiAsset && selectedAsset
+                          ? `${assetCandles?.length ?? 0} candles`
+                          : isMultiAsset
+                            ? `${currentResult.trades.length} trades`
+                            : `${(currentResult as BacktestResult).candles?.length ?? 0} candles`}
                     </span>
                   </div>
                 )}
               </div>
+
+              {/* Multi-asset tab selector */}
+              {isMultiAsset && multiAssets.length > 0 && (
+                <div className="flex items-center gap-1 mb-3 flex-wrap">
+                  <button
+                    onClick={() => setSelectedAssetIndex(-1)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      selectedAssetIndex === -1
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600'
+                    }`}
+                  >
+                    Portfolio
+                  </button>
+                  {multiAssets.map((asset, idx) => (
+                    <button
+                      key={asset.symbol}
+                      onClick={() => setSelectedAssetIndex(idx)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        selectedAssetIndex === idx
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600'
+                      }`}
+                    >
+                      {asset.label} ({asset.timeframe})
+                    </button>
+                  ))}
+                </div>
+              )}
               {isPairs ? (
                 <>
                   <PairsChart
@@ -166,22 +290,89 @@ function AppContent() {
                     />
                   </div>
                 </>
+              ) : isMultiAsset && selectedAsset ? (
+                /* Multi-asset with specific asset selected - show that asset's chart */
+                <>
+                  {assetCandles && assetCandles.length > 0 ? (
+                    <Chart
+                      candles={assetCandles}
+                      trades={currentResult.trades.filter(t => t.symbol === selectedAsset.symbol)}
+                      height={450}
+                      isFutures={true}
+                      backtestTimeframe={selectedAsset.timeframe as Timeframe}
+                      exchange={(currentResult as BacktestResult).config.exchange}
+                      symbol={selectedAsset.symbol}
+                      startDate={(() => {
+                        const sd = (currentResult as BacktestResult).config.startDate;
+                        return sd != null ? (typeof sd === 'number' ? sd : new Date(sd).getTime()) : undefined;
+                      })()}
+                      endDate={(() => {
+                        const ed = (currentResult as BacktestResult).config.endDate;
+                        return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : undefined;
+                      })()}
+                      onVisibleLogicalRangeChange={handlePriceRangeChange}
+                      visibleLogicalRange={syncSource === 'fr' ? chartVisibleRange : undefined}
+                    />
+                  ) : (
+                    <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
+                      Loading candles for {selectedAsset.label}...
+                    </div>
+                  )}
+
+                  {/* Funding Rate Sub-Chart for selected asset */}
+                  {isFutures && fundingRatesData && fundingRatesData.length > 0 && (
+                    <div className="mt-4">
+                      <FundingRateChart
+                        fundingRates={fundingRatesData}
+                        height={120}
+                        onVisibleLogicalRangeChange={handleFrRangeChange}
+                        visibleLogicalRange={syncSource === 'price' ? chartVisibleRange : undefined}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : isMultiAsset ? (
+                /* Portfolio view - no candle chart, just overview message */
+                <div className="h-[200px] bg-gray-800 rounded-lg border border-gray-700 flex items-center justify-center">
+                  <div className="text-center text-gray-500">
+                    <p className="text-lg font-medium">Portfolio Overview</p>
+                    <p className="text-sm mt-1">Select an asset tab above to view its price chart</p>
+                    <p className="text-xs mt-2 text-gray-600">{multiAssets.length} assets | {currentResult.trades.length} total trades</p>
+                  </div>
+                </div>
               ) : (
-                <Chart
-                  candles={(currentResult as BacktestResult)?.candles ?? []}
-                  trades={currentResult?.trades ?? []}
-                  height={450}
-                  isPolymarket={(currentResult as BacktestResult)?.config.exchange === 'polymarket'}
-                  isFutures={
-                    (currentResult as any)?.config?.mode === 'futures' ||
-                    (currentResult as BacktestResult)?.metrics?.totalFundingIncome !== undefined
-                  }
-                  backtestTimeframe={(currentResult as BacktestResult)?.config.timeframe}
-                  exchange={(currentResult as BacktestResult)?.config.exchange}
-                  symbol={(currentResult as BacktestResult)?.config.symbol}
-                  startDate={(() => { const sd = (currentResult as BacktestResult)?.config.startDate; return sd != null ? (typeof sd === 'number' ? sd : new Date(sd).getTime()) : undefined; })()}
-                  endDate={(() => { const ed = (currentResult as BacktestResult)?.config.endDate; return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : undefined; })()}
-                />
+                /* Single-asset chart (original code) */
+                <>
+                  <Chart
+                    candles={(currentResult as BacktestResult)?.candles ?? []}
+                    trades={currentResult?.trades ?? []}
+                    height={450}
+                    isPolymarket={(currentResult as BacktestResult)?.config.exchange === 'polymarket'}
+                    isFutures={
+                      (currentResult as any)?.config?.mode === 'futures' ||
+                      (currentResult as BacktestResult)?.metrics?.totalFundingIncome !== undefined
+                    }
+                    backtestTimeframe={(currentResult as BacktestResult)?.config.timeframe}
+                    exchange={(currentResult as BacktestResult)?.config.exchange}
+                    symbol={(currentResult as BacktestResult)?.config.symbol}
+                    startDate={(() => { const sd = (currentResult as BacktestResult)?.config.startDate; return sd != null ? (typeof sd === 'number' ? sd : new Date(sd).getTime()) : undefined; })()}
+                    endDate={(() => { const ed = (currentResult as BacktestResult)?.config.endDate; return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : undefined; })()}
+                    onVisibleLogicalRangeChange={handlePriceRangeChange}
+                    visibleLogicalRange={syncSource === 'fr' ? chartVisibleRange : undefined}
+                  />
+
+                  {/* Funding Rate Sub-Chart for futures mode */}
+                  {isFutures && fundingRatesData && fundingRatesData.length > 0 && (
+                    <div className="mt-4">
+                      <FundingRateChart
+                        fundingRates={fundingRatesData}
+                        height={120}
+                        onVisibleLogicalRangeChange={handleFrRangeChange}
+                        visibleLogicalRange={syncSource === 'price' ? chartVisibleRange : undefined}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </section>
 
@@ -208,74 +399,93 @@ function AppContent() {
             {/* Trades Table Section */}
             {currentResult && currentResult.trades.length > 0 && (
               <section className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                <h2 className="text-lg font-semibold text-white mb-4">
-                  Trades ({currentResult.trades.length})
-                </h2>
+                {(() => {
+                  // Filter trades based on selected asset
+                  const displayedTrades = isMultiAsset && selectedAsset
+                    ? currentResult.trades.filter(t => t.symbol === selectedAsset.symbol)
+                    : currentResult.trades;
 
-                {/* PnL Clarity Banner - shown only in futures mode when funding income data is available */}
-                {currentResult.metrics.totalFundingIncome !== undefined && (
-                  <div className="mb-4 p-3 bg-blue-900/30 border border-blue-700/50 rounded-lg flex flex-wrap gap-x-6 gap-y-2 text-sm">
-                    <div>
-                      <span className="text-gray-400">Trading P&amp;L: </span>
-                      <span className={`font-semibold ${(currentResult.metrics.tradingPnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {(currentResult.metrics.tradingPnl ?? 0) >= 0 ? '+' : ''}${(currentResult.metrics.tradingPnl ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div className="text-gray-600 hidden sm:block">|</div>
-                    <div>
-                      <span className="text-gray-400">Funding Income: </span>
-                      <span className={`font-semibold ${(currentResult.metrics.totalFundingIncome ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {(currentResult.metrics.totalFundingIncome ?? 0) >= 0 ? '+' : ''}${(currentResult.metrics.totalFundingIncome ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div className="text-gray-600 hidden sm:block">|</div>
-                    <div>
-                      <span className="text-gray-400">Total Return: </span>
-                      <span className={`font-semibold ${currentResult.metrics.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {currentResult.metrics.totalReturn >= 0 ? '+' : ''}${currentResult.metrics.totalReturn.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                  return (
+                    <>
+                      <h2 className="text-lg font-semibold text-white mb-4">
+                        Trades ({displayedTrades.length}
+                        {isMultiAsset && selectedAsset && ` - ${selectedAsset.label}`}
+                        {isMultiAsset && !selectedAsset && ` - All Assets`})
+                      </h2>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-400 border-b border-gray-700">
-                        <th className="pb-2 pr-4">#</th>
-                        <th className="pb-2 pr-4">Action</th>
-                        <th className="pb-2 pr-4">Price</th>
-                        <th className="pb-2 pr-4">Amount</th>
-                        <th className="pb-2 pr-4">P&L</th>
-                        <th className="pb-2 pr-4">P&L %</th>
-                        <th className="pb-2 pr-4">Cost</th>
-                        {currentResult.metrics.totalFundingIncome !== undefined && (
-                          <th className="pb-2 pr-4">FR Rate</th>
-                        )}
-                        <th className="pb-2 pr-4">Balance</th>
-                        <th className="pb-2">Time</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {currentResult.trades.slice(0, 100).map((trade, index) => {
+                      {/* PnL Clarity Banner - shown only in futures mode when funding income data is available */}
+                      {currentResult.metrics.totalFundingIncome !== undefined && !selectedAsset && (
+                        <div className="mb-4 p-3 bg-blue-900/30 border border-blue-700/50 rounded-lg flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                          <div>
+                            <span className="text-gray-400">Trading P&amp;L: </span>
+                            <span className={`font-semibold ${(currentResult.metrics.tradingPnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {(currentResult.metrics.tradingPnl ?? 0) >= 0 ? '+' : ''}${(currentResult.metrics.tradingPnl ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                          <div className="text-gray-600 hidden sm:block">|</div>
+                          <div>
+                            <span className="text-gray-400">Funding Income: </span>
+                            <span className={`font-semibold ${(currentResult.metrics.totalFundingIncome ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {(currentResult.metrics.totalFundingIncome ?? 0) >= 0 ? '+' : ''}${(currentResult.metrics.totalFundingIncome ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                          <div className="text-gray-600 hidden sm:block">|</div>
+                          <div>
+                            <span className="text-gray-400">Total Return: </span>
+                            <span className={`font-semibold ${currentResult.metrics.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {currentResult.metrics.totalReturn >= 0 ? '+' : ''}${currentResult.metrics.totalReturn.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-400 border-b border-gray-700">
+                              <th className="pb-2 pr-4">#</th>
+                              {isMultiAsset && !selectedAsset && <th className="pb-2 pr-4">Asset</th>}
+                              <th className="pb-2 pr-4">Action</th>
+                              <th className="pb-2 pr-4">Price</th>
+                              <th className="pb-2 pr-4">Amount</th>
+                              <th className="pb-2 pr-4">P&L</th>
+                              <th className="pb-2 pr-4">P&L %</th>
+                              <th className="pb-2 pr-4">Cost</th>
+                              {currentResult.metrics.totalFundingIncome !== undefined && (
+                                <>
+                                  <th className="pb-2 pr-4">Funding</th>
+                                  <th className="pb-2 pr-4">FR Rate</th>
+                                </>
+                              )}
+                              <th className="pb-2 pr-4">Balance</th>
+                              <th className="pb-2">Time</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {displayedTrades.slice(0, 100).map((trade, index) => {
                         const hasClosePnl = isCloseTrade(trade);
                         const isFutures = currentResult.metrics.totalFundingIncome !== undefined;
 
-                        return (
-                          <tr
-                            key={trade.id}
-                            className="border-b border-gray-700/50 hover:bg-gray-700/30"
-                          >
-                            <td className="py-2 pr-4 text-gray-500">
-                              {index + 1}
-                            </td>
-                            <td className="py-2 pr-4">
-                              <span
-                                className={`px-2 py-0.5 rounded text-xs font-medium ${getTradeActionColor(trade.action)}`}
-                              >
-                                {getTradeActionLabel(trade.action)}
-                              </span>
-                            </td>
+                              return (
+                                <tr
+                                  key={trade.id}
+                                  className="border-b border-gray-700/50 hover:bg-gray-700/30"
+                                >
+                                  <td className="py-2 pr-4 text-gray-500">
+                                    {index + 1}
+                                  </td>
+                                  {isMultiAsset && !selectedAsset && (
+                                    <td className="py-2 pr-4 text-gray-400 text-xs">
+                                      {trade.symbol?.replace('/USDT:USDT', '') ?? '-'}
+                                    </td>
+                                  )}
+                                  <td className="py-2 pr-4">
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-xs font-medium ${getTradeActionColor(trade.action)}`}
+                                    >
+                                      {getTradeActionLabel(trade.action)}
+                                    </span>
+                                  </td>
                             <td className="py-2 pr-4 text-white">
                               ${trade.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
@@ -312,35 +522,51 @@ function AppContent() {
                               {(trade.fee || trade.slippage) ? `$${((trade.fee ?? 0) + (trade.slippage ?? 0)).toFixed(2)}` : '-'}
                             </td>
                             {isFutures && (
-                              <td className={`py-2 pr-4 font-mono text-xs ${
-                                trade.fundingRate == null
-                                  ? 'text-gray-600'
-                                  : trade.fundingRate >= 0
-                                    ? 'text-green-400'
-                                    : 'text-red-400'
-                              }`}>
-                                {trade.fundingRate != null
-                                  ? `${trade.fundingRate >= 0 ? '+' : ''}${(trade.fundingRate * 100).toFixed(4)}%`
-                                  : '-'}
-                              </td>
+                              <>
+                                <td className={`py-2 pr-4 ${
+                                  trade.fundingIncome == null
+                                    ? 'text-gray-600'
+                                    : trade.fundingIncome >= 0
+                                      ? 'text-green-400'
+                                      : 'text-red-400'
+                                }`}>
+                                  {trade.fundingIncome != null
+                                    ? `${trade.fundingIncome >= 0 ? '+' : ''}$${trade.fundingIncome.toFixed(2)}`
+                                    : '-'}
+                                </td>
+                                <td className={`py-2 pr-4 font-mono text-xs ${
+                                  trade.fundingRate == null
+                                    ? 'text-gray-600'
+                                    : trade.fundingRate >= 0
+                                      ? 'text-green-400'
+                                      : 'text-red-400'
+                                }`}>
+                                  {trade.fundingRate != null
+                                    ? `${trade.fundingRate >= 0 ? '+' : ''}${(trade.fundingRate * 100).toFixed(4)}%`
+                                    : '-'}
+                                </td>
+                              </>
                             )}
                             <td className="py-2 pr-4 text-gray-300">
                               ${trade.balanceAfter.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
-                            <td className="py-2 text-gray-400">
-                              {new Date(trade.timestamp).toLocaleString()}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {currentResult.trades.length > 100 && (
-                    <p className="text-sm text-gray-500 mt-3 text-center">
-                      Showing first 100 of {currentResult.trades.length} trades
-                    </p>
-                  )}
-                </div>
+                                  <td className="py-2 text-gray-400">
+                                    {new Date(trade.timestamp).toLocaleString()}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        {displayedTrades.length > 100 && (
+                          <p className="text-sm text-gray-500 mt-3 text-center">
+                            Showing first 100 of {displayedTrades.length} trades
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </section>
             )}
           </div>

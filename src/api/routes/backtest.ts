@@ -5,9 +5,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z, ZodError } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { runBacktest, BacktestConfigSchema } from '../../core/index.js';
+import { runBacktest, BacktestConfigSchema, createBacktestConfig } from '../../core/index.js';
 import { runPairsBacktest } from '../../core/pairs-engine.js';
-import type { PairsBacktestConfig } from '../../core/types.js';
+import type { PairsBacktestConfig, Timeframe, Trade, EquityPoint, BacktestResult } from '../../core/types.js';
 import {
   getBacktestRun,
   getBacktestSummaries,
@@ -15,8 +15,10 @@ import {
   deleteBacktestRun,
   deleteAllBacktestRuns,
   getCandles,
+  saveBacktestRun,
   type HistoryFilters,
 } from '../../data/index.js';
+import { calculateMetrics, generateEquityCurve } from '../../analysis/metrics.js';
 
 // Request schema for running a backtest
 const RunBacktestRequestSchema = z.object({
@@ -67,6 +69,35 @@ const RunPairsBacktestRequestSchema = z.object({
 });
 
 type RunPairsBacktestRequest = z.infer<typeof RunPairsBacktestRequestSchema>;
+
+// Request schema for multi-asset backtest
+const RunMultiBacktestRequestSchema = z.object({
+  strategyName: z.string().min(1),
+  assets: z.string().min(1), // comma-separated 'SYMBOL@TF'
+  startDate: z.number().or(z.string().transform((s) => new Date(s).getTime())),
+  endDate: z.number().or(z.string().transform((s) => new Date(s).getTime())),
+  initialCapital: z.number().positive().default(10000),
+  exchange: z.string().default('bybit'),
+  params: z.record(z.string(), z.unknown()).optional().default({}),
+});
+
+type RunMultiBacktestRequest = z.infer<typeof RunMultiBacktestRequestSchema>;
+
+interface AssetConfig {
+  symbol: string;
+  timeframe: Timeframe;
+}
+
+interface AssetResult {
+  symbol: string;
+  timeframe: string;
+  metrics: any;
+  trades: Trade[];
+  equity: EquityPoint[];
+  fundingIncome: number;
+  tradingPnl: number;
+  error?: string;
+}
 
 export async function backtestRoutes(fastify: FastifyInstance) {
   /**
@@ -425,6 +456,237 @@ export async function backtestRoutes(fastify: FastifyInstance) {
       fastify.log.error({
         err: error,
         msg: 'Error in /api/backtest/pairs/run',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      if (error instanceof ZodError) {
+        return reply.status(400).send({
+          error: 'Validation error',
+          details: error.issues,
+        });
+      }
+
+      if (error instanceof Error) {
+        return reply.status(500).send({
+          error: error.message,
+        });
+      }
+
+      return reply.status(500).send({
+        error: 'Unknown error occurred',
+      });
+    }
+  });
+
+  /**
+   * POST /api/backtest/multi/run
+   * Execute a multi-asset backtest (runs funding-rate-spike independently on N assets)
+   */
+  fastify.post('/api/backtest/multi/run', async (
+    request: FastifyRequest<{ Body: RunMultiBacktestRequest }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const parsed = RunMultiBacktestRequestSchema.parse(request.body);
+      const { assets: assetsStr, startDate, endDate, initialCapital, exchange } = parsed;
+
+      // Parse assets string into {symbol, timeframe}[]
+      const assets: AssetConfig[] = [];
+      const parts = assetsStr.split(',');
+      for (const part of parts) {
+        const [symbol, timeframe] = part.trim().split('@');
+        if (!symbol || !timeframe) {
+          return reply.status(400).send({
+            error: `Invalid asset format: ${part}. Expected format: SYMBOL@TIMEFRAME`,
+          });
+        }
+        assets.push({ symbol, timeframe: timeframe as Timeframe });
+      }
+
+      if (assets.length === 0) {
+        return reply.status(400).send({
+          error: 'At least one asset must be provided',
+        });
+      }
+
+      const perAssetCapital = initialCapital / assets.length;
+      const startTime = Date.now();
+
+      // Run backtest for each asset independently
+      const assetResults: AssetResult[] = [];
+
+      for (const asset of assets) {
+        try {
+          const config = createBacktestConfig({
+            strategyName: 'funding-rate-spike', // Use the underlying single-asset strategy
+            symbol: asset.symbol,
+            timeframe: asset.timeframe,
+            startDate,
+            endDate,
+            initialCapital: perAssetCapital,
+            exchange,
+            params: {}, // Use default params (proven best in WF tests)
+            mode: 'futures',
+          });
+
+          const result = await runBacktest(config, {
+            enableLogging: false,
+            saveResults: false, // Don't save individual runs
+            skipFeeFetch: true,
+            broker: {
+              feeRate: 0.00055, // Bybit taker fee
+              slippagePercent: 0,
+            },
+          });
+
+          assetResults.push({
+            symbol: asset.symbol,
+            timeframe: asset.timeframe,
+            metrics: result.metrics,
+            trades: result.trades,
+            equity: result.equity,
+            fundingIncome: (result.metrics as any).totalFundingIncome ?? 0,
+            tradingPnl: (result.metrics as any).tradingPnl ?? 0,
+          });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Unknown error';
+          assetResults.push({
+            symbol: asset.symbol,
+            timeframe: asset.timeframe,
+            metrics: {} as any,
+            trades: [],
+            equity: [],
+            fundingIncome: 0,
+            tradingPnl: 0,
+            error: msg,
+          });
+        }
+      }
+
+      // Filter out errors for combining
+      const validResults = assetResults.filter((r) => !r.error);
+
+      if (validResults.length === 0) {
+        return reply.status(500).send({
+          error: 'All asset backtests failed',
+          details: assetResults.map((r) => ({ symbol: r.symbol, error: r.error })),
+        });
+      }
+
+      // Combine all trades and sort by timestamp
+      const allTrades: Trade[] = [];
+      for (const result of validResults) {
+        allTrades.push(...result.trades);
+      }
+      allTrades.sort((a, b) => a.timestamp - b.timestamp);
+
+      // Merge equity curves: collect all unique timestamps and sum equity
+      const timestampSet = new Set<number>();
+      for (const result of validResults) {
+        for (const point of result.equity) {
+          timestampSet.add(point.timestamp);
+        }
+      }
+      const timestamps = Array.from(timestampSet).sort((a, b) => a - b);
+
+      // For each timestamp, sum equity from all assets (using last known equity for each)
+      const equityValues: number[] = [];
+      for (const ts of timestamps) {
+        let totalEquity = 0;
+        for (const result of validResults) {
+          // Find the last equity point <= ts
+          let lastEquity = result.metrics.initialCapital ?? 0;
+          for (const point of result.equity) {
+            if (point.timestamp <= ts) {
+              lastEquity = point.equity;
+            } else {
+              break;
+            }
+          }
+          totalEquity += lastEquity;
+        }
+        equityValues.push(totalEquity);
+      }
+
+      const combinedEquity = generateEquityCurve(timestamps, equityValues, initialCapital);
+
+      // Determine dominant timeframe (most common)
+      const timeframeCounts: Record<string, number> = {};
+      for (const asset of assets) {
+        timeframeCounts[asset.timeframe] = (timeframeCounts[asset.timeframe] ?? 0) + 1;
+      }
+      const dominantTimeframe = Object.entries(timeframeCounts).sort((a, b) => b[1] - a[1])[0][0] as Timeframe;
+
+      // Calculate portfolio metrics
+      const portfolioMetrics = calculateMetrics(allTrades, combinedEquity, initialCapital, dominantTimeframe);
+
+      // Sum funding income and trading PnL
+      const totalFundingIncome = validResults.reduce((sum, r) => sum + r.fundingIncome, 0);
+      const totalTradingPnl = validResults.reduce((sum, r) => sum + r.tradingPnl, 0);
+
+      // Build per-asset summary for storage
+      const perAssetSummary = validResults.map((r) => ({
+        symbol: r.symbol,
+        timeframe: r.timeframe,
+        sharpe: r.metrics.sharpeRatio,
+        returnPct: r.metrics.totalReturnPercent,
+        trades: r.metrics.totalTrades,
+        fundingIncome: r.fundingIncome,
+        tradingPnl: r.tradingPnl,
+      }));
+
+      // Create a BacktestResult for the portfolio
+      const duration = Date.now() - startTime;
+      const portfolioResult: BacktestResult = {
+        id: `fr-spike-aggr-${Date.now()}`,
+        config: {
+          id: `fr-spike-aggr-config-${Date.now()}`,
+          strategyName: 'fr-spike-aggr',
+          symbol: 'MULTI',
+          timeframe: dominantTimeframe,
+          startDate,
+          endDate,
+          initialCapital,
+          exchange,
+          params: {
+            assets: assetsStr,
+            perAssetCapital,
+            assetCount: assets.length,
+            perAssetSummary,
+          },
+          mode: 'futures',
+        },
+        trades: allTrades,
+        equity: combinedEquity,
+        metrics: {
+          ...portfolioMetrics,
+          totalFundingIncome,
+          tradingPnl: totalTradingPnl,
+        } as any,
+        rollingMetrics: {
+          timestamps: [],
+          cumulativeReturn: [],
+          drawdown: [],
+          rollingSharpe: [],
+          cumulativeWinRate: [],
+          cumulativeProfitFactor: [],
+        },
+        createdAt: Date.now(),
+      };
+
+      // Save the combined result to DB
+      await saveBacktestRun(portfolioResult);
+
+      // Return result (candles empty since multi-asset views load per-asset candles)
+      return reply.status(200).send({
+        ...portfolioResult,
+        candles: [], // Empty - frontend loads candles per-asset via /api/candles
+        duration,
+      });
+    } catch (error) {
+      fastify.log.error({
+        err: error,
+        msg: 'Error in /api/backtest/multi/run',
         stack: error instanceof Error ? error.stack : undefined,
       });
 

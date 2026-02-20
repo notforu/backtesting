@@ -95,6 +95,9 @@ export const TradeSchema = z.object({
 
   // Funding rate at trade time (futures mode only)
   fundingRate: z.number().optional(),
+
+  // Accumulated funding income during position hold (futures mode only)
+  fundingIncome: z.number().optional(),
 });
 
 export type Trade = z.infer<typeof TradeSchema>;

@@ -32,6 +32,8 @@ interface ChartProps {
   symbol?: string;
   startDate?: number;
   endDate?: number;
+  onVisibleLogicalRangeChange?: (range: { from: number; to: number } | null) => void;
+  visibleLogicalRange?: { from: number; to: number } | null;
 }
 
 // Convert timestamp to TradingView time format
@@ -74,7 +76,7 @@ function estimateCandles(start: number, end: number, timeframe: string): number 
   return Math.ceil(diffMs / (tfMs[timeframe] ?? 3600000));
 }
 
-export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate }: ChartProps) {
+export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, onVisibleLogicalRangeChange, visibleLogicalRange }: ChartProps) {
   const [displayTimeframe, setDisplayTimeframe] = useState<string | null>(null);
   const [showFundingRate, setShowFundingRate] = useState(false);
   const [chartWindowStart, setChartWindowStart] = useState<number | null>(null);
@@ -191,6 +193,15 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
     const seriesMarkers = createSeriesMarkers(candleSeries, []);
     markersRef.current = seriesMarkers;
 
+    // Subscribe to visible logical range changes for synchronization
+    if (onVisibleLogicalRangeChange) {
+      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (range) {
+          onVisibleLogicalRangeChange({ from: range.from, to: range.to });
+        }
+      });
+    }
+
     // Handle resize
     const handleResize = () => {
       if (containerRef.current && chartRef.current) {
@@ -282,6 +293,13 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
       chartRef.current.applyOptions({ height });
     }
   }, [height]);
+
+  // Apply external visible range changes (for synchronization)
+  useEffect(() => {
+    if (chartRef.current && visibleLogicalRange) {
+      chartRef.current.timeScale().setVisibleLogicalRange(visibleLogicalRange);
+    }
+  }, [visibleLogicalRange]);
 
   // Funding rate series toggle
   useEffect(() => {

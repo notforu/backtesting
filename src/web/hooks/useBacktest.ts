@@ -11,6 +11,7 @@ import {
   getBacktest,
   runBacktest,
   runPairsBacktest,
+  runMultiAssetBacktest,
   deleteBacktest,
   deleteAllHistory,
   getCandles,
@@ -21,6 +22,7 @@ import { useBacktestStore } from '../stores/backtestStore';
 import type {
   RunBacktestRequest,
   RunPairsBacktestRequest,
+  RunMultiAssetBacktestRequest,
   CandleRequest,
   StrategyInfo,
   StrategyDetails,
@@ -141,6 +143,31 @@ export function useRunPairsBacktest() {
 
   return useMutation<PairsBacktestResult, Error, RunPairsBacktestRequest>({
     mutationFn: runPairsBacktest,
+    onMutate: () => {
+      setRunning(true);
+    },
+    onSuccess: (result) => {
+      setResult(result);
+      // Invalidate history to include new result
+      queryClient.invalidateQueries({ queryKey: queryKeys.history });
+      // Cache the new result
+      queryClient.setQueryData(queryKeys.backtest(result.id), result);
+    },
+    onError: (error) => {
+      setError(error.message);
+    },
+  });
+}
+
+/**
+ * Run a multi-asset backtest mutation
+ */
+export function useRunMultiAssetBacktest() {
+  const queryClient = useQueryClient();
+  const { setRunning, setResult, setError } = useBacktestStore();
+
+  return useMutation<BacktestResult, Error, RunMultiAssetBacktestRequest>({
+    mutationFn: runMultiAssetBacktest,
     onMutate: () => {
       setRunning(true);
     },

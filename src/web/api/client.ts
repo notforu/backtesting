@@ -10,6 +10,7 @@ import type {
   CandleRequest,
   RunBacktestRequest,
   RunPairsBacktestRequest,
+  RunMultiAssetBacktestRequest,
   PairsBacktestResult,
   StrategyDetails,
   StrategyInfo,
@@ -103,6 +104,18 @@ export async function runPairsBacktest(
   config: RunPairsBacktestRequest
 ): Promise<PairsBacktestResult> {
   return apiFetch<PairsBacktestResult>('/backtest/pairs/run', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+/**
+ * Run a multi-asset backtest
+ */
+export async function runMultiAssetBacktest(
+  config: RunMultiAssetBacktestRequest
+): Promise<BacktestResult> {
+  return apiFetch<BacktestResult>('/backtest/multi/run', {
     method: 'POST',
     body: JSON.stringify(config),
   });
@@ -234,11 +247,12 @@ export async function getCandles(params: CandleRequest): Promise<Candle[]> {
     exchange: params.exchange,
     symbol: params.symbol,
     timeframe: params.timeframe,
-    startDate: params.startDate,
-    endDate: params.endDate,
+    start: params.startDate,
+    end: params.endDate,
   });
 
-  return apiFetch<Candle[]>(`/candles?${queryParams.toString()}`);
+  const response = await apiFetch<{ candles: Candle[]; source: string; count: number }>(`/candles?${queryParams.toString()}`);
+  return response.candles;
 }
 
 /**

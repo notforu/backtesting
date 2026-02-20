@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useStrategies, useStrategy, useRunBacktest, useRunPairsBacktest } from '../../hooks/useBacktest';
+import { useStrategies, useStrategy, useRunBacktest, useRunPairsBacktest, useRunMultiAssetBacktest } from '../../hooks/useBacktest';
 import {
   useOptimizedParams,
 } from '../../hooks/useOptimization';
@@ -119,11 +119,15 @@ function ParamInput({ param, value, onChange }: ParamInputProps) {
             onChange={(e) => onChange(e.target.value)}
             className={baseInputClass}
           >
-            {param.options?.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
+            {param.options?.map((opt) => {
+              const value = typeof opt === 'string' ? opt : opt.value;
+              const label = typeof opt === 'string' ? opt : opt.label;
+              return (
+                <option key={String(value)} value={String(value)}>
+                  {label}
+                </option>
+              );
+            })}
           </select>
         </div>
       );
@@ -185,6 +189,7 @@ export function StrategyConfig() {
   const { isRunning, error } = useBacktestStore();
   const runBacktestMutation = useRunBacktest();
   const runPairsBacktestMutation = useRunPairsBacktest();
+  const runMultiAssetBacktestMutation = useRunMultiAssetBacktest();
 
   // Optimization hooks
   const { data: optimizedParams, isError: optimizedParamsError } =
@@ -235,6 +240,14 @@ export function StrategyConfig() {
     }
   }, [strategyDetails, setParams, setUsingOptimizedParams]);
 
+  // Auto-set exchange and mode for multi-asset strategies
+  useEffect(() => {
+    if (strategyDetails?.isMultiAsset) {
+      setExchange('bybit');
+      setMode('futures');
+    }
+  }, [strategyDetails?.isMultiAsset, setExchange, setMode]);
+
   // Auto-apply optimized params when available (skip if loaded from history)
   useEffect(() => {
     const source = useConfigStore.getState()._configSource;
@@ -251,9 +264,36 @@ export function StrategyConfig() {
   const handleRunBacktest = () => {
     if (!strategy) return;
 
+    const isMultiAssetStrategy = strategyDetails?.isMultiAsset;
     const isPairsStrategy = strategyDetails?.isPairs;
 
-    if (isPairsStrategy) {
+    if (isMultiAssetStrategy) {
+      // For multi-asset, get assets from params
+      const preset = params.preset as string || 'conservative';
+      let assets = params.assets as string || '';
+
+      // If using a preset, resolve it
+      const PRESETS: Record<string, string> = {
+        conservative: 'ATOM/USDT:USDT@4h,DOT/USDT:USDT@4h,ADA/USDT:USDT@1h,OP/USDT:USDT@1h,INJ/USDT:USDT@4h',
+        moderate: 'ATOM/USDT:USDT@4h,DOT/USDT:USDT@4h,ADA/USDT:USDT@1h,OP/USDT:USDT@1h,INJ/USDT:USDT@4h,LINK/USDT:USDT@4h,AVAX/USDT:USDT@4h,LTC/USDT:USDT@4h',
+      };
+
+      if (preset !== 'custom' && PRESETS[preset]) {
+        assets = PRESETS[preset];
+      }
+
+      const req: import('../../types').RunMultiAssetBacktestRequest = {
+        strategyName: strategy,
+        assets,
+        startDate,
+        endDate,
+        initialCapital,
+        exchange: exchange || 'bybit',
+        params,
+      };
+      console.log('[Backtest] Running multi-asset:', JSON.stringify(req, null, 2));
+      runMultiAssetBacktestMutation.mutate(req);
+    } else if (isPairsStrategy) {
       const req = {
         strategyName: strategy,
         params,
@@ -318,9 +358,10 @@ export function StrategyConfig() {
   };
 
   const isPairsStrategy = strategyDetails?.isPairs;
+  const isMultiAssetStrategy = strategyDetails?.isMultiAsset;
   const canRun =
     strategy &&
-    symbol &&
+    (isMultiAssetStrategy || symbol) && // Multi-asset doesn't need symbol
     (!isPairsStrategy || symbolB) && // Require symbolB for pairs strategies
     startDate &&
     endDate &&
@@ -394,8 +435,9 @@ export function StrategyConfig() {
         </div>
       )}
 
-      {/* Symbol & Timeframe */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Symbol & Timeframe - hidden for multi-asset strategies */}
+      {!isMultiAssetStrategy && (
+        <div className="grid grid-cols-2 gap-3">
         {exchange === 'polymarket' ? (
           <div className="col-span-2">
             <PolymarketBrowser
@@ -466,7 +508,31 @@ export function StrategyConfig() {
             ))}
           </select>
         </div>
-      </div>
+        </div>
+      )}
+
+      {/* Multi-asset info banner */}
+      {isMultiAssetStrategy && (
+        <div className="bg-blue-900/20 border border-blue-700/30 rounded p-2.5">
+          <div className="text-xs text-blue-400 font-medium mb-1">Multi-Asset Portfolio</div>
+          <div className="text-xs text-gray-400">
+            Assets are configured via the strategy parameters below.
+            Each asset has its own symbol and timeframe.
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            {(() => {
+              const preset = params.preset as string || 'conservative';
+              const PRESETS: Record<string, string> = {
+                conservative: 'ATOM/USDT:USDT@4h,DOT/USDT:USDT@4h,ADA/USDT:USDT@1h,OP/USDT:USDT@1h,INJ/USDT:USDT@4h',
+                moderate: 'ATOM/USDT:USDT@4h,DOT/USDT:USDT@4h,ADA/USDT:USDT@1h,OP/USDT:USDT@1h,INJ/USDT:USDT@4h,LINK/USDT:USDT@4h,AVAX/USDT:USDT@4h,LTC/USDT:USDT@4h',
+              };
+              const assetsStr = preset !== 'custom' ? (PRESETS[preset] || '') : (params.assets as string || '');
+              const count = assetsStr ? assetsStr.split(',').length : 0;
+              return `${count} assets | ${preset} preset | Exchange: ${exchange}`;
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Symbol B & Leverage (only for pairs strategies) */}
       {isPairsStrategy && (

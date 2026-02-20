@@ -241,6 +241,9 @@ export async function runBacktest(
   let allFundingRates: FundingRate[] = [];
   let totalFundingIncome = 0;
 
+  // Track cumulative funding income per position ID (for per-trade breakdown)
+  const fundingByPositionId = new Map<string, number>();
+
   if (validatedConfig.mode === 'futures') {
     log(`Loading funding rates for ${validatedConfig.symbol}`, Date.now());
     allFundingRates = await getFundingRates(
@@ -416,6 +419,8 @@ export async function runBacktest(
           const payment = -longPos.amount * markPrice * fr.fundingRate;
           portfolio.applyFundingPayment(payment);
           totalFundingIncome += payment;
+          // Accumulate funding for this position
+          fundingByPositionId.set(longPos.id, (fundingByPositionId.get(longPos.id) ?? 0) + payment);
         }
 
         if (shortPos) {
@@ -424,6 +429,8 @@ export async function runBacktest(
           const payment = shortPos.amount * markPrice * fr.fundingRate;
           portfolio.applyFundingPayment(payment);
           totalFundingIncome += payment;
+          // Accumulate funding for this position
+          fundingByPositionId.set(shortPos.id, (fundingByPositionId.get(shortPos.id) ?? 0) + payment);
         }
       }
     }
@@ -465,6 +472,14 @@ export async function runBacktest(
           Math.abs(curr.timestamp - trade.timestamp) < Math.abs(prev.timestamp - trade.timestamp) ? curr : prev
         );
         trade.fundingRate = nearest.fundingRate;
+      }
+    }
+
+    // Attach funding income to close trades
+    for (const trade of newTrades) {
+      if (trade.closedPositionId && fundingByPositionId.has(trade.closedPositionId)) {
+        trade.fundingIncome = fundingByPositionId.get(trade.closedPositionId)!;
+        fundingByPositionId.delete(trade.closedPositionId); // Clean up
       }
     }
 
@@ -528,6 +543,14 @@ export async function runBacktest(
           Math.abs(curr.timestamp - trade.timestamp) < Math.abs(prev.timestamp - trade.timestamp) ? curr : prev
         );
         trade.fundingRate = nearest.fundingRate;
+      }
+    }
+
+    // Attach funding income to final close trades
+    for (const trade of finalTrades) {
+      if (trade.closedPositionId && fundingByPositionId.has(trade.closedPositionId)) {
+        trade.fundingIncome = fundingByPositionId.get(trade.closedPositionId)!;
+        fundingByPositionId.delete(trade.closedPositionId); // Clean up
       }
     }
 
