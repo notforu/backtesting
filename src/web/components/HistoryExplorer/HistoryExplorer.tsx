@@ -12,14 +12,30 @@ import type { BacktestSummary } from '../../types';
 // Types
 // ============================================================================
 
+interface HistoryExplorerContentProps {
+  onSelectRun: (run: BacktestSummary) => void;
+  selectedId?: string | null;
+  fixedRunType?: 'strategies' | 'aggregations';
+  compact?: boolean;
+  showFilters?: boolean;
+  showGroupToggle?: boolean;
+  maxHeight?: string;
+  className?: string;
+}
+
 interface HistoryExplorerProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectRun: (id: string) => void;
   selectedId?: string | null;
+  title?: string;
+  fixedRunType?: 'strategies' | 'aggregations';
+  onPickRun?: (run: BacktestSummary) => void;
 }
 
 type SortColumn = 'runAt' | 'sharpeRatio' | 'totalReturnPercent' | 'maxDrawdownPercent' | 'winRate' | 'totalTrades';
+
+type RunTypeFilter = 'all' | 'strategies' | 'aggregations';
 
 interface FilterState {
   strategy: string;
@@ -27,6 +43,7 @@ interface FilterState {
   timeframe: string;
   mode: string;
   minSharpe: string;
+  runType: RunTypeFilter;
   sortBy: SortColumn;
   sortDir: 'asc' | 'desc';
 }
@@ -103,7 +120,7 @@ function RunRow({ run, isSelected, isHighlighted, onSelect, expanded, onToggle }
   run: BacktestSummary;
   isSelected: boolean;
   isHighlighted?: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (run: BacktestSummary) => void;
   expanded: boolean;
   onToggle: (id: string) => void;
 }) {
@@ -115,13 +132,28 @@ function RunRow({ run, isSelected, isHighlighted, onSelect, expanded, onToggle }
         className={`border-b border-gray-700/50 cursor-pointer transition-colors ${
           isSelected ? 'bg-primary-900/30' : isHighlighted ? 'bg-green-900/10 hover:bg-green-900/20' : 'hover:bg-gray-700/30'
         }`}
-        onClick={() => onSelect(run.id)}
+        onClick={() => onSelect(run)}
       >
         <td className="py-2 pr-3">
-          <div className="font-medium text-white text-sm truncate max-w-[140px]" title={run.strategyName}>{run.strategyName}</div>
+          <div className="font-medium text-white text-sm truncate max-w-[160px]" title={run.aggregationName ?? run.strategyName}>
+            {run.aggregationName ? (
+              <span className="flex items-center gap-1.5">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-900/50 text-purple-400 flex-shrink-0">AGG</span>
+                <span className="truncate">{run.aggregationName}</span>
+              </span>
+            ) : (
+              run.strategyName
+            )}
+          </div>
         </td>
         <td className="py-2 pr-3">
-          <span className="text-gray-300 text-sm font-mono">{run.symbol}</span>
+          <span className="text-gray-300 text-sm font-mono">
+            {run.symbol === 'MULTI' ? (
+              <span className="text-purple-300">Portfolio</span>
+            ) : (
+              run.symbol
+            )}
+          </span>
         </td>
         <td className="py-2 pr-3 text-gray-400 text-xs">{run.timeframe}</td>
         <td className="py-2 pr-3">
@@ -176,6 +208,50 @@ function RunRow({ run, isSelected, isHighlighted, onSelect, expanded, onToggle }
 }
 
 // ============================================================================
+// Compact Run Row — minimal columns for inline use
+// ============================================================================
+
+function CompactRunRow({ run, isSelected, onSelect }: {
+  run: BacktestSummary;
+  isSelected: boolean;
+  onSelect: (run: BacktestSummary) => void;
+}) {
+  return (
+    <tr
+      className={`border-b border-gray-700/50 cursor-pointer transition-colors ${
+        isSelected ? 'bg-primary-900/30' : 'hover:bg-gray-700/30'
+      }`}
+      onClick={() => onSelect(run)}
+    >
+      <td className="py-1.5 pr-2">
+        <div className="text-xs text-white truncate max-w-[120px]" title={run.aggregationName ?? run.strategyName}>
+          {run.aggregationName ? (
+            <span className="flex items-center gap-1">
+              <span className="px-1 py-0.5 rounded text-[9px] font-medium bg-purple-900/50 text-purple-400">AGG</span>
+              <span className="truncate">{run.aggregationName}</span>
+            </span>
+          ) : run.strategyName}
+        </div>
+        <div className="text-[10px] text-gray-500 truncate">{run.symbol === 'MULTI' ? 'Portfolio' : run.symbol}</div>
+      </td>
+      <td className="py-1.5 pr-2">
+        <span className={`text-xs font-medium ${(run.totalReturnPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          {formatReturn(run.totalReturnPercent)}
+        </span>
+      </td>
+      <td className="py-1.5 pr-2">
+        <span className={`text-xs ${(run.sharpeRatio ?? 0) >= 1 ? 'text-green-400' : (run.sharpeRatio ?? 0) >= 0 ? 'text-gray-300' : 'text-red-400'}`}>
+          {formatNum(run.sharpeRatio)}
+        </span>
+      </td>
+      <td className="py-1.5 text-[10px] text-gray-500 whitespace-nowrap">
+        {formatRelativeTime(run.runAt)}
+      </td>
+    </tr>
+  );
+}
+
+// ============================================================================
 // Table header
 // ============================================================================
 
@@ -201,6 +277,23 @@ function TableHead({ sortBy, sortDir, onSort }: { sortBy: SortColumn; sortDir: '
 }
 
 // ============================================================================
+// Compact Table Header
+// ============================================================================
+
+function CompactTableHead() {
+  return (
+    <thead className="sticky top-0 bg-gray-900 z-10">
+      <tr className="text-left border-b border-gray-700 text-[10px]">
+        <th className="py-1.5 pr-2 text-gray-400">Strategy</th>
+        <th className="py-1.5 pr-2 text-gray-400">Return</th>
+        <th className="py-1.5 pr-2 text-gray-400">Sharpe</th>
+        <th className="py-1.5 text-gray-400">Date</th>
+      </tr>
+    </thead>
+  );
+}
+
+// ============================================================================
 // Expandable Group (fetches its own runs from API when expanded)
 // ============================================================================
 
@@ -208,7 +301,7 @@ function AssetGroup({ group, filters, selectedId, onSelectRun }: {
   group: BacktestGroup;
   filters: FilterState;
   selectedId?: string | null;
-  onSelectRun: (id: string) => void;
+  onSelectRun: (run: BacktestSummary) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [expandedParams, setExpandedParams] = useState<string | null>(null);
@@ -292,12 +385,22 @@ function AssetGroup({ group, filters, selectedId, onSelectRun }: {
 }
 
 // ============================================================================
-// Main Component
+// HistoryExplorerContent — reusable content without modal chrome
 // ============================================================================
 
-export function HistoryExplorer({ isOpen, onClose, onSelectRun, selectedId }: HistoryExplorerProps) {
+export function HistoryExplorerContent({
+  onSelectRun,
+  selectedId,
+  fixedRunType,
+  compact = false,
+  showFilters = true,
+  showGroupToggle = true,
+  maxHeight,
+  className = '',
+}: HistoryExplorerContentProps) {
   const [filters, setFilters] = useState<FilterState>({
     strategy: '', symbol: '', timeframe: '', mode: '', minSharpe: '',
+    runType: fixedRunType ?? 'all',
     sortBy: 'runAt', sortDir: 'desc',
   });
   const [pendingFilters, setPendingFilters] = useState<FilterState>(filters);
@@ -309,7 +412,7 @@ export function HistoryExplorer({ isOpen, onClose, onSelectRun, selectedId }: Hi
 
   const PAGE_SIZE = 50;
 
-  // --- Flat list query ---
+  // Build query params, passing fixedRunType to API if set
   const queryParams: HistoryParams = useMemo(() => ({
     limit: PAGE_SIZE, offset,
     sortBy: filters.sortBy, sortDir: filters.sortDir,
@@ -318,15 +421,16 @@ export function HistoryExplorer({ isOpen, onClose, onSelectRun, selectedId }: Hi
     ...(filters.timeframe ? { timeframe: filters.timeframe } : {}),
     ...(filters.mode ? { mode: filters.mode } : {}),
     ...(filters.minSharpe && !isNaN(parseFloat(filters.minSharpe)) ? { minSharpe: parseFloat(filters.minSharpe) } : {}),
-  }), [filters, offset]);
+    ...(fixedRunType ? { runType: fixedRunType } : filters.runType !== 'all' ? { runType: filters.runType } : {}),
+  }), [filters, offset, fixedRunType]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['explorer-history', queryParams],
     queryFn: () => getHistory(queryParams),
-    enabled: isOpen && !groupByAsset,
+    enabled: !groupByAsset,
   });
 
-  // --- Groups query (server-side) ---
+  // Groups query
   const groupFilterParams = useMemo(() => ({
     ...(filters.strategy ? { strategy: filters.strategy } : {}),
     ...(filters.timeframe ? { timeframe: filters.timeframe } : {}),
@@ -337,7 +441,7 @@ export function HistoryExplorer({ isOpen, onClose, onSelectRun, selectedId }: Hi
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
     queryKey: ['explorer-groups', groupFilterParams],
     queryFn: () => getHistoryGroups(groupFilterParams),
-    enabled: isOpen && groupByAsset,
+    enabled: groupByAsset,
   });
 
   const groups = groupsData?.groups ?? [];
@@ -355,7 +459,15 @@ export function HistoryExplorer({ isOpen, onClose, onSelectRun, selectedId }: Hi
   const total = data?.total ?? 0;
   const hasMore = data?.hasMore ?? false;
 
-  // --- Infinite scroll via onScroll ---
+  // Client-side filter by run type (only when fixedRunType is not set and no server-side filter)
+  const filteredRuns = useMemo(() => {
+    if (fixedRunType) return allRuns;
+    if (filters.runType === 'aggregations') return allRuns.filter(r => r.aggregationId != null);
+    if (filters.runType === 'strategies') return allRuns.filter(r => r.aggregationId == null);
+    return allRuns;
+  }, [allRuns, filters.runType, fixedRunType]);
+
+  // Infinite scroll
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasMoreRef = useRef(hasMore);
   const isLoadingRef = useRef(isLoading);
@@ -369,14 +481,6 @@ export function HistoryExplorer({ isOpen, onClose, onSelectRun, selectedId }: Hi
       setOffset(prev => prev + PAGE_SIZE);
     }
   }, [groupByAsset]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [isOpen, onClose]);
 
   const applyFilters = useCallback(() => {
     setFilters(pendingFilters);
@@ -394,17 +498,219 @@ export function HistoryExplorer({ isOpen, onClose, onSelectRun, selectedId }: Hi
     setAllRuns([]);
   }, [filters]);
 
-  const handleSelectRun = useCallback((id: string) => {
-    onSelectRun(id);
-    onClose();
-  }, [onSelectRun, onClose]);
+  const hasActiveFilters = filters.strategy || filters.symbol || filters.timeframe || filters.mode || filters.minSharpe || (!fixedRunType && filters.runType !== 'all');
+
+  const scrollContainerStyle = maxHeight ? { maxHeight, overflowY: 'auto' as const } : {};
+
+  return (
+    <div className={className}>
+      {/* Filters */}
+      {showFilters && (
+        <div className="py-2 border-b border-gray-700 bg-gray-800/50 mb-2 px-1">
+          <div className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-2 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Strategy</label>
+              <input type="text" placeholder="e.g. funding-rate-spike" value={pendingFilters.strategy}
+                onChange={e => setPendingFilters(p => ({ ...p, strategy: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && applyFilters()}
+                className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary-500" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Symbol</label>
+              <input type="text" placeholder="e.g. BTC/USDT:USDT" value={pendingFilters.symbol}
+                onChange={e => setPendingFilters(p => ({ ...p, symbol: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && applyFilters()}
+                className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary-500" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">TF</label>
+              <select value={pendingFilters.timeframe} onChange={e => setPendingFilters(p => ({ ...p, timeframe: e.target.value }))}
+                className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-200 focus:outline-none focus:border-primary-500">
+                <option value="">All</option>
+                <option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Min Sharpe</label>
+              <input type="number" placeholder="0.5" step="0.1" value={pendingFilters.minSharpe}
+                onChange={e => setPendingFilters(p => ({ ...p, minSharpe: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && applyFilters()}
+                className="w-16 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary-500" />
+            </div>
+            <div className="flex gap-1 items-end">
+              <button onClick={applyFilters} className="px-3 py-1 bg-primary-600 hover:bg-primary-500 text-white rounded text-xs font-medium transition-colors">Apply</button>
+              {hasActiveFilters && (
+                <button onClick={() => {
+                  const cleared: FilterState = { strategy: '', symbol: '', timeframe: '', mode: '', minSharpe: '', runType: fixedRunType ?? 'all', sortBy: 'runAt', sortDir: 'desc' };
+                  setPendingFilters(cleared); setFilters(cleared); setOffset(0); setAllRuns([]);
+                }} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-gray-200 rounded text-xs transition-colors">Clear</button>
+              )}
+            </div>
+          </div>
+          {/* Run type toggle (hidden when fixedRunType is set) */}
+          {!fixedRunType && (
+            <div className="flex items-center gap-2 mt-2">
+              <div className="flex rounded overflow-hidden border border-gray-600">
+                {(['all', 'strategies', 'aggregations'] as RunTypeFilter[]).map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => setPendingFilters(p => ({ ...p, runType: opt }))}
+                    className={`px-2 py-1 text-xs font-medium capitalize transition-colors ${
+                      pendingFilters.runType === opt
+                        ? opt === 'aggregations'
+                          ? 'bg-purple-700 text-white'
+                          : 'bg-primary-600 text-white'
+                        : 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-gray-200'
+                    }`}
+                  >
+                    {opt === 'all' ? 'All' : opt === 'strategies' ? 'Strategies' : 'Aggregations'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Group toggle */}
+      {showGroupToggle && (
+        <div className="flex items-center justify-between mb-2">
+          {total > 0 && !groupByAsset && (
+            <span className="text-xs text-gray-500">{total.toLocaleString()} run{total !== 1 ? 's' : ''}</span>
+          )}
+          {groupByAsset && groups.length > 0 && (
+            <span className="text-xs text-gray-500">{groups.length} asset{groups.length !== 1 ? 's' : ''}, {groups.reduce((s, g) => s + g.count, 0).toLocaleString()} runs</span>
+          )}
+          <label className="flex items-center gap-2 cursor-pointer select-none ml-auto">
+            <div
+              className={`relative w-8 h-4 rounded-full transition-colors ${groupByAsset ? 'bg-primary-600' : 'bg-gray-600'}`}
+              onClick={() => setGroupByAsset(g => !g)}
+            >
+              <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${groupByAsset ? 'translate-x-4' : ''}`} />
+            </div>
+            <span className="text-xs text-gray-400">Group by Asset</span>
+          </label>
+        </div>
+      )}
+
+      {/* Content */}
+      <div ref={scrollRef} style={scrollContainerStyle} onScroll={handleScroll} key={filterKey}>
+        {/* Loading state */}
+        {((isLoading && allRuns.length === 0 && !groupByAsset) || (isLoadingGroups && groupByAsset)) && (
+          <div className="flex items-center justify-center py-8">
+            <svg className="animate-spin h-5 w-5 text-primary-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!isLoading && !isLoadingGroups && ((!groupByAsset && filteredRuns.length === 0) || (groupByAsset && groups.length === 0)) && (
+          <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+            <p className="text-xs">No runs found</p>
+            <p className="text-[10px] text-gray-600 mt-1">Try adjusting your filters</p>
+          </div>
+        )}
+
+        {/* Group by Asset view */}
+        {groupByAsset && groups.length > 0 && (
+          <div className="space-y-2">
+            {groups.map(group => (
+              <AssetGroup key={group.symbol} group={group} filters={filters} selectedId={selectedId} onSelectRun={onSelectRun} />
+            ))}
+          </div>
+        )}
+
+        {/* Flat table view */}
+        {!groupByAsset && filteredRuns.length > 0 && (
+          <>
+            {compact ? (
+              <table className="w-full">
+                <CompactTableHead />
+                <tbody>
+                  {filteredRuns.map(run => (
+                    <CompactRunRow
+                      key={run.id}
+                      run={run}
+                      isSelected={selectedId === run.id}
+                      onSelect={onSelectRun}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-sm">
+                <TableHead sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={handleSort} />
+                <tbody>
+                  {filteredRuns.map(run => (
+                    <RunRow key={run.id} run={run} isSelected={selectedId === run.id} onSelect={onSelectRun}
+                      expanded={expandedParams === run.id} onToggle={id => setExpandedParams(p => p === id ? null : id)} />
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {/* Loading more indicator */}
+            {isLoading && filteredRuns.length > 0 && (
+              <div className="flex items-center justify-center py-4 gap-2 text-gray-400 text-sm">
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Loading more...
+              </div>
+            )}
+            {!hasMore && filteredRuns.length > 0 && (
+              <p className="text-center text-xs text-gray-600 py-2">
+                Showing all {filteredRuns.length.toLocaleString()} run{filteredRuns.length !== 1 ? 's' : ''}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// HistoryExplorer — thin modal wrapper around HistoryExplorerContent
+// ============================================================================
+
+export function HistoryExplorer({
+  isOpen,
+  onClose,
+  onSelectRun,
+  selectedId,
+  title = 'Runs Explorer',
+  fixedRunType,
+  onPickRun,
+}: HistoryExplorerProps) {
+  // Close on Escape — only fires when this modal is mounted (topmost)
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isOpen, onClose]);
+
+  const handleSelect = useCallback((run: BacktestSummary) => {
+    if (onPickRun) {
+      onPickRun(run);
+      onClose();
+    } else {
+      onSelectRun(run.id);
+      onClose();
+    }
+  }, [onPickRun, onSelectRun, onClose]);
 
   if (!isOpen) return null;
 
-  const hasActiveFilters = filters.strategy || filters.symbol || filters.timeframe || filters.mode || filters.minSharpe;
+  // When used as a picker (stacked above CreateAggregationModal), use z-[60]
+  const zClass = onPickRun ? 'z-[60]' : 'z-50';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" aria-modal="true" role="dialog">
+    <div className={`fixed inset-0 ${zClass} flex items-center justify-center p-4`} aria-modal="true" role="dialog">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
@@ -413,161 +719,24 @@ export function HistoryExplorer({ isOpen, onClose, onSelectRun, selectedId }: Hi
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold text-white">Runs Explorer</h2>
-            {!groupByAsset && total > 0 && (
-              <span className="px-2 py-0.5 bg-primary-900/50 border border-primary-700/50 text-primary-300 text-xs rounded-full font-medium">
-                {total.toLocaleString()} run{total !== 1 ? 's' : ''}
-              </span>
-            )}
-            {groupByAsset && groups.length > 0 && (
-              <span className="px-2 py-0.5 bg-primary-900/50 border border-primary-700/50 text-primary-300 text-xs rounded-full font-medium">
-                {groups.length} asset{groups.length !== 1 ? 's' : ''}, {groups.reduce((s, g) => s + g.count, 0).toLocaleString()} runs
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <div
-                className={`relative w-9 h-5 rounded-full transition-colors ${groupByAsset ? 'bg-primary-600' : 'bg-gray-600'}`}
-                onClick={() => setGroupByAsset(g => !g)}
-              >
-                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${groupByAsset ? 'translate-x-4' : ''}`} />
-              </div>
-              <span className="text-sm text-gray-400">Group by Asset</span>
-            </label>
-            <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors" aria-label="Close">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="px-6 py-3 border-b border-gray-700 flex-shrink-0 bg-gray-800/50">
-          <div className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-3 items-end">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500">Strategy</label>
-              <input type="text" placeholder="e.g. funding-rate-spike" value={pendingFilters.strategy}
-                onChange={e => setPendingFilters(p => ({ ...p, strategy: e.target.value }))}
-                onKeyDown={e => e.key === 'Enter' && applyFilters()}
-                className="w-full px-2.5 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary-500" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500">Symbol</label>
-              <input type="text" placeholder="e.g. BTC/USDT:USDT" value={pendingFilters.symbol}
-                onChange={e => setPendingFilters(p => ({ ...p, symbol: e.target.value }))}
-                onKeyDown={e => e.key === 'Enter' && applyFilters()}
-                className="w-full px-2.5 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary-500" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500">Timeframe</label>
-              <select value={pendingFilters.timeframe} onChange={e => setPendingFilters(p => ({ ...p, timeframe: e.target.value }))}
-                className="px-2.5 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-primary-500">
-                <option value="">All</option>
-                <option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option>
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500">Mode</label>
-              <select value={pendingFilters.mode} onChange={e => setPendingFilters(p => ({ ...p, mode: e.target.value }))}
-                className="px-2.5 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-primary-500">
-                <option value="">All</option><option value="spot">Spot</option><option value="futures">Futures</option>
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500">Min Sharpe</label>
-              <input type="number" placeholder="0.5" step="0.1" value={pendingFilters.minSharpe}
-                onChange={e => setPendingFilters(p => ({ ...p, minSharpe: e.target.value }))}
-                onKeyDown={e => e.key === 'Enter' && applyFilters()}
-                className="w-20 px-2.5 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary-500" />
-            </div>
-          </div>
-          <div className="flex items-end gap-3 mt-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-gray-500">Sort By</label>
-              <select value={pendingFilters.sortBy} onChange={e => setPendingFilters(p => ({ ...p, sortBy: e.target.value as SortColumn }))}
-                className="px-2.5 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-primary-500">
-                <option value="runAt">Date</option><option value="sharpeRatio">Sharpe</option><option value="totalReturnPercent">Return</option>
-                <option value="maxDrawdownPercent">Drawdown</option><option value="winRate">Win Rate</option><option value="totalTrades">Trades</option>
-              </select>
-            </div>
-            <button onClick={() => setPendingFilters(p => ({ ...p, sortDir: p.sortDir === 'desc' ? 'asc' : 'desc' }))}
-              className="px-2.5 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 hover:bg-gray-600 transition-colors">
-              {pendingFilters.sortDir === 'desc' ? '↓ Desc' : '↑ Asc'}
-            </button>
-            <button onClick={applyFilters} className="px-5 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded text-sm font-medium transition-colors">Apply</button>
-            {hasActiveFilters && (
-              <button onClick={() => {
-                const cleared: FilterState = { strategy: '', symbol: '', timeframe: '', mode: '', minSharpe: '', sortBy: 'runAt', sortDir: 'desc' };
-                setPendingFilters(cleared); setFilters(cleared); setOffset(0); setAllRuns([]);
-              }} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-400 hover:text-gray-200 rounded text-sm transition-colors">Clear</button>
-            )}
-          </div>
+          <h2 className="text-xl font-bold text-white">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors" aria-label="Close">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         {/* Content */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0" onScroll={handleScroll} key={filterKey}>
-          <div className="px-6 py-4">
-            {/* Loading state */}
-            {((isLoading && allRuns.length === 0 && !groupByAsset) || (isLoadingGroups && groupByAsset)) && (
-              <div className="flex items-center justify-center py-16">
-                <svg className="animate-spin h-7 w-7 text-primary-400" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-              </div>
-            )}
-
-            {/* Empty state */}
-            {!isLoading && !isLoadingGroups && ((!groupByAsset && allRuns.length === 0) || (groupByAsset && groups.length === 0)) && (
-              <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-                <p className="text-sm">No runs found</p>
-                <p className="text-xs text-gray-600 mt-1">Try adjusting your filters</p>
-              </div>
-            )}
-
-            {/* Group by Asset view */}
-            {groupByAsset && groups.length > 0 && (
-              <div className="space-y-2">
-                {groups.map(group => (
-                  <AssetGroup key={group.symbol} group={group} filters={filters} selectedId={selectedId} onSelectRun={handleSelectRun} />
-                ))}
-              </div>
-            )}
-
-            {/* Flat table view */}
-            {!groupByAsset && allRuns.length > 0 && (
-              <>
-                <table className="w-full text-sm">
-                  <TableHead sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={handleSort} />
-                  <tbody>
-                    {allRuns.map(run => (
-                      <RunRow key={run.id} run={run} isSelected={selectedId === run.id} onSelect={handleSelectRun}
-                        expanded={expandedParams === run.id} onToggle={id => setExpandedParams(p => p === id ? null : id)} />
-                    ))}
-                  </tbody>
-                </table>
-
-                {/* Loading more indicator */}
-                {isLoading && allRuns.length > 0 && (
-                  <div className="flex items-center justify-center py-4 gap-2 text-gray-400 text-sm">
-                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Loading more...
-                  </div>
-                )}
-                {!hasMore && allRuns.length > 0 && (
-                  <p className="text-center text-xs text-gray-600 py-4">
-                    Showing all {allRuns.length.toLocaleString()} run{allRuns.length !== 1 ? 's' : ''}
-                  </p>
-                )}
-              </>
-            )}
-          </div>
+        <div className="flex-1 overflow-hidden min-h-0 px-6 py-4">
+          <HistoryExplorerContent
+            onSelectRun={handleSelect}
+            selectedId={selectedId}
+            fixedRunType={fixedRunType}
+            showFilters={true}
+            showGroupToggle={true}
+            maxHeight="calc(90vh - 140px)"
+          />
         </div>
       </div>
     </div>

@@ -132,14 +132,12 @@ export interface StrategyInfo {
   description: string;
   version: string;
   isPairs?: boolean;
-  isMultiAsset?: boolean;
 }
 
 export interface StrategyDetails extends StrategyInfo {
   params: StrategyParam[];
   sourceFile: string;
   isPairs?: boolean;
-  isMultiAsset?: boolean;
 }
 
 // ============================================================================
@@ -218,6 +216,8 @@ export interface BacktestSummary {
   totalTrades?: number;
   totalFees?: number;
   mode?: 'spot' | 'futures';
+  aggregationId?: string;
+  aggregationName?: string;
 }
 
 export interface PaginatedHistory {
@@ -353,14 +353,79 @@ export interface RunPairsBacktestRequest {
   leverage?: number;
 }
 
-export interface RunMultiAssetBacktestRequest {
+export interface SubStrategyConfig {
   strategyName: string;
-  assets: string; // Comma-separated 'SYMBOL@TF'
-  startDate: string;
-  endDate: string;
+  symbol: string;
+  timeframe: Timeframe;
+  params?: Record<string, unknown>;
+  exchange?: string;
+}
+
+export type AllocationMode = 'single_strongest' | 'weighted_multi' | 'top_n';
+
+export interface PerAssetResult {
+  symbol: string;
+  timeframe: string;
+  trades: Trade[];
+  equity: EquityPoint[];
+  metrics: PerformanceMetrics;
+  rollingMetrics?: RollingMetrics;
+  fundingIncome: number;
+  tradingPnl: number;
+}
+
+export interface AggregateBacktestResult extends BacktestResult {
+  perAssetResults?: Record<string, PerAssetResult>;
+  signalHistory?: Array<{
+    symbol: string;
+    direction: 'long' | 'short' | 'flat';
+    weight: number;
+    strategyName: string;
+    timestamp: number;
+  }>;
+}
+
+// ============================================================================
+// Aggregation Types (First-Class Entity)
+// ============================================================================
+
+export interface AggregationConfig {
+  id: string;
+  name: string;
+  allocationMode: AllocationMode;
+  maxPositions: number;
+  subStrategies: SubStrategyConfig[];
   initialCapital: number;
   exchange: string;
-  params: Record<string, unknown>;
+  mode: 'spot' | 'futures';
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateAggregationRequest {
+  name: string;
+  allocationMode?: AllocationMode;
+  maxPositions?: number;
+  subStrategies: SubStrategyConfig[];
+  initialCapital?: number;
+  exchange?: string;
+  mode?: 'spot' | 'futures';
+}
+
+export interface UpdateAggregationRequest {
+  name?: string;
+  allocationMode?: AllocationMode;
+  maxPositions?: number;
+  subStrategies?: SubStrategyConfig[];
+  initialCapital?: number;
+  exchange?: string;
+  mode?: 'spot' | 'futures';
+}
+
+export interface RunAggregationRequest {
+  startDate: string | number;
+  endDate: string | number;
+  initialCapital?: number;  // Override saved default
 }
 
 // ============================================================================

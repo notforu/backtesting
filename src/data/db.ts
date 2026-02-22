@@ -266,12 +266,16 @@ interface BacktestRunRow {
   equity: EquityPoint[] | string;
   rolling_metrics?: RollingMetrics | string | null;
   created_at: string | number;
+  per_asset_results?: Record<string, unknown> | null;
+  signal_history?: unknown[] | null;
+  aggregation_id?: string | null;
+  aggregation_name?: string | null;
 }
 
 /**
  * Save a backtest run to the database (using new trades_v2 schema)
  */
-export async function saveBacktestRun(result: BacktestResult): Promise<void> {
+export async function saveBacktestRun(result: BacktestResult, aggregationId?: string): Promise<void> {
   const p = getPool();
   const client = await p.connect();
 
@@ -280,8 +284,8 @@ export async function saveBacktestRun(result: BacktestResult): Promise<void> {
 
     // Insert the run
     await client.query(
-      `INSERT INTO backtest_runs (id, strategy_name, config, metrics, equity, rolling_metrics, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO backtest_runs (id, strategy_name, config, metrics, equity, rolling_metrics, created_at, per_asset_results, signal_history, aggregation_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         result.id,
         result.config.strategyName,
@@ -290,6 +294,9 @@ export async function saveBacktestRun(result: BacktestResult): Promise<void> {
         JSON.stringify(result.equity),
         result.rollingMetrics != null ? JSON.stringify(result.rollingMetrics) : null,
         result.createdAt,
+        (result as any).perAssetResults != null ? JSON.stringify((result as any).perAssetResults) : null,
+        (result as any).signalHistory != null ? JSON.stringify((result as any).signalHistory) : null,
+        aggregationId ?? null,
       ]
     );
 
@@ -335,7 +342,7 @@ export async function saveBacktestRun(result: BacktestResult): Promise<void> {
 export async function getBacktestRun(id: string): Promise<BacktestResult | null> {
   const p = getPool();
   const { rows } = await p.query<BacktestRunRow>(
-    `SELECT id, strategy_name, config, metrics, equity, rolling_metrics, created_at
+    `SELECT id, strategy_name, config, metrics, equity, rolling_metrics, created_at, per_asset_results, signal_history, aggregation_id
      FROM backtest_runs
      WHERE id = $1`,
     [id]
@@ -348,7 +355,7 @@ export async function getBacktestRun(id: string): Promise<BacktestResult | null>
 
   const trades = await getTrades(id);
 
-  return {
+  const backtest: BacktestResult = {
     id: row.id,
     config: (typeof row.config === 'string'
       ? JSON.parse(row.config)
@@ -367,6 +374,19 @@ export async function getBacktestRun(id: string): Promise<BacktestResult | null>
     trades,
     createdAt: Number(row.created_at),
   };
+
+  // Add aggregate-specific fields if they exist (PG returns parsed JSONB directly)
+  if (row.per_asset_results != null) {
+    (backtest as any).perAssetResults = row.per_asset_results;
+  }
+  if (row.signal_history != null) {
+    (backtest as any).signalHistory = row.signal_history;
+  }
+  if (row.aggregation_id != null) {
+    (backtest as any).aggregationId = row.aggregation_id;
+  }
+
+  return backtest;
 }
 
 /**
@@ -395,6 +415,8 @@ export interface BacktestSummary {
     totalFees?: number;
   };
   createdAt: number;
+  aggregationId?: string;
+  aggregationName?: string;
 }
 
 /**
@@ -414,6 +436,7 @@ export interface HistoryFilters {
   maxReturn?: number;
   sortBy?: 'runAt' | 'sharpeRatio' | 'totalReturnPercent' | 'maxDrawdownPercent' | 'winRate' | 'totalTrades';
   sortDir?: 'asc' | 'desc';
+  runType?: 'strategies' | 'aggregations';
 }
 
 /**
@@ -434,78 +457,86 @@ export async function getBacktestSummaries(
 
   if (filters.strategy) {
     params.push(filters.strategy);
-    conditions.push(`strategy_name = $${params.length}`);
+    conditions.push(`br.strategy_name = $${params.length}`);
   }
 
   if (filters.symbol) {
     params.push(filters.symbol);
-    conditions.push(`config->>'symbol' = $${params.length}`);
+    conditions.push(`br.config->>'symbol' = $${params.length}`);
   }
 
   if (filters.timeframe) {
     params.push(filters.timeframe);
-    conditions.push(`config->>'timeframe' = $${params.length}`);
+    conditions.push(`br.config->>'timeframe' = $${params.length}`);
   }
 
   if (filters.exchange) {
     params.push(filters.exchange);
-    conditions.push(`config->>'exchange' = $${params.length}`);
+    conditions.push(`br.config->>'exchange' = $${params.length}`);
   }
 
   if (filters.mode) {
     params.push(filters.mode);
-    conditions.push(`config->>'mode' = $${params.length}`);
+    conditions.push(`br.config->>'mode' = $${params.length}`);
   }
 
   if (filters.fromDate !== undefined) {
     params.push(filters.fromDate);
-    conditions.push(`created_at >= $${params.length}`);
+    conditions.push(`br.created_at >= $${params.length}`);
   }
 
   if (filters.toDate !== undefined) {
     params.push(filters.toDate);
-    conditions.push(`created_at <= $${params.length}`);
+    conditions.push(`br.created_at <= $${params.length}`);
   }
 
   if (filters.minSharpe !== undefined) {
     params.push(filters.minSharpe);
-    conditions.push(`(metrics->>'sharpeRatio')::float >= $${params.length}`);
+    conditions.push(`(br.metrics->>'sharpeRatio')::float >= $${params.length}`);
   }
 
   if (filters.maxSharpe !== undefined) {
     params.push(filters.maxSharpe);
-    conditions.push(`(metrics->>'sharpeRatio')::float <= $${params.length}`);
+    conditions.push(`(br.metrics->>'sharpeRatio')::float <= $${params.length}`);
   }
 
   if (filters.minReturn !== undefined) {
     params.push(filters.minReturn);
-    conditions.push(`(metrics->>'totalReturnPercent')::float >= $${params.length}`);
+    conditions.push(`(br.metrics->>'totalReturnPercent')::float >= $${params.length}`);
   }
 
   if (filters.maxReturn !== undefined) {
     params.push(filters.maxReturn);
-    conditions.push(`(metrics->>'totalReturnPercent')::float <= $${params.length}`);
+    conditions.push(`(br.metrics->>'totalReturnPercent')::float <= $${params.length}`);
+  }
+
+  if (filters.runType === 'strategies') {
+    conditions.push(`br.aggregation_id IS NULL`);
+  } else if (filters.runType === 'aggregations') {
+    conditions.push(`br.aggregation_id IS NOT NULL`);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   // Determine ORDER BY clause - whitelist allowed columns to prevent injection
   const sortByMap: Record<string, string> = {
-    runAt: 'created_at',
-    sharpeRatio: "(metrics->>'sharpeRatio')::float",
-    totalReturnPercent: "(metrics->>'totalReturnPercent')::float",
-    maxDrawdownPercent: "(metrics->>'maxDrawdownPercent')::float",
-    winRate: "(metrics->>'winRate')::float",
-    totalTrades: "(metrics->>'totalTrades')::float",
+    runAt: 'br.created_at',
+    sharpeRatio: "(br.metrics->>'sharpeRatio')::float",
+    totalReturnPercent: "(br.metrics->>'totalReturnPercent')::float",
+    maxDrawdownPercent: "(br.metrics->>'maxDrawdownPercent')::float",
+    winRate: "(br.metrics->>'winRate')::float",
+    totalTrades: "(br.metrics->>'totalTrades')::float",
   };
 
-  const sortColumn = (filters.sortBy && sortByMap[filters.sortBy]) || 'created_at';
+  const sortColumn = (filters.sortBy && sortByMap[filters.sortBy]) || 'br.created_at';
   const sortDir = filters.sortDir === 'asc' ? 'ASC' : 'DESC';
   const orderClause = `ORDER BY ${sortColumn} ${sortDir}`;
 
   // Count query (uses same WHERE but no LIMIT/OFFSET)
   const countResult = await p.query<{ count: string }>(
-    `SELECT COUNT(*) FROM backtest_runs ${whereClause}`,
+    `SELECT COUNT(*) FROM backtest_runs br
+     LEFT JOIN aggregation_configs ac ON br.aggregation_id = ac.id
+     ${whereClause}`,
     params
   );
   const total = Number(countResult.rows[0].count);
@@ -515,8 +546,10 @@ export async function getBacktestSummaries(
   const offsetParam = params.length + 2;
 
   const { rows } = await p.query<BacktestRunRow>(
-    `SELECT id, config, metrics, created_at
-     FROM backtest_runs
+    `SELECT br.id, br.config, br.metrics, br.created_at,
+            br.aggregation_id, ac.name AS aggregation_name
+     FROM backtest_runs br
+     LEFT JOIN aggregation_configs ac ON br.aggregation_id = ac.id
      ${whereClause}
      ${orderClause}
      LIMIT $${limitParam} OFFSET $${offsetParam}`,
@@ -531,7 +564,7 @@ export async function getBacktestSummaries(
       ? JSON.parse(row.metrics)
       : row.metrics) as PerformanceMetrics;
 
-    return {
+    const summary: BacktestSummary = {
       id: row.id,
       config: {
         strategyName: fullConfig.strategyName,
@@ -554,6 +587,15 @@ export async function getBacktestSummaries(
       },
       createdAt: Number(row.created_at),
     };
+
+    if (row.aggregation_id) {
+      summary.aggregationId = row.aggregation_id;
+    }
+    if (row.aggregation_name) {
+      summary.aggregationName = row.aggregation_name;
+    }
+
+    return summary;
   });
 
   return { summaries, total };
@@ -1087,6 +1129,198 @@ export async function deleteOptimizedParams(
 export async function deleteOptimizationById(id: string): Promise<boolean> {
   const p = getPool();
   const result = await p.query('DELETE FROM optimized_params WHERE id = $1', [id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+// ============================================================================
+// Aggregation Config Operations
+// ============================================================================
+
+export interface AggregationConfig {
+  id: string;
+  name: string;
+  allocationMode: string;  // 'single_strongest' | 'weighted_multi' | 'top_n'
+  maxPositions: number;
+  subStrategies: SubStrategyConfigDB[];
+  initialCapital: number;
+  exchange: string;
+  mode: string;  // 'spot' | 'futures'
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface SubStrategyConfigDB {
+  strategyName: string;
+  symbol: string;
+  timeframe: string;
+  params?: Record<string, unknown>;
+  exchange?: string;
+}
+
+interface AggregationConfigRow {
+  id: string;
+  name: string;
+  allocation_mode: string;
+  max_positions: number;
+  sub_strategies: SubStrategyConfigDB[] | string;
+  initial_capital: number | string;
+  exchange: string;
+  mode: string;
+  created_at: string | number;
+  updated_at: string | number;
+}
+
+function rowToAggregationConfig(row: AggregationConfigRow): AggregationConfig {
+  return {
+    id: row.id,
+    name: row.name,
+    allocationMode: row.allocation_mode,
+    maxPositions: row.max_positions,
+    subStrategies: (typeof row.sub_strategies === 'string'
+      ? JSON.parse(row.sub_strategies)
+      : row.sub_strategies) as SubStrategyConfigDB[],
+    initialCapital: Number(row.initial_capital),
+    exchange: row.exchange,
+    mode: row.mode,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+/**
+ * Save an aggregation config to the database (upsert by id).
+ */
+export async function saveAggregationConfig(config: AggregationConfig): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `INSERT INTO aggregation_configs
+     (id, name, allocation_mode, max_positions, sub_strategies, initial_capital, exchange, mode, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     ON CONFLICT (id) DO UPDATE SET
+       name = $2,
+       allocation_mode = $3,
+       max_positions = $4,
+       sub_strategies = $5,
+       initial_capital = $6,
+       exchange = $7,
+       mode = $8,
+       updated_at = $10`,
+    [
+      config.id,
+      config.name,
+      config.allocationMode,
+      config.maxPositions,
+      JSON.stringify(config.subStrategies),
+      config.initialCapital,
+      config.exchange,
+      config.mode,
+      config.createdAt,
+      config.updatedAt,
+    ]
+  );
+}
+
+/**
+ * Get a single aggregation config by id.
+ */
+export async function getAggregationConfig(id: string): Promise<AggregationConfig | null> {
+  const p = getPool();
+  const { rows } = await p.query<AggregationConfigRow>(
+    `SELECT id, name, allocation_mode, max_positions, sub_strategies, initial_capital, exchange, mode, created_at, updated_at
+     FROM aggregation_configs
+     WHERE id = $1`,
+    [id]
+  );
+  const row = rows[0];
+  return row ? rowToAggregationConfig(row) : null;
+}
+
+/**
+ * Get all aggregation configs, ordered by most recently updated.
+ */
+export async function getAggregationConfigs(): Promise<AggregationConfig[]> {
+  const p = getPool();
+  const { rows } = await p.query<AggregationConfigRow>(
+    `SELECT id, name, allocation_mode, max_positions, sub_strategies, initial_capital, exchange, mode, created_at, updated_at
+     FROM aggregation_configs
+     ORDER BY updated_at DESC`
+  );
+  return rows.map(rowToAggregationConfig);
+}
+
+/**
+ * Update an existing aggregation config by id.
+ * Returns the updated config, or null if not found.
+ */
+export async function updateAggregationConfig(
+  id: string,
+  updates: Partial<Pick<AggregationConfig, 'name' | 'allocationMode' | 'maxPositions' | 'subStrategies' | 'initialCapital' | 'exchange' | 'mode'>>
+): Promise<AggregationConfig | null> {
+  const p = getPool();
+
+  const setClauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (updates.name !== undefined) {
+    params.push(updates.name);
+    setClauses.push(`name = $${params.length}`);
+  }
+  if (updates.allocationMode !== undefined) {
+    params.push(updates.allocationMode);
+    setClauses.push(`allocation_mode = $${params.length}`);
+  }
+  if (updates.maxPositions !== undefined) {
+    params.push(updates.maxPositions);
+    setClauses.push(`max_positions = $${params.length}`);
+  }
+  if (updates.subStrategies !== undefined) {
+    params.push(JSON.stringify(updates.subStrategies));
+    setClauses.push(`sub_strategies = $${params.length}`);
+  }
+  if (updates.initialCapital !== undefined) {
+    params.push(updates.initialCapital);
+    setClauses.push(`initial_capital = $${params.length}`);
+  }
+  if (updates.exchange !== undefined) {
+    params.push(updates.exchange);
+    setClauses.push(`exchange = $${params.length}`);
+  }
+  if (updates.mode !== undefined) {
+    params.push(updates.mode);
+    setClauses.push(`mode = $${params.length}`);
+  }
+
+  if (setClauses.length === 0) {
+    // Nothing to update, just return existing
+    return getAggregationConfig(id);
+  }
+
+  // Always update updated_at
+  params.push(Date.now());
+  setClauses.push(`updated_at = $${params.length}`);
+
+  // Add id as final param
+  params.push(id);
+
+  const { rows } = await p.query<AggregationConfigRow>(
+    `UPDATE aggregation_configs
+     SET ${setClauses.join(', ')}
+     WHERE id = $${params.length}
+     RETURNING id, name, allocation_mode, max_positions, sub_strategies, initial_capital, exchange, mode, created_at, updated_at`,
+    params
+  );
+
+  const row = rows[0];
+  return row ? rowToAggregationConfig(row) : null;
+}
+
+/**
+ * Delete an aggregation config by id.
+ * Returns true if deleted, false if not found.
+ */
+export async function deleteAggregationConfig(id: string): Promise<boolean> {
+  const p = getPool();
+  const result = await p.query('DELETE FROM aggregation_configs WHERE id = $1', [id]);
   return (result.rowCount ?? 0) > 0;
 }
 

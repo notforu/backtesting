@@ -6,12 +6,11 @@
 import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Chart } from './components/Chart';
+import { PortfolioChart } from './components/Chart/PortfolioChart';
 import { PairsChart } from './components/PairsChart';
 import { SpreadChart } from './components/SpreadChart';
-import { PerformanceCharts } from './components/PerformanceCharts';
 import { Dashboard } from './components/Dashboard';
 import { StrategyConfig } from './components/StrategyConfig';
-import { History } from './components/History';
 import { OptimizerModal } from './components/OptimizerModal';
 import { ScannerResults } from './components/ScannerResults';
 import { HistoryExplorer } from './components/HistoryExplorer';
@@ -40,14 +39,6 @@ function isPairsResult(result: unknown): result is PairsBacktestResult {
   return false;
 }
 
-// Helper to parse multi-asset string from config params
-function parseMultiAssets(assetsStr: string): Array<{ symbol: string; timeframe: string; label: string }> {
-  return assetsStr.split(',').map(a => {
-    const [symbol, timeframe] = a.trim().split('@');
-    const label = symbol.replace('/USDT:USDT', '');
-    return { symbol, timeframe, label };
-  });
-}
 
 function AppContent() {
   const { currentResult, selectedBacktestId } = useBacktestStore();
@@ -61,10 +52,15 @@ function AppContent() {
   // Multi-asset state
   const [selectedAssetIndex, setSelectedAssetIndex] = useState<number>(-1); // -1 = portfolio view
 
-  // Detect multi-asset and parse assets
-  const isMultiAsset = currentResult && (currentResult as BacktestResult)?.config?.symbol === 'MULTI';
-  const multiAssets = isMultiAsset && (currentResult as any).config?.params?.assets
-    ? parseMultiAssets((currentResult as any).config.params.assets)
+  // Detect multi-asset via perAssetResults (new approach) with fallback for legacy MULTI symbol
+  const perAssetResults = (currentResult as any)?.perAssetResults as Record<string, import('./types').PerAssetResult> | undefined;
+  const isMultiAsset = currentResult && perAssetResults && Object.keys(perAssetResults).length > 0;
+  const multiAssets = isMultiAsset
+    ? Object.entries(perAssetResults!).map(([symbol, par]) => ({
+        symbol,
+        timeframe: par.timeframe,
+        label: symbol.replace('/USDT:USDT', ''),
+      }))
     : [];
   const selectedAsset = selectedAssetIndex >= 0 && selectedAssetIndex < multiAssets.length
     ? multiAssets[selectedAssetIndex]
@@ -156,10 +152,9 @@ function AppContent() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar */}
-        <aside className="w-80 flex-shrink-0 border-r border-gray-700 overflow-y-auto">
+        <aside className="w-96 flex-shrink-0 border-r border-gray-700 overflow-y-auto">
           <div className="p-4 space-y-4">
             <StrategyConfig />
-            <History />
           </div>
         </aside>
 
@@ -266,6 +261,7 @@ function AppContent() {
                         const ed = (currentResult as BacktestResult).config.endDate;
                         return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : undefined;
                       })()}
+                      rollingMetrics={(currentResult as any).perAssetResults?.[selectedAsset.symbol]?.rollingMetrics}
                     />
                   ) : (
                     <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
@@ -274,14 +270,13 @@ function AppContent() {
                   )}
                 </>
               ) : isMultiAsset ? (
-                /* Portfolio view - no candle chart, just overview message */
-                <div className="h-[200px] bg-gray-800 rounded-lg border border-gray-700 flex items-center justify-center">
-                  <div className="text-center text-gray-500">
-                    <p className="text-lg font-medium">Portfolio Overview</p>
-                    <p className="text-sm mt-1">Select an asset tab above to view its price chart</p>
-                    <p className="text-xs mt-2 text-gray-600">{multiAssets.length} assets | {currentResult.trades.length} total trades</p>
-                  </div>
-                </div>
+                /* Portfolio view - equity curve for the whole portfolio */
+                <PortfolioChart
+                  equity={(currentResult as any).equity ?? []}
+                  rollingMetrics={(currentResult as any).rollingMetrics}
+                  trades={currentResult.trades}
+                  height={450}
+                />
               ) : (
                 /* Single-asset chart (original code) */
                 <>
@@ -310,19 +305,82 @@ function AppContent() {
               <ScannerResults />
             )}
 
-            {/* Performance Charts */}
-            {currentResult && currentResult.equity.length > 0 && (
-              <section>
-                <PerformanceCharts
-                  equity={currentResult.equity}
-                  rollingMetrics={currentResult.rollingMetrics}
-                />
-              </section>
-            )}
-
             {/* Dashboard Section */}
             <section>
-              <Dashboard metrics={currentResult?.metrics ?? null} />
+              <Dashboard metrics={(() => {
+                if (isMultiAsset && selectedAsset && currentResult) {
+                  // First, try to use full per-asset results from aggregate engine
+                  const perAssetResults = (currentResult as any).perAssetResults as Record<string, {
+                    symbol: string;
+                    timeframe: string;
+                    trades: any[];
+                    metrics: import('./types').PerformanceMetrics;
+                    fundingIncome?: number;
+                    tradingPnl?: number;
+                  }> | undefined;
+
+                  const assetResult = perAssetResults?.[selectedAsset.symbol];
+                  if (assetResult?.metrics) {
+                    // Full per-asset metrics available (from aggregate engine) - use directly
+                    return assetResult.metrics;
+                  }
+
+                  // Fallback: build from perAssetSummary (loaded from history)
+                  const perAssetSummary = (currentResult as any).config?.params?.perAssetSummary as Array<{
+                    symbol: string;
+                    timeframe: string;
+                    sharpe: number;
+                    returnPct: number;
+                    trades: number;
+                    fundingIncome: number;
+                    tradingPnl: number;
+                  }> | undefined;
+                  const assetSummary = perAssetSummary?.find(a => a.symbol === selectedAsset.symbol);
+                  if (assetSummary) {
+                    const assetTrades = currentResult.trades.filter(t => t.symbol === selectedAsset.symbol);
+                    const closeTrades = assetTrades.filter(t => t.action === 'CLOSE_LONG' || t.action === 'CLOSE_SHORT');
+                    const wins = closeTrades.filter(t => (t.pnl ?? 0) > 0);
+                    const losses = closeTrades.filter(t => (t.pnl ?? 0) <= 0);
+                    const totalPnl = closeTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+                    const totalFees = assetTrades.reduce((sum, t) => sum + (t.fee ?? 0), 0);
+                    const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + (t.pnl ?? 0), 0) / wins.length : 0;
+                    const totalWins = wins.reduce((s, t) => s + (t.pnl ?? 0), 0);
+                    const totalLosses = Math.abs(losses.reduce((s, t) => s + (t.pnl ?? 0), 0));
+
+                    // Build metrics WITHOUT spreading portfolio-level metrics
+                    // Only include fields we can actually compute from per-asset data
+                    return {
+                      totalReturn: totalPnl,
+                      totalReturnPercent: assetSummary.returnPct,
+                      sharpeRatio: assetSummary.sharpe,
+                      sortinoRatio: 0,
+                      winRate: closeTrades.length > 0 ? (wins.length / closeTrades.length) * 100 : 0,
+                      profitFactor: totalLosses > 0 ? totalWins / totalLosses : 0,
+                      totalTrades: closeTrades.length,
+                      winningTrades: wins.length,
+                      losingTrades: losses.length,
+                      avgWin,
+                      avgLoss: losses.length > 0 ? losses.reduce((s, t) => s + (t.pnl ?? 0), 0) / losses.length : 0,
+                      avgWinPercent: wins.length > 0 ? wins.reduce((s, t) => s + (t.pnlPercent ?? 0), 0) / wins.length : 0,
+                      avgLossPercent: losses.length > 0 ? losses.reduce((s, t) => s + (t.pnlPercent ?? 0), 0) / losses.length : 0,
+                      maxDrawdown: 0,
+                      maxDrawdownPercent: 0,
+                      totalFees,
+                      largestWin: wins.length > 0 ? Math.max(...wins.map(t => t.pnl ?? 0)) : 0,
+                      largestLoss: losses.length > 0 ? Math.min(...losses.map(t => t.pnl ?? 0)) : 0,
+                      avgTradeDuration: 0,
+                      exposureTime: 0,
+                      expectancy: closeTrades.length > 0 ? totalPnl / closeTrades.length : 0,
+                      expectancyPercent: closeTrades.length > 0
+                        ? closeTrades.reduce((s, t) => s + (t.pnlPercent ?? 0), 0) / closeTrades.length
+                        : 0,
+                      totalFundingIncome: assetSummary.fundingIncome,
+                      tradingPnl: assetSummary.tradingPnl,
+                    } as import('./types').PerformanceMetrics;
+                  }
+                }
+                return currentResult?.metrics ?? null;
+              })()} />
             </section>
 
             {/* Trades Table Section */}

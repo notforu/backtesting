@@ -30,6 +30,12 @@ export {
   type BacktestGroup,
   getFundingRates,
   getFundingRateDateRange,
+  saveAggregationConfig,
+  getAggregationConfig,
+  getAggregationConfigs,
+  updateAggregationConfig,
+  deleteAggregationConfig,
+  type AggregationConfig,
 } from './db.js';
 
 // Providers

@@ -11,18 +11,22 @@ import {
   getBacktest,
   runBacktest,
   runPairsBacktest,
-  runMultiAssetBacktest,
   deleteBacktest,
   deleteAllHistory,
   getCandles,
   getExchanges,
   getSymbols,
+  getAggregations,
+  createAggregation,
+  updateAggregation,
+  deleteAggregation,
+  runAggregation,
 } from '../api/client';
 import { useBacktestStore } from '../stores/backtestStore';
 import type {
   RunBacktestRequest,
   RunPairsBacktestRequest,
-  RunMultiAssetBacktestRequest,
+  AggregateBacktestResult,
   CandleRequest,
   StrategyInfo,
   StrategyDetails,
@@ -30,6 +34,10 @@ import type {
   PairsBacktestResult,
   Candle,
   PaginatedHistory,
+  AggregationConfig,
+  CreateAggregationRequest,
+  UpdateAggregationRequest,
+  RunAggregationRequest,
 } from '../types';
 
 // Query keys for cache management
@@ -41,6 +49,8 @@ export const queryKeys = {
   candles: (params: CandleRequest) => ['candles', params] as const,
   exchanges: ['exchanges'] as const,
   symbols: (exchange: string) => ['symbols', exchange] as const,
+  aggregations: ['aggregations'] as const,
+  aggregation: (id: string) => ['aggregation', id] as const,
 };
 
 // ============================================================================
@@ -125,6 +135,7 @@ export function useRunBacktest() {
       setResult(result);
       // Invalidate history to include new result
       queryClient.invalidateQueries({ queryKey: queryKeys.history });
+      queryClient.invalidateQueries({ queryKey: ['explorer-history'] });
       // Cache the new result
       queryClient.setQueryData(queryKeys.backtest(result.id), result);
     },
@@ -150,31 +161,7 @@ export function useRunPairsBacktest() {
       setResult(result);
       // Invalidate history to include new result
       queryClient.invalidateQueries({ queryKey: queryKeys.history });
-      // Cache the new result
-      queryClient.setQueryData(queryKeys.backtest(result.id), result);
-    },
-    onError: (error) => {
-      setError(error.message);
-    },
-  });
-}
-
-/**
- * Run a multi-asset backtest mutation
- */
-export function useRunMultiAssetBacktest() {
-  const queryClient = useQueryClient();
-  const { setRunning, setResult, setError } = useBacktestStore();
-
-  return useMutation<BacktestResult, Error, RunMultiAssetBacktestRequest>({
-    mutationFn: runMultiAssetBacktest,
-    onMutate: () => {
-      setRunning(true);
-    },
-    onSuccess: (result) => {
-      setResult(result);
-      // Invalidate history to include new result
-      queryClient.invalidateQueries({ queryKey: queryKeys.history });
+      queryClient.invalidateQueries({ queryKey: ['explorer-history'] });
       // Cache the new result
       queryClient.setQueryData(queryKeys.backtest(result.id), result);
     },
@@ -196,6 +183,7 @@ export function useDeleteBacktest() {
     onSuccess: (_, deletedId) => {
       // Invalidate history
       queryClient.invalidateQueries({ queryKey: queryKeys.history });
+      queryClient.invalidateQueries({ queryKey: ['explorer-history'] });
       // Remove from cache
       queryClient.removeQueries({ queryKey: queryKeys.backtest(deletedId) });
       // Clear current result if it was deleted
@@ -217,6 +205,7 @@ export function useDeleteAllHistory() {
     mutationFn: deleteAllHistory,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.history });
+      queryClient.invalidateQueries({ queryKey: ['explorer-history'] });
       clear();
     },
   });
@@ -312,6 +301,84 @@ export function useFundingRates(params: {
     },
     enabled: !!params,
     staleTime: 1000 * 60 * 10, // 10 minutes
+  });
+}
+
+// ============================================================================
+// Aggregation Hooks
+// ============================================================================
+
+/**
+ * Fetch all aggregation configs
+ */
+export function useAggregations() {
+  return useQuery<AggregationConfig[], Error>({
+    queryKey: queryKeys.aggregations,
+    queryFn: getAggregations,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+/**
+ * Create a new aggregation
+ */
+export function useCreateAggregation() {
+  const queryClient = useQueryClient();
+  return useMutation<AggregationConfig, Error, CreateAggregationRequest>({
+    mutationFn: (config) => createAggregation(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.aggregations });
+    },
+  });
+}
+
+/**
+ * Update an aggregation
+ */
+export function useUpdateAggregation() {
+  const queryClient = useQueryClient();
+  return useMutation<AggregationConfig, Error, { id: string; updates: UpdateAggregationRequest }>({
+    mutationFn: ({ id, updates }) => updateAggregation(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.aggregations });
+    },
+  });
+}
+
+/**
+ * Delete an aggregation
+ */
+export function useDeleteAggregation() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (id) => deleteAggregation(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.aggregations });
+    },
+  });
+}
+
+/**
+ * Run an aggregation backtest
+ */
+export function useRunAggregation() {
+  const queryClient = useQueryClient();
+  const { setRunning, setResult, setError } = useBacktestStore();
+
+  return useMutation<AggregateBacktestResult, Error, { id: string; request: RunAggregationRequest }>({
+    mutationFn: ({ id, request }) => runAggregation(id, request),
+    onMutate: () => {
+      setRunning(true);
+    },
+    onSuccess: (result) => {
+      setResult(result);
+      queryClient.invalidateQueries({ queryKey: queryKeys.history });
+      queryClient.invalidateQueries({ queryKey: ['explorer-history'] });
+      queryClient.setQueryData(queryKeys.backtest(result.id), result);
+    },
+    onError: (error) => {
+      setError(error.message);
+    },
   });
 }
 

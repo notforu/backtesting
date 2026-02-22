@@ -12,6 +12,7 @@ import { optimizeRoutes } from './routes/optimize.js';
 import { polymarketRoutes } from './routes/polymarket.js';
 import { scanRoutes } from './routes/scan.js';
 import { fundingRateRoutes } from './routes/funding-rates.js';
+import { aggregationRoutes } from './routes/aggregations.js';
 import { initDb, closeDb } from '../data/db.js';
 
 const fastify = Fastify({
@@ -45,6 +46,7 @@ await fastify.register(optimizeRoutes);
 await fastify.register(polymarketRoutes);
 await fastify.register(scanRoutes);
 await fastify.register(fundingRateRoutes);
+await fastify.register(aggregationRoutes);
 
 // Graceful shutdown
 const shutdown = async () => {

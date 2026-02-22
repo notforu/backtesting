@@ -10,7 +10,7 @@ import type {
   CandleRequest,
   RunBacktestRequest,
   RunPairsBacktestRequest,
-  RunMultiAssetBacktestRequest,
+  AggregateBacktestResult,
   PairsBacktestResult,
   StrategyDetails,
   StrategyInfo,
@@ -21,6 +21,10 @@ import type {
   ScanResultRow,
   ScanSummary,
   ActivePolymarketMarket,
+  AggregationConfig,
+  CreateAggregationRequest,
+  UpdateAggregationRequest,
+  RunAggregationRequest,
 } from '../types';
 
 const API_BASE = '/api';
@@ -110,18 +114,6 @@ export async function runPairsBacktest(
 }
 
 /**
- * Run a multi-asset backtest
- */
-export async function runMultiAssetBacktest(
-  config: RunMultiAssetBacktestRequest
-): Promise<BacktestResult> {
-  return apiFetch<BacktestResult>('/backtest/multi/run', {
-    method: 'POST',
-    body: JSON.stringify(config),
-  });
-}
-
-/**
  * Get a specific backtest result by ID
  */
 export async function getBacktest(id: string): Promise<BacktestResult> {
@@ -147,6 +139,7 @@ export interface HistoryParams {
   maxReturn?: number;
   sortBy?: 'runAt' | 'sharpeRatio' | 'totalReturnPercent' | 'maxDrawdownPercent' | 'winRate' | 'totalTrades';
   sortDir?: 'asc' | 'desc';
+  runType?: 'strategies' | 'aggregations';
 }
 
 /**
@@ -169,6 +162,7 @@ export async function getHistory(params?: HistoryParams): Promise<PaginatedHisto
   if (params?.maxReturn !== undefined) queryParams.append('maxReturn', String(params.maxReturn));
   if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
   if (params?.sortDir) queryParams.append('sortDir', params.sortDir);
+  if (params?.runType) queryParams.append('runType', params.runType);
   const queryString = queryParams.toString();
   return apiFetch<PaginatedHistory>(`/backtest/history${queryString ? `?${queryString}` : ''}`);
 }
@@ -632,6 +626,63 @@ export async function getFundingRates(params: {
   return apiFetch<{ rates: Array<{ timestamp: number; fundingRate: number; markPrice?: number }> }>(
     `/funding-rates?${queryParams.toString()}`
   );
+}
+
+// ============================================================================
+// Aggregation Endpoints
+// ============================================================================
+
+/**
+ * Get all saved aggregation configs
+ */
+export async function getAggregations(): Promise<AggregationConfig[]> {
+  return apiFetch<AggregationConfig[]>('/aggregations');
+}
+
+/**
+ * Create a new aggregation config
+ */
+export async function createAggregation(config: CreateAggregationRequest): Promise<AggregationConfig> {
+  return apiFetch<AggregationConfig>('/aggregations', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+/**
+ * Get a single aggregation config by ID
+ */
+export async function getAggregation(id: string): Promise<AggregationConfig> {
+  return apiFetch<AggregationConfig>(`/aggregations/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Update an existing aggregation config
+ */
+export async function updateAggregation(id: string, updates: UpdateAggregationRequest): Promise<AggregationConfig> {
+  return apiFetch<AggregationConfig>(`/aggregations/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
+/**
+ * Delete an aggregation config
+ */
+export async function deleteAggregation(id: string): Promise<void> {
+  return apiFetch<void>(`/aggregations/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Run an aggregation backtest
+ */
+export async function runAggregation(id: string, request: RunAggregationRequest): Promise<AggregateBacktestResult> {
+  return apiFetch<AggregateBacktestResult>(`/aggregations/${encodeURIComponent(id)}/run`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
 }
 
 // ============================================================================

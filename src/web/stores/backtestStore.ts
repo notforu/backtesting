@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import type { BacktestResult, PairsBacktestResult, RunBacktestRequest, Timeframe } from '../types';
+import type { BacktestResult, PairsBacktestResult, AggregateBacktestResult, RunBacktestRequest, Timeframe } from '../types';
 
 // ============================================================================
 // Backtest Store
@@ -12,7 +12,7 @@ import type { BacktestResult, PairsBacktestResult, RunBacktestRequest, Timeframe
 
 interface BacktestStore {
   // Current backtest result
-  currentResult: BacktestResult | PairsBacktestResult | null;
+  currentResult: BacktestResult | PairsBacktestResult | AggregateBacktestResult | null;
 
   // UI state
   isRunning: boolean;
@@ -22,7 +22,7 @@ interface BacktestStore {
   selectedBacktestId: string | null;
 
   // Actions
-  setResult: (result: BacktestResult | PairsBacktestResult) => void;
+  setResult: (result: BacktestResult | PairsBacktestResult | AggregateBacktestResult) => void;
   setRunning: (running: boolean) => void;
   setError: (error: string | null) => void;
   setSelectedBacktestId: (id: string | null) => void;
@@ -104,7 +104,7 @@ interface ConfigStore {
   setLeverage: (leverage: number) => void;
   setMode: (mode: 'spot' | 'futures') => void;
   getConfig: () => RunBacktestRequest;
-  applyHistoryParams: (result: BacktestResult | PairsBacktestResult) => void;
+  applyHistoryParams: (result: BacktestResult | PairsBacktestResult | AggregateBacktestResult) => void;
   reset: () => void;
 }
 
@@ -171,7 +171,7 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
     };
   },
 
-  applyHistoryParams: (result) => {
+  applyHistoryParams: (result: BacktestResult | PairsBacktestResult | AggregateBacktestResult) => {
     const config = result.config as any;
     const isPairs = config.symbolA && config.symbolB;
     if (isPairs) {

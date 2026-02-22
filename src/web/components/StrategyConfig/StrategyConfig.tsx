@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useStrategies, useStrategy, useRunBacktest, useRunPairsBacktest, useRunMultiAssetBacktest } from '../../hooks/useBacktest';
+import { useStrategies, useStrategy, useRunBacktest, useRunPairsBacktest, useLoadBacktest } from '../../hooks/useBacktest';
 import {
   useOptimizedParams,
 } from '../../hooks/useOptimization';
@@ -15,9 +15,12 @@ import {
   useOptimizerModalStore,
 } from '../../stores/backtestStore';
 import { useScannerStore } from '../../stores/scannerStore';
+import { useAggregationStore } from '../../stores/aggregationStore';
 import { runScan } from '../../api/client';
-import type { StrategyParam, Timeframe } from '../../types';
+import type { BacktestSummary, StrategyParam, Timeframe } from '../../types';
 import { PolymarketBrowser } from '../PolymarketBrowser';
+import { AggregationsPanel } from '../AggregationsPanel/AggregationsPanel';
+import { HistoryExplorerContent } from '../HistoryExplorer/HistoryExplorer';
 
 // Available timeframes
 const TIMEFRAMES: { value: Timeframe; label: string }[] = [
@@ -155,6 +158,7 @@ function ParamInput({ param, value, onChange }: ParamInputProps) {
 }
 
 export function StrategyConfig() {
+  const { activeConfigTab, setActiveConfigTab } = useAggregationStore();
   const { data: strategies, isLoading: loadingStrategies } = useStrategies();
   const {
     strategy,
@@ -181,15 +185,16 @@ export function StrategyConfig() {
     setMode,
     setParams,
     getConfig,
+    applyHistoryParams,
   } = useConfigStore();
 
   const { data: strategyDetails, isLoading: loadingDetails } =
     useStrategy(strategy);
 
-  const { isRunning, error } = useBacktestStore();
+  const { isRunning, error, selectedBacktestId } = useBacktestStore();
   const runBacktestMutation = useRunBacktest();
   const runPairsBacktestMutation = useRunPairsBacktest();
-  const runMultiAssetBacktestMutation = useRunMultiAssetBacktest();
+  const { loadBacktest } = useLoadBacktest();
 
   // Optimization hooks
   const { data: optimizedParams, isError: optimizedParamsError } =
@@ -240,14 +245,6 @@ export function StrategyConfig() {
     }
   }, [strategyDetails, setParams, setUsingOptimizedParams]);
 
-  // Auto-set exchange and mode for multi-asset strategies
-  useEffect(() => {
-    if (strategyDetails?.isMultiAsset) {
-      setExchange('bybit');
-      setMode('futures');
-    }
-  }, [strategyDetails?.isMultiAsset, setExchange, setMode]);
-
   // Auto-apply optimized params when available (skip if loaded from history)
   useEffect(() => {
     const source = useConfigStore.getState()._configSource;
@@ -264,36 +261,9 @@ export function StrategyConfig() {
   const handleRunBacktest = () => {
     if (!strategy) return;
 
-    const isMultiAssetStrategy = strategyDetails?.isMultiAsset;
     const isPairsStrategy = strategyDetails?.isPairs;
 
-    if (isMultiAssetStrategy) {
-      // For multi-asset, get assets from params
-      const preset = params.preset as string || 'conservative';
-      let assets = params.assets as string || '';
-
-      // If using a preset, resolve it
-      const PRESETS: Record<string, string> = {
-        conservative: 'ATOM/USDT:USDT@4h,DOT/USDT:USDT@4h,ADA/USDT:USDT@1h,OP/USDT:USDT@1h,INJ/USDT:USDT@4h',
-        moderate: 'ATOM/USDT:USDT@4h,DOT/USDT:USDT@4h,ADA/USDT:USDT@1h,OP/USDT:USDT@1h,INJ/USDT:USDT@4h,LINK/USDT:USDT@4h,AVAX/USDT:USDT@4h,LTC/USDT:USDT@4h',
-      };
-
-      if (preset !== 'custom' && PRESETS[preset]) {
-        assets = PRESETS[preset];
-      }
-
-      const req: import('../../types').RunMultiAssetBacktestRequest = {
-        strategyName: strategy,
-        assets,
-        startDate,
-        endDate,
-        initialCapital,
-        exchange: exchange || 'bybit',
-        params,
-      };
-      console.log('[Backtest] Running multi-asset:', JSON.stringify(req, null, 2));
-      runMultiAssetBacktestMutation.mutate(req);
-    } else if (isPairsStrategy) {
+    if (isPairsStrategy) {
       const req = {
         strategyName: strategy,
         params,
@@ -357,11 +327,17 @@ export function StrategyConfig() {
     }
   };
 
+  const handleSelectHistoryRun = async (run: BacktestSummary) => {
+    const result = await loadBacktest(run.id);
+    if (result) {
+      applyHistoryParams(result);
+    }
+  };
+
   const isPairsStrategy = strategyDetails?.isPairs;
-  const isMultiAssetStrategy = strategyDetails?.isMultiAsset;
   const canRun =
     strategy &&
-    (isMultiAssetStrategy || symbol) && // Multi-asset doesn't need symbol
+    symbol &&
     (!isPairsStrategy || symbolB) && // Require symbolB for pairs strategies
     startDate &&
     endDate &&
@@ -375,6 +351,31 @@ export function StrategyConfig() {
     <div className="bg-gray-800 rounded-lg border border-gray-700 p-3 space-y-3">
       <h2 className="text-lg font-semibold text-white">Configuration</h2>
 
+      {/* Tab Bar */}
+      <div className="flex border-b border-gray-700 -mx-3 px-3">
+        <button
+          onClick={() => setActiveConfigTab('strategies')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeConfigTab === 'strategies'
+              ? 'border-primary-500 text-white'
+              : 'border-transparent text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          Strategies
+        </button>
+        <button
+          onClick={() => setActiveConfigTab('aggregations')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeConfigTab === 'aggregations'
+              ? 'border-primary-500 text-white'
+              : 'border-transparent text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          Aggregations
+        </button>
+      </div>
+
+      {activeConfigTab === 'strategies' && (<>
       {/* Strategy Selection */}
       <div>
         <label className="block text-sm text-gray-400 mb-1">Strategy</label>
@@ -435,9 +436,8 @@ export function StrategyConfig() {
         </div>
       )}
 
-      {/* Symbol & Timeframe - hidden for multi-asset strategies */}
-      {!isMultiAssetStrategy && (
-        <div className="grid grid-cols-2 gap-3">
+      {/* Symbol & Timeframe */}
+      <div className="grid grid-cols-2 gap-3">
         {exchange === 'polymarket' ? (
           <div className="col-span-2">
             <PolymarketBrowser
@@ -508,31 +508,7 @@ export function StrategyConfig() {
             ))}
           </select>
         </div>
-        </div>
-      )}
-
-      {/* Multi-asset info banner */}
-      {isMultiAssetStrategy && (
-        <div className="bg-blue-900/20 border border-blue-700/30 rounded p-2.5">
-          <div className="text-xs text-blue-400 font-medium mb-1">Multi-Asset Portfolio</div>
-          <div className="text-xs text-gray-400">
-            Assets are configured via the strategy parameters below.
-            Each asset has its own symbol and timeframe.
-          </div>
-          <div className="text-xs text-gray-500 mt-1">
-            {(() => {
-              const preset = params.preset as string || 'conservative';
-              const PRESETS: Record<string, string> = {
-                conservative: 'ATOM/USDT:USDT@4h,DOT/USDT:USDT@4h,ADA/USDT:USDT@1h,OP/USDT:USDT@1h,INJ/USDT:USDT@4h',
-                moderate: 'ATOM/USDT:USDT@4h,DOT/USDT:USDT@4h,ADA/USDT:USDT@1h,OP/USDT:USDT@1h,INJ/USDT:USDT@4h,LINK/USDT:USDT@4h,AVAX/USDT:USDT@4h,LTC/USDT:USDT@4h',
-              };
-              const assetsStr = preset !== 'custom' ? (PRESETS[preset] || '') : (params.assets as string || '');
-              const count = assetsStr ? assetsStr.split(',').length : 0;
-              return `${count} assets | ${preset} preset | Exchange: ${exchange}`;
-            })()}
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Symbol B & Leverage (only for pairs strategies) */}
       {isPairsStrategy && (
@@ -754,6 +730,23 @@ export function StrategyConfig() {
           {error}
         </div>
       )}
+
+      {/* Inline History */}
+      <div className="border-t border-gray-700 pt-3 mt-3">
+        <h3 className="text-sm font-medium text-gray-400 mb-2">Recent Strategy Runs</h3>
+        <HistoryExplorerContent
+          fixedRunType="strategies"
+          compact={true}
+          showFilters={false}
+          showGroupToggle={false}
+          maxHeight="280px"
+          selectedId={selectedBacktestId}
+          onSelectRun={handleSelectHistoryRun}
+        />
+      </div>
+      </>)}
+
+      {activeConfigTab === 'aggregations' && <AggregationsPanel />}
     </div>
   );
 }

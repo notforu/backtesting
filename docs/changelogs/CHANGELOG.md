@@ -4,6 +4,60 @@ All notable changes to this project are documented here. Newest entries first.
 
 ---
 
+## [2026-02-22] Aggregation as a First-Class Entity (Complete Refactoring)
+
+### Changed
+- **Removed legacy hacks**: Deleted `strategies/signal-aggr.ts` and `strategies/fr-spike-aggr.ts` (temporary multi-asset scaffolding)
+- **Replaced ad-hoc API**: Removed `POST /api/backtest/multi/run` and `POST /api/backtest/aggregate/run` endpoints (-316 lines from backtest.ts)
+- **Multi-asset detection**: Changed from `symbol === 'MULTI'` check to detecting `perAssetResults` field for better semantics
+- **Frontend refactoring**: Removed all multi-asset conditional branches, ASSET_PRESETS, and legacy hooks from StrategyConfig
+
+### Added
+- **Aggregation entity**: First-class persistent configuration for composing multiple strategy+symbol+timeframe combinations
+- **6 new API endpoints**: Full CRUD + run at `/api/aggregations/` (GET all, POST create, GET by id, PUT update, DELETE, POST run)
+- **Database migration**: `aggregation_configs` table + `aggregation_id` FK on `backtest_runs`
+- **Backend CRUD layer**: 5 new async database functions in `src/data/db.ts` for aggregation persistence
+- **Frontend store**: Zustand store (`src/web/stores/aggregationStore.ts`) for aggregation UI state
+- **Frontend components**: AggregationsPanel + CreateAggregationModal for full aggregation workflow
+- **Tab interface**: Added "Strategies | Aggregations" tab bar in StrategyConfig for switching modes
+- **History UI**: AGG badge (purple) for aggregation runs, "Portfolio" label for multi-asset runs, run type filter
+
+### Verified
+- TypeScript: 0 errors (`npm run typecheck`)
+- Tests: 303 passing (10 test files)
+- No orphaned references to deleted strategy files
+- Aggregation create/update/delete/run working end-to-end
+- Historical aggregation runs correctly linked and displayed
+
+### Context
+The platform previously used two fake strategies to handle multi-asset portfolios. This refactoring establishes Aggregation as a proper saved entity with persistent DB storage, dedicated CRUD API, and frontend UI. Users can now create repeatable, auditable portfolio configurations instead of ad-hoc orchestrations. Aggregations are first-class citizens alongside individual strategy runs, visible in history with proper badges and filtering.
+
+**Files Modified**: 14 files, ~600 lines added, ~400 lines removed (net +200)
+
+See `/docs/changelogs/2026-02-22-133000-aggregation-first-class-entity.md` for full 9-phase breakdown.
+
+---
+
+## [2026-02-21] Aggregate Engine Bug Fixes
+
+### Fixed
+- **Missing Parameter Labels**: Added `label` fields to params in `fr-spike-aggr.ts` and `signal-aggr.ts` - UI was displaying blank labels because ParamInput renders param.label
+- **String Date Handling**: Fixed `src/core/aggregate-engine.ts` to defensively convert string dates to numeric timestamps before passing to `getCandles()`
+
+### Verified
+- Multi-asset aggregation (2-asset and 5-asset configs) working correctly
+- Allocation modes: `single_strongest` and `top_n` produce valid results
+- Per-asset breakdowns, funding income tracking, and signal history all functioning properly
+
+### Context
+Signal aggregation framework bug fixes improving robustness across parameter display and date handling. All fixes are backward-compatible and non-breaking. End-to-end testing confirms correct behavior across different allocation modes and asset counts.
+
+**Files**: `strategies/fr-spike-aggr.ts`, `strategies/signal-aggr.ts`, `src/core/aggregate-engine.ts`
+
+See `/docs/changelogs/2026-02-21-153200-aggregate-engine-fixes.md` for detailed analysis.
+
+---
+
 ## [2026-02-16] Filesystem Result Storage for All Backtests
 
 ### Added
