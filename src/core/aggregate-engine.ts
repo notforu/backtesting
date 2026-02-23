@@ -480,7 +480,7 @@ export async function runAggregateBacktest(
     id,
     config: {
       id,
-      strategyName: 'signal-aggr',
+      strategyName: 'aggregation',
       symbol: 'MULTI',
       timeframe: dominantTimeframe,
       startDate,

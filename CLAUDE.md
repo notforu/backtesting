@@ -66,6 +66,14 @@ Before completing ANY session, verify:
 - [ ] Changelog created for code changes
 - [ ] Changes committed (if requested)
 
+### 🖼️ RULE 7: No Screenshots or Temp Files in Repo
+
+**NEVER store screenshots (.png, .jpg, .jpeg, .gif, .bmp), temporary test scripts, or scratch files in the project root or anywhere in the repo.**
+- Screenshots from Playwright MCP or UI testing go to `.playwright-mcp/` (gitignored)
+- Temporary test scripts (test-*.mjs, test-*.ts in root) must be deleted after use
+- Scratch files (p.txt, notes, etc.) must not be committed
+- If you need to save an image for documentation, put it in `/docs/images/` and reference it from a markdown file
+
 **DO NOT skip these rules. They are REQUIRED.**
 
 ---
@@ -186,6 +194,29 @@ When user requests strategy research:
 - [ ] ESLint passes
 - [ ] Tests pass (when applicable)
 - [ ] Docs updated (if behavior changed)
+
+### 🔴 RULE 6: Critical Test Coverage for Financial Logic
+
+**ALL code that affects backtesting calculations, position sizing, capital allocation, PnL, metrics, equity curves, or trade execution MUST have 100% unit test coverage with ALL corner cases.**
+
+This includes but is not limited to:
+- **Portfolio/position management**: open/close long/short, PnL calculation, fee handling, funding payments
+- **Capital allocation**: position sizing, capital splitting across multi-asset, weight-based allocation
+- **Signal generation**: signal adapters, weight calculators, signal selection/ranking
+- **Metrics calculation**: Sharpe, sortino, max drawdown, win rate, profit factor, expectancy
+- **Equity curves**: per-asset and portfolio-level equity tracking
+- **Engine execution**: trade execution order, exit-before-entry, same-bar behavior
+
+**Why**: False-positive backtest results caused by calculation bugs lead to losing real money in production. Every edge case must be tested:
+- Zero trades, single trade, many trades
+- Mixed long/short positions across assets
+- Simultaneous signals on the same bar
+- Exit + re-entry on same bar
+- Insufficient capital / partial fills
+- Fee and slippage edge cases
+- Funding rate payments during positions
+
+**Test-first (TDD) approach required for bug fixes**: Write failing tests first, then fix code, then verify green.
 
 ## Key Directories
 

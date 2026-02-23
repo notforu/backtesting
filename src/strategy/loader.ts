@@ -22,7 +22,6 @@ export interface StrategyInfo {
   params: StrategyParam[];
   filePath: string;
   isPairs?: boolean;
-  isMultiAsset?: boolean;
 }
 
 /**
@@ -114,7 +113,6 @@ export async function getStrategyDetails(name: string): Promise<StrategyInfo> {
     params: strategy.params,
     filePath: path.join(STRATEGIES_DIR, `${name}.ts`),
     isPairs: (strategy as any).isPairs === true,
-    isMultiAsset: (strategy as any).isMultiAsset === true,
   };
 }
 

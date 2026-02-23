@@ -69,6 +69,10 @@ export function saveResultToFile(result: BacktestResult | PairsBacktestResult): 
     // Rolling metrics if present
     ...(result.rollingMetrics ? { rollingMetrics: result.rollingMetrics } : {}),
 
+    // Aggregate-specific fields (present on AggregateBacktestResult)
+    ...((result as any).perAssetResults != null ? { perAssetResults: (result as any).perAssetResults } : {}),
+    ...((result as any).signalHistory != null ? { signalHistory: (result as any).signalHistory } : {}),
+
     // Metadata
     meta: {
       savedAt: new Date().toISOString(),

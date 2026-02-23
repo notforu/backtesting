@@ -37,3 +37,12 @@ yarn-error.log*
 
 # Docker sandbox config
 .docker/
+
+# Screenshots and temp files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+p.txt
+test-*.mjs

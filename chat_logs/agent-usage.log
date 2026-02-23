@@ -3,6 +3,11 @@
 Track agent invocations to understand token consumption patterns.
 Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-19 10:00] be-dev (sonnet) - Write and run scripts/run-fr-backtests-save.ts to persist ATOM/DOT 4h funding-rate-spike backtests to PostgreSQL
+[2026-02-22 08:28] be-dev (sonnet) - Write failing unit tests exposing aggregate engine calculation bugs (TDD red phase)
+[2026-02-22 00:00] fe-dev (sonnet) - Fix signal-aggr multi-asset display bugs (rollingMetrics prop, profitFactor formula, expectancyPercent, PRESETS dedup, store type)
+[2026-02-21 00:00] be-dev (sonnet) - Create MultiSymbolPortfolio class and tests
+[2026-02-21 15:32] docs-writer (haiku) - Create changelog for aggregate engine bug fixes (param labels, date handling)
+[2026-02-22 13:30] docs-writer (haiku) - Create comprehensive changelog for aggregation first-class entity refactoring (9 phases: DB, API, types, store, UI, display logic, history, cleanup)
 
 ---
 
@@ -447,3 +452,112 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-20 13:35] fe-dev (sonnet) - Fix getCandles: rename startDate/endDate to start/end params, extract candles array from response
 [2026-02-20 13:34] fe-dev (sonnet) - Fix getCandles param name mismatch and response extraction
 [2026-02-20 13:35] ui-tester (sonnet) - Visual test multi-asset fr-spike-aggr UI flow
+[2026-02-20 13:39] commit (haiku) - multi-asset fr-spike-aggr strategy with chart sync
+[2026-02-20 14:00] fe-dev (sonnet) - Replace state-based chart sync with imperative ref-based sync to eliminate scroll lag
+[2026-02-20 14:00] fe-dev (sonnet) - Replace React state-based chart sync with imperative refs for zero-lag scroll sync
+[2026-02-20 15:25] fe-dev (sonnet) - Embed FR histogram inside Chart component, remove separate FundingRateChart and all chart sync machinery from App.tsx
+[2026-02-20 14:15] fe-dev (sonnet) - Embed FR histogram in main chart, remove separate FundingRateChart and all sync code
+[2026-02-20 14:20] ui-tester (sonnet) - Visual test embedded FR histogram in main chart
+[2026-02-20 14:30] commit (haiku) - Embed FR histogram in main Chart, remove separate FundingRateChart
+[2026-02-20 14:35] fe-dev (sonnet) - Add crosshair tooltip to Chart component with OHLC and funding rate overlay values
+[2026-02-20 14:40] be-dev (sonnet) - Fix rollingMetrics: DB migration 004, save/load in db.ts, calculate for multi-asset backtest
+[2026-02-20 16:43] fe-dev (sonnet) - Add toggleable ROI/Drawdown/Sharpe/WinRate chart overlays
+[2026-02-20 15:30] Explore (sonnet) - Investigate empty rollingMetrics performance charts
+[2026-02-20 15:45] be-dev (sonnet) - Fix rollingMetrics DB persistence + multi-asset calculation + analysis export
+[2026-02-20 15:50] fe-dev (sonnet) - Add crosshair tooltip with OHLC/FR display
+[2026-02-20 16:00] fe-dev (sonnet) - Add ROI/DD/Sharpe/WinRate toggleable overlays on main chart
+[2026-02-20 16:45] ui-tester (sonnet) - Visual test chart overlays, tooltip, and perf charts
+[2026-02-20 16:56] commit (haiku) - add rolling metrics persistence and toggleable overlays with crosshair tooltip
+[2026-02-21 03:43] fe-dev (sonnet) - Remove PerformanceCharts section and add per-asset Dashboard metrics in multi-asset view
+[2026-02-21 03:43] be-dev (sonnet) - Create signal-types.ts with Signal Aggregation Framework type definitions
+[2026-02-21 03:44] be-dev (sonnet) - Create weight-calculators.ts and its vitest test suite
+[2026-02-21 10:00] fe-dev (sonnet) - Quick fixes: App.tsx remove PerformanceCharts, per-asset Dashboard metrics
+[2026-02-21 10:00] be-dev (sonnet) - Create signal-types.ts type definitions
+[2026-02-21 10:00] be-dev (sonnet) - Create multi-portfolio.ts + 43 tests
+[2026-02-21 10:00] be-dev (sonnet) - Create weight-calculators.ts + 19 tests
+[2026-02-21 10:05] be-dev (sonnet) - Create signal-adapter.ts + tests
+[2026-02-21 03:49] be-dev (sonnet) - Create signal-adapter.ts and signal-adapter.test.ts (28 tests, all passing)
+[2026-02-21 10:10] be-dev (sonnet) - Create aggregate-engine.ts + integration tests
+[2026-02-21 00:00] be-dev (sonnet) - Create aggregate engine and unit tests for signal-based multi-strategy backtesting
+[2026-02-21 10:15] be-dev (sonnet) - API aggregate endpoint + signal-aggr strategy + loader isAggregate
+[2026-02-21 03:58] be-dev (sonnet) - Add aggregate backtest endpoint, signal-aggr strategy, and isAggregate field to strategy loader
+[2026-02-21 10:20] fe-dev (sonnet) - Frontend types, client, hooks, StrategyConfig aggregate integration
+[2026-02-21 04:05] docs-writer (haiku) - Create changelog for Signal Aggregation Framework implementation
+[2026-02-21 04:05] fe-dev (sonnet) - Quick fixes: remove PerformanceCharts, per-asset Dashboard metrics
+[2026-02-21 04:05] be-dev (sonnet) - Create signal-types.ts core types
+[2026-02-21 04:05] be-dev (sonnet) - Create multi-portfolio.ts + 43 tests
+[2026-02-21 04:05] be-dev (sonnet) - Create weight-calculators.ts + 19 tests
+[2026-02-21 04:10] be-dev (sonnet) - Create signal-adapter.ts + 28 tests
+[2026-02-21 04:15] be-dev (sonnet) - Create aggregate-engine.ts + 11 tests
+[2026-02-21 04:20] be-dev (sonnet) - API endpoint, signal-aggr strategy, loader updates
+[2026-02-21 04:25] fe-dev (sonnet) - Frontend types, client, hooks, StrategyConfig UI
+[2026-02-21 04:35] docs-writer (haiku) - Changelog for signal aggregation framework
+[2026-02-21 15:27] be-dev (sonnet) - Add label fields to params in fr-spike-aggr.ts and signal-aggr.ts
+[2026-02-21 15:30] be-dev (sonnet) - Fix strategy param labels for fr-spike-aggr and signal-aggr
+[2026-02-21 15:32] docs-writer (haiku) - Changelog for aggregate engine fixes
+[2026-02-22 03:58] fe-dev (sonnet) - Fix per-asset Dashboard metrics display in App.tsx to avoid portfolio-level metric bleed-through
+[2026-02-22 04:15] fe-dev (sonnet) - Fix per-asset Dashboard metrics (use perAssetResults directly, no portfolio bleed-through)
+[2026-02-22 04:15] docs-writer (haiku) - Changelog for per-asset metrics fix
+[2026-02-22 08:10] fullstack-dev (sonnet) - Code review: signal-aggr strategy and multi-asset display bugs
+[2026-02-22 04:30] architect (opus) - Critical review of signal-aggr and multi-asset display code
+[2026-02-22 04:30] fullstack-dev (sonnet) - Critical review of signal-aggr data flow and display bugs
+[2026-02-22 08:26] be-dev (sonnet) - Write failing unit tests for aggregate backtest DB persistence and API bugs (TDD red phase)
+[2026-02-22 08:30] be-dev (sonnet) - Fix 3 engine calculation bugs: capital allocation mid-loop mutation, double onBar on exit bars, short position cash inflation
+[2026-02-22 08:30] fullstack-dev (sonnet) - Fix DB persistence and file storage bugs for aggregate backtest results (perAssetResults, signalHistory)
+[2026-02-22 08:38] qa (sonnet) - Write comprehensive unit tests for aggregate engine integration logic in aggregate-engine.test.ts
+[2026-02-22 08:39] qa (sonnet) - Add 42 comprehensive unit tests for multi-portfolio financial calculation code paths
+[2026-02-22 08:41] qa (sonnet) - Write comprehensive unit tests for signal-adapter.ts covering shadow portfolio fields, equity calculations, CandleView, multiple actions, legacy buy/sell, log, funding rates, double-onBar prevention, and confirmExecution variants
+[2026-02-22 08:30] qa (sonnet) - Comprehensive multi-portfolio test coverage (42 new tests)
+[2026-02-22 08:30] qa (sonnet) - Comprehensive signal-adapter test coverage (58 new tests)
+[2026-02-22 08:30] qa (sonnet) - Comprehensive engine integration test coverage (27 new tests)
+[2026-02-22 08:58] fe-dev (sonnet) - Create PortfolioChart component and wire into App.tsx Portfolio tab
+[2026-02-22 09:00] Explore (haiku) - Explore chart/App.tsx architecture for aggregate backtests
+[2026-02-22 09:05] fe-dev (sonnet) - Create PortfolioChart component + wire into App.tsx
+[2026-02-22 09:10] docs-writer (haiku) - Create changelog for PortfolioChart component
+[2026-02-22 09:30] architect (opus) - Analyze portfolio vs per-asset metrics calculation
+[2026-02-22 09:34] be-dev (sonnet) - Fix per-asset equity curves in aggregate engine to use dense bar-by-bar tracking instead of sparse trade-only timestamps
+[2026-02-22 09:35] be-dev (sonnet) - Fix dense per-asset equity curves in aggregate engine
+[2026-02-22 10:25] be-dev (sonnet) - Fix per-asset capital base in aggregate engine
+[2026-02-22 10:26] be-dev (haiku) - Fix per-asset capital base to use full initialCapital
+[2026-02-22 10:30] commit (sonnet) - Commit per-asset equity fixes
+[2026-02-22 18:30] architect (opus) - Deep analysis of Aggregation entity design, current system review, clarifying questions
+[2026-02-22 12:57] be-dev (sonnet) - Implement Phase 1 (DB migration) and Phase 2 (Backend API) for Aggregation first-class entity
+[2026-02-22 13:15] fe-dev (sonnet) - Implement Phase 3 (Frontend types, API client, React Query hooks) and Phase 4 (Aggregation Zustand store) for Aggregation first-class entity
+[2026-02-22 13:00] docs-writer (haiku) - Create changelog for aggregation first-class entity phase 1+2
+[2026-02-22 13:00] be-dev (sonnet) - Phase 1+2: DB migration + API routes for Aggregation entity
+[2026-02-22 13:00] fe-dev (sonnet) - Phase 3+4: Frontend types, API client, hooks, aggregation store
+[2026-02-22 13:03] fe-dev (sonnet) - Implement Phase 5 (Config Panel Tabs), Phase 6 (AggregationsPanel + CreateAggregationModal), Phase 7 (App.tsx perAssetResults detection)
+[2026-02-22 13:15] fe-dev (sonnet) - Phase 5+6+7: Config panel tabs, AggregationsPanel, CreateAggregationModal, App.tsx display logic
+[2026-02-22 13:06] fullstack-dev (sonnet) - Phase 8: Remove legacy multi-asset hack code (signal-aggr/fr-spike-aggr strategies, /multi/run and /aggregate/run endpoints, legacy hooks/types/UI)
+[2026-02-22 13:30] fe-dev (sonnet) - Phase 9: History Explorer Updates - AGG badge, Portfolio symbol display, run type filter (All/Strategies/Aggregations)
+[2026-02-22 14:00] fe-dev (sonnet) - Refactor HistoryExplorer into HistoryExplorerContent+modal, add inline history in StrategyConfig/AggregationsPanel tabs, add history picker in CreateAggregationModal
+[2026-02-22 13:43] be-dev (sonnet) - Fix history API: pass aggregationId/aggregationName in response mapping, add runType filter to HistoryFilters + SQL conditions + Zod schema, add runType to frontend HistoryParams and getHistory()
+[2026-02-22 18:30] be-dev (sonnet) - Fix aggregation fields in history API + add runType server-side filter
+[2026-02-22 18:30] fe-dev (sonnet) - Refactor HistoryExplorer into content+modal, add inline history in tabs, add history picker in CreateAggregationModal
+[2026-02-22 18:35] docs-writer (haiku) - Create changelog for inline history tabs + picker
+[2026-02-22 18:40] fe-dev (sonnet) - Remove legacy History widget from sidebar, widen sidebar from w-80 to w-96
+[2026-02-22 18:50] fe-dev (sonnet) - Fix inline history widgets not refreshing after backtest/aggregation by adding explorer-history query invalidation
+[2026-02-22 18:45] fe-dev (sonnet) - Fix explorer-history cache invalidation after backtest/aggregation runs
+[2026-02-22 18:45] fe-dev (sonnet) - Remove legacy History widget from sidebar, widen sidebar to w-96
+[2026-02-22 18:45] docs-writer (haiku) - Create changelog for inline history refresh fix and cleanup
+[2026-02-22 15:23] commit (haiku) - history tabs, aggregation picker, and sidebar fixes
+[2026-02-22 18:50] commit (sonnet) - Commit inline history tabs + aggregation picker + fixes
+[2026-02-22 12:00] Explore (sonnet) - Explore FR spike strategy state and data
+[2026-02-22 12:00] Bash (sonnet) - Check cached data in database
+[2026-02-22 19:00] be-dev (sonnet) - Create fr-spike-batch-scan.ts script for bulk FR spike backtests across 73 symbols and multiple timeframes
+[2026-02-22 12:15] be-dev (sonnet) - Create FR spike batch scan script
+[2026-02-22 13:00] Bash (N/A) - Run comprehensive FR spike batch scan (148 runs)
+[2026-02-22 16:16] be-dev (sonnet) - Create fr-spike-walk-forward-batch.ts script for batch WF testing across symbol/TF candidates
+[2026-02-22 13:15] be-dev (sonnet) - Create walk-forward batch test script
+[2026-02-22 19:10] be-dev (sonnet) - Add mode:'futures' support to walk-forward system (WalkForwardConfig, optimizationConfig, test phase backtest, CLI --mode flag, batch script --exchange=bybit)
+[2026-02-22 13:30] be-dev (sonnet) - Fix walk-forward mode+exchange support for futures
+[2026-02-23 02:23] be-dev (sonnet) - rewrite fr-spike-walk-forward-batch to use direct runWalkForwardTest import instead of child processes
+[2026-02-22 14:00] be-dev (sonnet) - Rewrite WF batch to use direct imports (no child processes)
+[2026-02-22 15:00] Bash (N/A) - Walk-forward batch tests (25 runs, 4 passed)
+[2026-02-22 15:15] Explore (sonnet) - Explore aggregation system architecture
+[2026-02-23 03:08] be-dev (haiku) - Update fr-spike-aggr-backtest.ts presets with new comprehensive scan results
+[2026-02-22 15:30] Bash (N/A) - Run 6 aggregation presets and compare results
+[2026-02-23 03:09] be-dev (sonnet) - Create script to save FR aggregation configs
+[2026-02-23 10:57] be-dev (sonnet) - Create run-fr-aggregations.ts script to run stored aggregation configs and save results
+[2026-02-23 17:30] Explore (sonnet) - investigate why aggregation backtests not showing in dashboard
+[2026-02-23 17:35] be-dev (sonnet) - create run-fr-aggregations.ts script

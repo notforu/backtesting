@@ -138,6 +138,7 @@ async function main(): Promise<void> {
     initialCapital: args.capital ? Number(args.capital) : 10000,
     symbolB,
     leverage,
+    mode: args.mode === 'futures' ? 'futures' : undefined,
   };
 
   console.error(`Running walk-forward test: ${config.strategyName} on ${config.symbol}`);

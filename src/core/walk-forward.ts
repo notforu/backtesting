@@ -112,6 +112,11 @@ export interface WalkForwardConfig {
    * Leverage for pairs trading (default: 1)
    */
   leverage?: number;
+
+  /**
+   * Trading mode: 'spot' or 'futures' (default: 'spot')
+   */
+  mode?: 'spot' | 'futures';
 }
 
 /**
@@ -210,6 +215,7 @@ export async function runWalkForwardTest(
     minTrades = 10,
     oosThreshold = 30,
     minTestSharpe = 0.5,
+    mode,
   } = config;
 
   // Validate configuration
@@ -255,6 +261,7 @@ export async function runWalkForwardTest(
     minTrades,
     symbolB: config.symbolB,
     leverage: config.leverage,
+    mode,
   };
 
   const optimizationResult = await runOptimization(optimizationConfig);
@@ -303,6 +310,7 @@ export async function runWalkForwardTest(
         endDate,
         initialCapital,
         exchange,
+        mode,
       },
       engineConfig
     );
