@@ -284,7 +284,10 @@ export async function runAggregateBacktest(
 
       if (allocationMode === 'weighted_multi' && selectedSignals.length > 1) {
         // Proportional to signal weight, calculated from pre-loop cash snapshot
-        capitalForTrade = (signal.weight / totalWeightSnapshot) * cashSnapshot * 0.9;
+        // Fall back to equal split if total weight is zero (avoids NaN from division by zero)
+        capitalForTrade = totalWeightSnapshot > 0
+          ? (signal.weight / totalWeightSnapshot) * cashSnapshot * 0.9
+          : (cashSnapshot * 0.9) / selectedSignals.length;
       } else if (allocationMode === 'top_n' && selectedSignals.length > 1) {
         // Equal split across all selected signals, calculated from pre-loop cash snapshot
         capitalForTrade = (cashSnapshot * 0.9) / selectedSignals.length;

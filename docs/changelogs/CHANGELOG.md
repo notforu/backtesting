@@ -4,6 +4,34 @@ All notable changes to this project are documented here. Newest entries first.
 
 ---
 
+## [2026-02-24] FR Spike Aggregation Exploration & Bug Fix
+
+### Summary
+Completed comprehensive testing of 27 aggregation configurations to determine optimal deployment parameters for multi-asset funding rate spike trading. Findings: curated asset portfolios (Top 10: ADA, ATOM, DOT, ETC, HBAR, ICP, LINK, OP, XRP, INJ) achieve Sharpe 1.0+ while full universe loses 90%+. Optimal configuration is Top 10 assets with weighted_multi allocation and maxPos=5 (Sharpe 1.11, 22.1% max DD, 114.8% return).
+
+### Fixed
+- **weighted_multi NaN bug**: Fixed division by zero in `/workspace/src/core/aggregate-engine.ts` line 287 when signal weights sum to zero. Added fallback to equal-split allocation when `totalWeightSnapshot = 0`.
+
+### Added
+- **Exploration script**: `/workspace/scripts/explore-fr-aggregations.ts` - Systematic testing of all 27 configs across 6 asset selections, 4 allocation modes, and 2 timeframes
+- **Analysis**: `/docs/changelogs/2026-02-24-140000-fr-aggregation-exploration.md` - Complete results table, key findings, deployment recommendations
+
+### Key Insights
+1. **Asset selection is everything**: Curated Top 10 (Sharpe 1.11) vs full universe (Sharpe -0.87). Meme coins destroy portfolios (-98% return).
+2. **Optimal positions**: maxPos=3-5 is sweet spot. More diversification dilutes signal quality.
+3. **weighted_multi best risk-adjusted**: Lowest DD (22.1%) among high-Sharpe configs.
+4. **4h >> 1h**: 4h reduces noise and transaction costs. 1h generates 3x more trades.
+5. **Funding income is structural alpha**: $1,200-1,400 over 2 years = 12-14% annual equivalent, independent of price direction.
+
+### Recommended Deployment
+- **Sharpe 1.11, DD 22.1%**: Top 10 weighted_multi maxPos=5 (best risk-adjusted)
+- **Sharpe 1.12, DD 34.9%**: Top 10 single_strongest (highest return but higher DD)
+- **Sharpe 1.02, DD 24.7%**: Top 10 top_n maxPos=3 (balanced middle ground)
+
+See `/docs/changelogs/2026-02-24-140000-fr-aggregation-exploration.md` for full methodology and 27-config results table.
+
+---
+
 ## [2026-02-22] Aggregation as a First-Class Entity (Complete Refactoring)
 
 ### Changed

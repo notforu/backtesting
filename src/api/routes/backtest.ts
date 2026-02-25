@@ -332,6 +332,7 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         ...(query.mode ? { mode: query.mode } : {}),
         ...(query.minSharpe ? { minSharpe: parseFloat(query.minSharpe) } : {}),
         ...(query.minReturn ? { minReturn: parseFloat(query.minReturn) } : {}),
+        ...(query.runType && (query.runType === 'strategies' || query.runType === 'aggregations') ? { runType: query.runType as 'strategies' | 'aggregations' } : {}),
       };
       const groups = await getBacktestGroups(filters);
       return reply.status(200).send({ groups });

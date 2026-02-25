@@ -72,7 +72,7 @@ export function AggregationsPanel() {
           No aggregations yet. Create one to get started.
         </div>
       ) : (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
           {aggregations.map((agg) => (
             <div
               key={agg.id}

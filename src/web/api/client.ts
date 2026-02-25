@@ -183,12 +183,14 @@ export async function getHistoryGroups(params?: {
   timeframe?: string;
   mode?: string;
   minSharpe?: number;
+  runType?: 'strategies' | 'aggregations';
 }): Promise<{ groups: BacktestGroup[] }> {
   const queryParams = new URLSearchParams();
   if (params?.strategy) queryParams.append('strategy', params.strategy);
   if (params?.timeframe) queryParams.append('timeframe', params.timeframe);
   if (params?.mode) queryParams.append('mode', params.mode);
   if (params?.minSharpe !== undefined) queryParams.append('minSharpe', String(params.minSharpe));
+  if (params?.runType) queryParams.append('runType', params.runType);
   const qs = queryParams.toString();
   return apiFetch<{ groups: BacktestGroup[] }>(`/backtest/history/groups${qs ? `?${qs}` : ''}`);
 }

@@ -92,7 +92,7 @@ const PAGE_SIZE = 10;
 export function useHistory() {
   return useInfiniteQuery<PaginatedHistory, Error>({
     queryKey: queryKeys.history,
-    queryFn: ({ pageParam = 0 }) => getHistory({ limit: PAGE_SIZE, offset: pageParam as number }),
+    queryFn: ({ pageParam = 0 }) => getHistory({ limit: PAGE_SIZE, offset: pageParam as number, runType: 'strategies' }),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       if (!lastPage.hasMore) return undefined;

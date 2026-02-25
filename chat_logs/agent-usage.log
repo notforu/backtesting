@@ -3,6 +3,7 @@
 Track agent invocations to understand token consumption patterns.
 Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-19 10:00] be-dev (sonnet) - Write and run scripts/run-fr-backtests-save.ts to persist ATOM/DOT 4h funding-rate-spike backtests to PostgreSQL
+[2026-02-24 14:00] docs-writer (haiku) - Create changelog for FR spike aggregation exploration (27 configs tested, weighted_multi bug fix)
 [2026-02-22 08:28] be-dev (sonnet) - Write failing unit tests exposing aggregate engine calculation bugs (TDD red phase)
 [2026-02-22 00:00] fe-dev (sonnet) - Fix signal-aggr multi-asset display bugs (rollingMetrics prop, profitFactor formula, expectancyPercent, PRESETS dedup, store type)
 [2026-02-21 00:00] be-dev (sonnet) - Create MultiSymbolPortfolio class and tests
@@ -561,3 +562,14 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-23 10:57] be-dev (sonnet) - Create run-fr-aggregations.ts script to run stored aggregation configs and save results
 [2026-02-23 17:30] Explore (sonnet) - investigate why aggregation backtests not showing in dashboard
 [2026-02-23 17:35] be-dev (sonnet) - create run-fr-aggregations.ts script
+[2026-02-24 03:22] be-dev (sonnet) - create explore-fr-aggregations.ts script with 28 configs covering allocation modes, maxPos sweep, themed portfolios, and param variations
+[2026-02-24 14:00] Explore (haiku) - Explore FR aggregation framework and existing configs
+[2026-02-24 14:05] be-dev (sonnet) - Create explore-fr-aggregations.ts script with 27 configs
+[2026-02-24 14:10] Explore (haiku) - Debug weighted_multi NaN issue in aggregate engine
+[2026-02-24 14:15] docs-writer (haiku) - Create FR aggregation exploration changelog
+[2026-02-24 15:33] fe-dev (sonnet) - Fix 6 frontend issues: history runType filter, chart resolution picker, aggregation list scroll, runType group-by filtering, immediate toggle, default groupByAsset
+[2026-02-24 15:00] Explore (sonnet) - Explore dashboard history and aggr UI issues
+[2026-02-24 15:05] fe-dev (sonnet) - Fix 6 dashboard/history UI issues (history filter, chart resolution, aggr scroll, toggler, group default)
+[2026-02-24 15:49] fullstack-dev (sonnet) - Fix aggregation runs appearing in strategy history by filtering on MULTI symbol
+[2026-02-24 15:59] fe-dev (sonnet) - Fix 4 dashboard UI issues: AGG badge for MULTI symbol, RunParamsModal for param view/edit/rerun, remove portfolio chart trade markers, replace Portfolio label with dash for MULTI rows
+[2026-02-24 15:30] fe-dev (sonnet) - Fix AGG badge, remove Portfolio label, remove chart arrows, add params modal

@@ -511,9 +511,9 @@ export async function getBacktestSummaries(
   }
 
   if (filters.runType === 'strategies') {
-    conditions.push(`br.aggregation_id IS NULL`);
+    conditions.push(`br.aggregation_id IS NULL AND br.config->>'symbol' != 'MULTI'`);
   } else if (filters.runType === 'aggregations') {
-    conditions.push(`br.aggregation_id IS NOT NULL`);
+    conditions.push(`(br.aggregation_id IS NOT NULL OR br.config->>'symbol' = 'MULTI')`);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -645,6 +645,11 @@ export async function getBacktestGroups(
   if (filters.minReturn !== undefined) {
     params.push(filters.minReturn);
     conditions.push(`(metrics->>'totalReturnPercent')::float >= $${params.length}`);
+  }
+  if (filters.runType === 'strategies') {
+    conditions.push(`aggregation_id IS NULL AND config->>'symbol' != 'MULTI'`);
+  } else if (filters.runType === 'aggregations') {
+    conditions.push(`(aggregation_id IS NOT NULL OR config->>'symbol' = 'MULTI')`);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

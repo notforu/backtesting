@@ -3,15 +3,12 @@
  * Displays portfolio equity as a line series with overlay metrics.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   createChart,
-  createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
-  type ISeriesMarkersPluginApi,
   type Time,
-  type SeriesMarker,
   ColorType,
   CrosshairMode,
   LineSeries,
@@ -31,6 +28,36 @@ function toChartTime(timestamp: number): Time {
   return (timestamp / 1000) as Time;
 }
 
+// Downsample equity points by picking the last point in each time bucket
+function downsampleEquity(equity: EquityPoint[], resolution: string): EquityPoint[] {
+  if (equity.length === 0) return equity;
+
+  const bucketMs: Record<string, number> = {
+    '1h': 3600000,
+    '4h': 14400000,
+    '1d': 86400000,
+    '1w': 604800000,
+  };
+
+  const bucket = bucketMs[resolution];
+  if (!bucket) return equity;
+
+  const result: EquityPoint[] = [];
+  let currentBucket = -1;
+
+  for (const point of equity) {
+    const b = Math.floor(point.timestamp / bucket);
+    if (b !== currentBucket) {
+      result.push(point);
+      currentBucket = b;
+    } else {
+      result[result.length - 1] = point;
+    }
+  }
+
+  return result;
+}
+
 // Chart color configuration - matches Chart.tsx dark theme
 const chartColors = {
   background: '#111827', // gray-900
@@ -38,7 +65,8 @@ const chartColors = {
   gridColor: '#1F2937',  // gray-800
 };
 
-export function PortfolioChart({ equity, rollingMetrics, trades, height = 450 }: PortfolioChartProps) {
+export function PortfolioChart({ equity, rollingMetrics, height = 450 }: PortfolioChartProps) {
+  const [resolution, setResolution] = useState<'1h' | '4h' | '1d' | '1w'>('4h');
   const [showROI, setShowROI] = useState(false);
   const [showDrawdown, setShowDrawdown] = useState(false);
   const [showSharpe, setShowSharpe] = useState(false);
@@ -55,10 +83,11 @@ export function PortfolioChart({ equity, rollingMetrics, trades, height = 450 }:
     winRate?: number;
   } | null>(null);
 
+  const displayEquity = useMemo(() => downsampleEquity(equity, resolution), [equity, resolution]);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const equitySeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const roiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const ddSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
   const sharpeSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -134,10 +163,6 @@ export function PortfolioChart({ equity, rollingMetrics, trades, height = 450 }:
     chartRef.current = chart;
     equitySeriesRef.current = equitySeries;
 
-    // Create markers plugin for trade entries
-    const seriesMarkers = createSeriesMarkers(equitySeries, []);
-    markersRef.current = seriesMarkers;
-
     // Subscribe to crosshair move for tooltip
     chart.subscribeCrosshairMove((param) => {
       if (!param.time || !param.point || param.point.x < 0 || param.point.y < 0) {
@@ -189,15 +214,14 @@ export function PortfolioChart({ equity, rollingMetrics, trades, height = 450 }:
       chart.remove();
       chartRef.current = null;
       equitySeriesRef.current = null;
-      markersRef.current = null;
     };
   }, []);
 
-  // Update equity data
+  // Update equity data (use downsampled data)
   useEffect(() => {
-    if (!equitySeriesRef.current || equity.length === 0) return;
+    if (!equitySeriesRef.current || displayEquity.length === 0) return;
 
-    const data = equity.map((pt) => ({
+    const data = displayEquity.map((pt) => ({
       time: toChartTime(pt.timestamp),
       value: pt.equity,
     }));
@@ -206,7 +230,7 @@ export function PortfolioChart({ equity, rollingMetrics, trades, height = 450 }:
     if (chartRef.current) {
       chartRef.current.timeScale().fitContent();
     }
-  }, [equity]);
+  }, [displayEquity]);
 
   // Update chart height
   useEffect(() => {
@@ -228,41 +252,6 @@ export function PortfolioChart({ equity, rollingMetrics, trades, height = 450 }:
       });
     }
   }, [hasAnyOverlay]);
-
-  // Update trade markers - show OPEN entries at equity value at that time
-  useEffect(() => {
-    if (!markersRef.current) return;
-
-    if (trades.length === 0) {
-      markersRef.current.setMarkers([]);
-      return;
-    }
-
-    // Build a quick lookup: timestamp -> equity value
-    const equityMap = new Map<number, number>();
-    for (const pt of equity) {
-      equityMap.set(pt.timestamp, pt.equity);
-    }
-
-    const markers: SeriesMarker<Time>[] = [];
-
-    for (const trade of trades) {
-      if (trade.action !== 'OPEN_LONG' && trade.action !== 'OPEN_SHORT') continue;
-
-      const isLong = trade.action === 'OPEN_LONG';
-      markers.push({
-        time: toChartTime(trade.timestamp),
-        position: isLong ? 'belowBar' : 'aboveBar',
-        color: isLong ? '#22C55E' : '#EF4444', // green for long, red for short
-        shape: isLong ? 'arrowUp' : 'arrowDown',
-      } as SeriesMarker<Time>);
-    }
-
-    // Sort markers by time (required by lightweight-charts)
-    markers.sort((a, b) => (a.time as number) - (b.time as number));
-
-    markersRef.current.setMarkers(markers);
-  }, [trades, equity]);
 
   // ROI overlay
   useEffect(() => {
@@ -434,7 +423,22 @@ export function PortfolioChart({ equity, rollingMetrics, trades, height = 450 }:
   return (
     <div className="relative rounded-lg bg-gray-900 border border-gray-700 overflow-hidden">
       {/* Chart toolbar */}
-      <div className="absolute top-2 right-2 z-10 flex gap-1">
+      <div className="absolute top-2 right-2 z-10 flex gap-1 items-center">
+        {/* Resolution picker */}
+        <span className="text-xs text-gray-500 mr-0.5">Res:</span>
+        {(['1h', '4h', '1d', '1w'] as const).map(res => (
+          <button
+            key={res}
+            onClick={() => setResolution(res)}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              resolution === res ? 'bg-gray-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+            }`}
+            title={`Set resolution to ${res}`}
+          >
+            {res}
+          </button>
+        ))}
+        <div className="w-px h-4 bg-gray-700 mx-0.5" />
         {hasRollingMetrics && (
           <>
             <button

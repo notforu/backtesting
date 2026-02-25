@@ -66,6 +66,14 @@ Before completing ANY session, verify:
 - [ ] Changelog created for code changes
 - [ ] Changes committed (if requested)
 
+### 💾 RULE 8: Always Save Backtest Results to Database
+
+**When exploring strategies or running backtests (aggregations, single-asset, or any variant), ALWAYS save results to the database via `saveBacktestRun()`.**
+- CLI scripts must call `saveBacktestRun(result)` after each successful run
+- This ensures all results appear in the dashboard history and can be reviewed later
+- NEVER run backtests without persisting results — the whole point is to track and compare runs
+- For aggregation runs, pass the aggregation config ID: `saveBacktestRun(result, aggregationId)`
+
 ### 🖼️ RULE 7: No Screenshots or Temp Files in Repo
 
 **NEVER store screenshots (.png, .jpg, .jpeg, .gif, .bmp), temporary test scripts, or scratch files in the project root or anywhere in the repo.**

@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getHistory, getHistoryGroups, type HistoryParams, type BacktestGroup } from '../../api/client';
 import type { BacktestSummary } from '../../types';
+import { RunParamsModal } from './RunParamsModal';
 
 // ============================================================================
 // Types
@@ -19,6 +20,7 @@ interface HistoryExplorerContentProps {
   compact?: boolean;
   showFilters?: boolean;
   showGroupToggle?: boolean;
+  defaultGroupByAsset?: boolean;
   maxHeight?: string;
   className?: string;
 }
@@ -116,94 +118,78 @@ function SortHeader({ label, column, currentSort, currentDir, onSort, className 
 // Run Row — params shown as expandable sub-row
 // ============================================================================
 
-function RunRow({ run, isSelected, isHighlighted, onSelect, expanded, onToggle }: {
+function RunRow({ run, isSelected, isHighlighted, onSelect, onShowParams }: {
   run: BacktestSummary;
   isSelected: boolean;
   isHighlighted?: boolean;
   onSelect: (run: BacktestSummary) => void;
-  expanded: boolean;
-  onToggle: (id: string) => void;
+  onShowParams: (run: BacktestSummary) => void;
 }) {
   const hasParams = run.params && Object.keys(run.params).length > 0;
+  const isAgg = run.aggregationName || run.symbol === 'MULTI';
 
   return (
-    <>
-      <tr
-        className={`border-b border-gray-700/50 cursor-pointer transition-colors ${
-          isSelected ? 'bg-primary-900/30' : isHighlighted ? 'bg-green-900/10 hover:bg-green-900/20' : 'hover:bg-gray-700/30'
-        }`}
-        onClick={() => onSelect(run)}
-      >
-        <td className="py-2 pr-3">
-          <div className="font-medium text-white text-sm truncate max-w-[160px]" title={run.aggregationName ?? run.strategyName}>
-            {run.aggregationName ? (
-              <span className="flex items-center gap-1.5">
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-900/50 text-purple-400 flex-shrink-0">AGG</span>
-                <span className="truncate">{run.aggregationName}</span>
-              </span>
-            ) : (
-              run.strategyName
-            )}
-          </div>
-        </td>
-        <td className="py-2 pr-3">
-          <span className="text-gray-300 text-sm font-mono">
-            {run.symbol === 'MULTI' ? (
-              <span className="text-purple-300">Portfolio</span>
-            ) : (
-              run.symbol
-            )}
-          </span>
-        </td>
-        <td className="py-2 pr-3 text-gray-400 text-xs">{run.timeframe}</td>
-        <td className="py-2 pr-3">
-          {run.mode ? (
-            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-              run.mode === 'futures' ? 'bg-blue-900/50 text-blue-300' : 'bg-gray-700 text-gray-400'
-            }`}>{run.mode}</span>
-          ) : <span className="text-xs text-gray-600">-</span>}
-        </td>
-        <td className="py-2 pr-3">
-          <span className={`font-medium text-sm ${(run.totalReturnPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {formatReturn(run.totalReturnPercent)}
-          </span>
-        </td>
-        <td className="py-2 pr-3">
-          <span className={`text-sm ${(run.sharpeRatio ?? 0) >= 1 ? 'text-green-400' : (run.sharpeRatio ?? 0) >= 0 ? 'text-gray-300' : 'text-red-400'}`}>
-            {formatNum(run.sharpeRatio)}
-          </span>
-        </td>
-        <td className="py-2 pr-3 text-sm text-gray-300">{formatNum(run.maxDrawdownPercent, 1)}{run.maxDrawdownPercent != null ? '%' : ''}</td>
-        <td className="py-2 pr-3 text-sm text-gray-300">{formatWinRate(run.winRate)}</td>
-        <td className="py-2 pr-3 text-sm text-gray-300">{formatNum(run.profitFactor)}</td>
-        <td className="py-2 pr-3 text-sm text-gray-300">{run.totalTrades ?? '-'}</td>
-        <td className="py-2 pr-3">
-          {hasParams && (
-            <button
-              className="text-xs text-primary-400 hover:text-primary-300"
-              onClick={(e) => { e.stopPropagation(); onToggle(run.id); }}
-            >
-              {expanded ? 'hide' : 'params'}
-            </button>
+    <tr
+      className={`border-b border-gray-700/50 cursor-pointer transition-colors ${
+        isSelected ? 'bg-primary-900/30' : isHighlighted ? 'bg-green-900/10 hover:bg-green-900/20' : 'hover:bg-gray-700/30'
+      }`}
+      onClick={() => onSelect(run)}
+    >
+      <td className="py-2 pr-3">
+        <div className="font-medium text-white text-sm truncate max-w-[160px]" title={run.aggregationName ?? run.strategyName}>
+          {isAgg ? (
+            <span className="flex items-center gap-1.5">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-900/50 text-purple-400 flex-shrink-0">AGG</span>
+              <span className="truncate">{run.aggregationName || run.strategyName}</span>
+            </span>
+          ) : (
+            run.strategyName
           )}
-        </td>
-        <td className="py-2 text-xs text-gray-500 whitespace-nowrap">{formatRelativeTime(run.runAt)}</td>
-      </tr>
-      {expanded && hasParams && (
-        <tr className="bg-gray-800/40">
-          <td colSpan={12} className="px-4 py-2">
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono text-gray-300">
-              {Object.entries(run.params!).map(([k, v]) => (
-                <span key={k}>
-                  <span className="text-gray-500">{k}:</span>{' '}
-                  <span className="text-gray-200">{typeof v === 'number' ? (Number.isInteger(v) ? v : (v as number).toFixed(4)) : String(v)}</span>
-                </span>
-              ))}
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
+        </div>
+      </td>
+      <td className="py-2 pr-3">
+        <span className="text-gray-300 text-sm font-mono">
+          {run.symbol === 'MULTI' ? (
+            <span className="text-gray-500">—</span>
+          ) : (
+            run.symbol
+          )}
+        </span>
+      </td>
+      <td className="py-2 pr-3 text-gray-400 text-xs">{run.timeframe}</td>
+      <td className="py-2 pr-3">
+        {run.mode ? (
+          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+            run.mode === 'futures' ? 'bg-blue-900/50 text-blue-300' : 'bg-gray-700 text-gray-400'
+          }`}>{run.mode}</span>
+        ) : <span className="text-xs text-gray-600">-</span>}
+      </td>
+      <td className="py-2 pr-3">
+        <span className={`font-medium text-sm ${(run.totalReturnPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          {formatReturn(run.totalReturnPercent)}
+        </span>
+      </td>
+      <td className="py-2 pr-3">
+        <span className={`text-sm ${(run.sharpeRatio ?? 0) >= 1 ? 'text-green-400' : (run.sharpeRatio ?? 0) >= 0 ? 'text-gray-300' : 'text-red-400'}`}>
+          {formatNum(run.sharpeRatio)}
+        </span>
+      </td>
+      <td className="py-2 pr-3 text-sm text-gray-300">{formatNum(run.maxDrawdownPercent, 1)}{run.maxDrawdownPercent != null ? '%' : ''}</td>
+      <td className="py-2 pr-3 text-sm text-gray-300">{formatWinRate(run.winRate)}</td>
+      <td className="py-2 pr-3 text-sm text-gray-300">{formatNum(run.profitFactor)}</td>
+      <td className="py-2 pr-3 text-sm text-gray-300">{run.totalTrades ?? '-'}</td>
+      <td className="py-2 pr-3">
+        {hasParams && (
+          <button
+            className="text-xs text-primary-400 hover:text-primary-300"
+            onClick={(e) => { e.stopPropagation(); onShowParams(run); }}
+          >
+            params
+          </button>
+        )}
+      </td>
+      <td className="py-2 text-xs text-gray-500 whitespace-nowrap">{formatRelativeTime(run.runAt)}</td>
+    </tr>
   );
 }
 
@@ -225,14 +211,14 @@ function CompactRunRow({ run, isSelected, onSelect }: {
     >
       <td className="py-1.5 pr-2">
         <div className="text-xs text-white truncate max-w-[120px]" title={run.aggregationName ?? run.strategyName}>
-          {run.aggregationName ? (
+          {(run.aggregationName || run.symbol === 'MULTI') ? (
             <span className="flex items-center gap-1">
               <span className="px-1 py-0.5 rounded text-[9px] font-medium bg-purple-900/50 text-purple-400">AGG</span>
-              <span className="truncate">{run.aggregationName}</span>
+              <span className="truncate">{run.aggregationName || run.strategyName}</span>
             </span>
           ) : run.strategyName}
         </div>
-        <div className="text-[10px] text-gray-500 truncate">{run.symbol === 'MULTI' ? 'Portfolio' : run.symbol}</div>
+        <div className="text-[10px] text-gray-500 truncate">{run.symbol !== 'MULTI' ? run.symbol : ''}</div>
       </td>
       <td className="py-1.5 pr-2">
         <span className={`text-xs font-medium ${(run.totalReturnPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -297,14 +283,14 @@ function CompactTableHead() {
 // Expandable Group (fetches its own runs from API when expanded)
 // ============================================================================
 
-function AssetGroup({ group, filters, selectedId, onSelectRun }: {
+function AssetGroup({ group, filters, selectedId, onSelectRun, onShowParams }: {
   group: BacktestGroup;
   filters: FilterState;
   selectedId?: string | null;
   onSelectRun: (run: BacktestSummary) => void;
+  onShowParams: (run: BacktestSummary) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [expandedParams, setExpandedParams] = useState<string | null>(null);
 
   // Fetch runs for this symbol only when expanded
   const { data, isLoading } = useQuery({
@@ -371,8 +357,7 @@ function AssetGroup({ group, filters, selectedId, onSelectRun }: {
                     isSelected={selectedId === run.id}
                     isHighlighted={idx === 0}
                     onSelect={onSelectRun}
-                    expanded={expandedParams === run.id}
-                    onToggle={id => setExpandedParams(p => p === id ? null : id)}
+                    onShowParams={onShowParams}
                   />
                 ))}
               </tbody>
@@ -395,6 +380,7 @@ export function HistoryExplorerContent({
   compact = false,
   showFilters = true,
   showGroupToggle = true,
+  defaultGroupByAsset = false,
   maxHeight,
   className = '',
 }: HistoryExplorerContentProps) {
@@ -406,8 +392,8 @@ export function HistoryExplorerContent({
   const [pendingFilters, setPendingFilters] = useState<FilterState>(filters);
   const [offset, setOffset] = useState(0);
   const [allRuns, setAllRuns] = useState<BacktestSummary[]>([]);
-  const [groupByAsset, setGroupByAsset] = useState(false);
-  const [expandedParams, setExpandedParams] = useState<string | null>(null);
+  const [groupByAsset, setGroupByAsset] = useState(defaultGroupByAsset);
+  const [paramsModalRun, setParamsModalRun] = useState<BacktestSummary | null>(null);
   const [filterKey, setFilterKey] = useState(0);
 
   const PAGE_SIZE = 50;
@@ -436,7 +422,8 @@ export function HistoryExplorerContent({
     ...(filters.timeframe ? { timeframe: filters.timeframe } : {}),
     ...(filters.mode ? { mode: filters.mode } : {}),
     ...(filters.minSharpe && !isNaN(parseFloat(filters.minSharpe)) ? { minSharpe: parseFloat(filters.minSharpe) } : {}),
-  }), [filters]);
+    ...(fixedRunType ? { runType: fixedRunType } : filters.runType !== 'all' ? { runType: filters.runType } : {}),
+  }), [filters, fixedRunType]);
 
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
     queryKey: ['explorer-groups', groupFilterParams],
@@ -554,7 +541,13 @@ export function HistoryExplorerContent({
                 {(['all', 'strategies', 'aggregations'] as RunTypeFilter[]).map(opt => (
                   <button
                     key={opt}
-                    onClick={() => setPendingFilters(p => ({ ...p, runType: opt }))}
+                    onClick={() => {
+                      const updated = { ...pendingFilters, runType: opt };
+                      setPendingFilters(updated);
+                      setFilters(updated);
+                      setOffset(0);
+                      setAllRuns([]);
+                    }}
                     className={`px-2 py-1 text-xs font-medium capitalize transition-colors ${
                       pendingFilters.runType === opt
                         ? opt === 'aggregations'
@@ -617,7 +610,14 @@ export function HistoryExplorerContent({
         {groupByAsset && groups.length > 0 && (
           <div className="space-y-2">
             {groups.map(group => (
-              <AssetGroup key={group.symbol} group={group} filters={filters} selectedId={selectedId} onSelectRun={onSelectRun} />
+              <AssetGroup
+                key={group.symbol}
+                group={group}
+                filters={filters}
+                selectedId={selectedId}
+                onSelectRun={onSelectRun}
+                onShowParams={r => setParamsModalRun(r)}
+              />
             ))}
           </div>
         )}
@@ -644,8 +644,13 @@ export function HistoryExplorerContent({
                 <TableHead sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={handleSort} />
                 <tbody>
                   {filteredRuns.map(run => (
-                    <RunRow key={run.id} run={run} isSelected={selectedId === run.id} onSelect={onSelectRun}
-                      expanded={expandedParams === run.id} onToggle={id => setExpandedParams(p => p === id ? null : id)} />
+                    <RunRow
+                      key={run.id}
+                      run={run}
+                      isSelected={selectedId === run.id}
+                      onSelect={onSelectRun}
+                      onShowParams={r => setParamsModalRun(r)}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -669,6 +674,19 @@ export function HistoryExplorerContent({
           </>
         )}
       </div>
+
+      {paramsModalRun && (
+        <RunParamsModal
+          run={paramsModalRun}
+          isOpen={true}
+          onClose={() => setParamsModalRun(null)}
+          onRerun={(params) => {
+            // Load the modified run summary into the parent (so config panel picks it up)
+            onSelectRun({ ...paramsModalRun, params });
+            setParamsModalRun(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -735,6 +753,7 @@ export function HistoryExplorer({
             fixedRunType={fixedRunType}
             showFilters={true}
             showGroupToggle={true}
+            defaultGroupByAsset={true}
             maxHeight="calc(90vh - 140px)"
           />
         </div>
