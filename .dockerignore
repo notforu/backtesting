@@ -1,0 +1,40 @@
+# Version control
+.git
+.gitignore
+
+# Claude / AI tooling
+.claude
+chat_logs
+
+# Documentation (not needed at runtime)
+docs
+*.md
+!README.md
+
+# Local data (DB, logs, backups — use Docker volumes instead)
+data/
+
+# Environment files (injected at runtime via docker-compose env)
+.env
+.env.*
+!.env.prod.example
+
+# Development artifacts
+.playwright-mcp
+dist
+dist-web
+
+# Node modules (rebuilt inside Docker)
+node_modules
+
+# Test output
+coverage
+*.lcov
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+*.swp
+*.swo
+Thumbs.db

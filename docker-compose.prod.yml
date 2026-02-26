@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: backtesting
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backtesting}
+      POSTGRES_DB: backtesting
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backtesting"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://backtesting:${POSTGRES_PASSWORD:-backtesting}@postgres:5432/backtesting
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    expose:
+      - "3000"
+    volumes:
+      # Persist logs and backups across container restarts
+      - apidata:/app/data
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${PUBLIC_PORT:-80}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Serve frontend static files directly from the API build artifact.
+      # We extract them from the api image at runtime via a named volume populated
+      # in the api service entrypoint. Simpler alternative: proxy everything through
+      # the api service (chosen here — see nginx.conf).
+
+volumes:
+  pgdata:
+  apidata:

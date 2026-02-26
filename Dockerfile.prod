@@ -1,0 +1,47 @@
+# ============================================================
+# Stage 1: Build
+# ============================================================
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies first (layer-cached separately from source)
+COPY package*.json ./
+RUN npm ci
+
+# Copy all source files
+COPY . .
+
+# Compile TypeScript (outputs to dist/) and build Vite frontend (outputs to dist/web)
+RUN npm run build
+
+# ============================================================
+# Stage 2: Runtime
+# ============================================================
+FROM node:20-alpine
+
+# Install PM2 globally for process management
+RUN npm install -g pm2
+
+WORKDIR /app
+
+# Copy compiled backend (dist/) and frontend static files (dist/web/)
+COPY --from=builder /app/dist ./dist
+
+# Copy production dependencies (already installed in builder stage)
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copy runtime-required files
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/strategies ./strategies
+COPY --from=builder /app/migrations ./migrations
+
+# Copy PM2 config
+COPY ecosystem.config.cjs ./
+
+# Create data directory for logs and local files
+RUN mkdir -p /app/data/logs /app/data/backups
+
+EXPOSE 3000
+
+CMD ["pm2-runtime", "ecosystem.config.cjs"]
