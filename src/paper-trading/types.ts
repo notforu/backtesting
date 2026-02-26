@@ -1,0 +1,83 @@
+/**
+ * Paper Trading - Type Definitions
+ *
+ * Types for the paper trading system that runs aggregation configs
+ * in real-time, simulating live execution without real capital.
+ */
+
+import type { AggregateBacktestConfig } from '../core/signal-types.js';
+
+export interface PaperSession {
+  id: string;
+  name: string;
+  aggregationConfig: AggregateBacktestConfig;  // frozen JSONB snapshot at creation time
+  aggregationConfigId: string | null;
+  status: 'running' | 'paused' | 'stopped' | 'error';
+  initialCapital: number;
+  currentEquity: number;
+  currentCash: number;
+  tickCount: number;
+  lastTickAt: number | null;
+  nextTickAt: number | null;
+  errorMessage: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PaperPosition {
+  id: number;
+  sessionId: string;
+  symbol: string;
+  direction: 'long' | 'short';
+  entryPrice: number;
+  amount: number;
+  entryTime: number;
+  unrealizedPnl: number;
+  fundingAccumulated: number;
+}
+
+export interface PaperTrade {
+  id: number;
+  sessionId: string;
+  symbol: string;
+  action: 'open_long' | 'open_short' | 'close_long' | 'close_short';
+  price: number;
+  amount: number;
+  timestamp: number;
+  pnl: number | null;
+  pnlPercent: number | null;
+  fee: number;
+  fundingIncome: number;
+  balanceAfter: number;
+}
+
+export interface PaperEquitySnapshot {
+  id: number;
+  sessionId: string;
+  timestamp: number;
+  equity: number;
+  cash: number;
+  positionsValue: number;
+}
+
+// Event types emitted by the paper trading engine
+export type PaperTradingEvent =
+  | { type: 'trade_opened'; sessionId: string; trade: PaperTrade }
+  | { type: 'trade_closed'; sessionId: string; trade: PaperTrade }
+  | { type: 'funding_payment'; sessionId: string; symbol: string; amount: number; equity: number }
+  | { type: 'equity_update'; sessionId: string; equity: number; cash: number; positionsValue: number; timestamp: number }
+  | { type: 'tick_complete'; sessionId: string; tickNumber: number; timestamp: number; nextTickAt: number | null }
+  | { type: 'error'; sessionId: string; message: string }
+  | { type: 'status_change'; sessionId: string; oldStatus: string; newStatus: string };
+
+export interface TickResult {
+  tickNumber: number;
+  timestamp: number;
+  tradesOpened: PaperTrade[];
+  tradesClosed: PaperTrade[];
+  fundingPayments: Array<{ symbol: string; amount: number }>;
+  equity: number;
+  cash: number;
+  positionsValue: number;
+  openPositions: PaperPosition[];
+}
