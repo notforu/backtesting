@@ -25,6 +25,12 @@ import type {
   CreateAggregationRequest,
   UpdateAggregationRequest,
   RunAggregationRequest,
+  PaperSession,
+  PaperSessionDetail,
+  PaperTradesResponse,
+  PaperEquitySnapshot,
+  PaperTradingEvent,
+  CreatePaperSessionRequest,
 } from '../types';
 
 const API_BASE = '/api';
@@ -726,4 +732,108 @@ interface HealthResponse {
  */
 export async function healthCheck(): Promise<HealthResponse> {
   return apiFetch<HealthResponse>('/health');
+}
+
+// ============================================================================
+// Paper Trading Endpoints
+// ============================================================================
+
+export async function createPaperSession(data: CreatePaperSessionRequest): Promise<PaperSessionDetail> {
+  return apiFetch<PaperSessionDetail>('/paper-trading/sessions', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function listPaperSessions(): Promise<PaperSession[]> {
+  return apiFetch<PaperSession[]>('/paper-trading/sessions');
+}
+
+export async function getPaperSession(id: string): Promise<PaperSessionDetail> {
+  return apiFetch<PaperSessionDetail>(`/paper-trading/sessions/${id}`);
+}
+
+export async function deletePaperSession(id: string): Promise<void> {
+  await apiFetch<void>(`/paper-trading/sessions/${id}`, { method: 'DELETE' });
+}
+
+export async function startPaperSession(id: string): Promise<void> {
+  await apiFetch<void>(`/paper-trading/sessions/${id}/start`, { method: 'POST' });
+}
+
+export async function pausePaperSession(id: string): Promise<void> {
+  await apiFetch<void>(`/paper-trading/sessions/${id}/pause`, { method: 'POST' });
+}
+
+export async function resumePaperSession(id: string): Promise<void> {
+  await apiFetch<void>(`/paper-trading/sessions/${id}/resume`, { method: 'POST' });
+}
+
+export async function stopPaperSession(id: string): Promise<void> {
+  await apiFetch<void>(`/paper-trading/sessions/${id}/stop`, { method: 'POST' });
+}
+
+export async function getPaperTrades(id: string, limit = 50, offset = 0): Promise<PaperTradesResponse> {
+  return apiFetch<PaperTradesResponse>(`/paper-trading/sessions/${id}/trades?limit=${limit}&offset=${offset}`);
+}
+
+export async function getPaperEquity(id: string): Promise<PaperEquitySnapshot[]> {
+  return apiFetch<PaperEquitySnapshot[]>(`/paper-trading/sessions/${id}/equity`);
+}
+
+export async function forcePaperTick(id: string): Promise<unknown> {
+  return apiFetch<unknown>(`/paper-trading/sessions/${id}/tick`, { method: 'POST' });
+}
+
+/**
+ * Subscribe to SSE stream for a paper trading session.
+ * Returns an unsubscribe function.
+ */
+export function subscribePaperSession(
+  sessionId: string,
+  onEvent: (event: PaperTradingEvent) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  const url = `${API_BASE}/paper-trading/sessions/${sessionId}/stream`;
+  let abortController: AbortController | null = new AbortController();
+
+  (async () => {
+    try {
+      const response = await fetch(url, { signal: abortController?.signal });
+      if (!response.ok || !response.body) {
+        throw new Error(`SSE connection failed: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.substring(6)) as PaperTradingEvent;
+            onEvent(event);
+          } catch {
+            // Skip malformed events
+          }
+        }
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      onError?.(error instanceof Error ? error : new Error(String(error)));
+    }
+  })();
+
+  return () => {
+    abortController?.abort();
+    abortController = null;
+  };
 }

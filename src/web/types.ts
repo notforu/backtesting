@@ -532,3 +532,85 @@ export function getTradeActionColor(action: TradeAction): string {
       return 'bg-red-900/50 text-red-400';
   }
 }
+
+// ============================================================================
+// Paper Trading Types
+// ============================================================================
+
+export interface PaperSession {
+  id: string;
+  name: string;
+  aggregationConfig: AggregationConfig;
+  aggregationConfigId: string | null;
+  status: 'running' | 'paused' | 'stopped' | 'error';
+  initialCapital: number;
+  currentEquity: number;
+  currentCash: number;
+  tickCount: number;
+  lastTickAt: number | null;
+  nextTickAt: number | null;
+  errorMessage: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PaperPosition {
+  id: number;
+  sessionId: string;
+  symbol: string;
+  direction: 'long' | 'short';
+  entryPrice: number;
+  amount: number;
+  entryTime: number;
+  unrealizedPnl: number;
+  fundingAccumulated: number;
+}
+
+export interface PaperTrade {
+  id: number;
+  sessionId: string;
+  symbol: string;
+  action: 'open_long' | 'open_short' | 'close_long' | 'close_short';
+  price: number;
+  amount: number;
+  timestamp: number;
+  pnl: number | null;
+  pnlPercent: number | null;
+  fee: number;
+  fundingIncome: number;
+  balanceAfter: number;
+}
+
+export interface PaperEquitySnapshot {
+  id: number;
+  sessionId: string;
+  timestamp: number;
+  equity: number;
+  cash: number;
+  positionsValue: number;
+}
+
+export interface PaperSessionDetail extends PaperSession {
+  positions: PaperPosition[];
+}
+
+export interface PaperTradesResponse {
+  trades: PaperTrade[];
+  total: number;
+}
+
+export type PaperTradingEvent =
+  | { type: 'connected'; sessionId: string }
+  | { type: 'trade_opened'; sessionId: string; trade: PaperTrade }
+  | { type: 'trade_closed'; sessionId: string; trade: PaperTrade }
+  | { type: 'funding_payment'; sessionId: string; symbol: string; amount: number; equity: number }
+  | { type: 'equity_update'; sessionId: string; equity: number; cash: number; positionsValue: number; timestamp: number }
+  | { type: 'tick_complete'; sessionId: string; tickNumber: number; timestamp: number; nextTickAt: number | null }
+  | { type: 'error'; sessionId: string; message: string }
+  | { type: 'status_change'; sessionId: string; oldStatus: string; newStatus: string };
+
+export interface CreatePaperSessionRequest {
+  name: string;
+  aggregationConfigId: string;
+  initialCapital?: number;
+}
