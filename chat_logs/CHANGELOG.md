@@ -1,6 +1,23 @@
 # Changelog
 
-All significant changes to the backtesting platform are documented here. See individual files in `/docs/changelogs/` for detailed information on each change.
+All significant changes to the backtesting platform are documented here. See individual files in `/chat_logs/` for detailed information on each change.
+
+## 2026-02-26: Paper Trading System Implementation
+
+**File**: `/chat_logs/2026-02-26-160000-paper-trading-system.md`
+
+Implemented comprehensive paper trading system for running live multi-asset strategies in parallel with backtesting. Includes tick-based execution engine mirroring backtest architecture, real-time Bybit data ingestion, Telegram notifications, PostgreSQL persistence, and full React UI with equity charting. 115 new tests ensure robustness of capital management and order execution.
+
+**Key additions**:
+- Paper trading engine with tick loop, signal processing, funding rate handling
+- SessionManager singleton for lifecycle control and auto-restore on crash
+- 11 REST API endpoints for CRUD and real-time SSE updates
+- React components for session management, live metrics, equity charting
+- Telegram notifications for trade events and daily summaries
+- Production-ready Docker + PM2 + Nginx + PostgreSQL stack
+- 115 tests covering engine, positions, funding, persistence, and notifications
+
+---
 
 ## 2026-02-23: Expanded FR-Spike Scan and Aggregations
 

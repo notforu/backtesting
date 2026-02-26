@@ -2,6 +2,15 @@
 
 Track agent invocations to understand token consumption patterns.
 Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
+[2026-02-26 16:05] docs-writer (haiku) - Create changelog for paper trading system implementation (115 tests, full engine, UI, API, production Docker stack)
+[2026-02-26 15:20] fe-dev (sonnet) - Phase 3: Paper trading frontend UI (types, API, store, hooks, panel, chart, tabs)
+[2026-02-26 16:00] fullstack-dev (sonnet) - Phase 7C: Create seed-paper-test.ts script and add paper:seed npm script
+[2026-02-26 15:20] fullstack-dev (sonnet) - Phase 7: Local testing setup (seed script, npm scripts)
+[2026-02-26 15:05] be-dev (sonnet) - Phase 2: Paper trading API routes + SSE + server integration
+[2026-02-26 15:05] be-dev (sonnet) - Phase 4: Telegram notifications module + session manager integration
+[2026-02-26 14:45] be-dev (sonnet) - Phase 1D-1F: Paper trading engine, live data fetcher, session manager
+[2026-02-26 14:00] be-dev (sonnet) - Phase 1A-1C: Paper trading migration, types, DB CRUD functions
+[2026-02-26 14:00] fullstack-dev (sonnet) - Phase 5: Production deployment infrastructure (Docker, PM2, Nginx, env validation)
 [2026-02-25 19:30] docs-writer (haiku) - Create changelog for params modal and explorer improvements (aggregation editing, ad-hoc runs, tooltips)
 [2026-02-19 10:00] be-dev (sonnet) - Write and run scripts/run-fr-backtests-save.ts to persist ATOM/DOT 4h funding-rate-spike backtests to PostgreSQL
 [2026-02-24 14:00] docs-writer (haiku) - Create changelog for FR spike aggregation exploration (27 configs tested, weighted_multi bug fix)
@@ -603,3 +612,14 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-25 19:15] fe-dev (sonnet) - Revamp RunParamsModal for aggregation editing
 [2026-02-25 19:15] fe-dev (sonnet) - Explorer inline params tooltip + selection highlight
 [2026-02-26 12:37] fe-dev (sonnet) - Add loading states to StrategyConfig history list and HistoryExplorerContent rows
+[2026-02-26 14:00] quant-lead (opus) - Paper trading guidance research for FR spike v2 aggregation: fill simulation, funding rate handling, monitoring, pitfalls, VDS deployment, graduation criteria
+[2026-02-26 14:30] be-dev (sonnet) - Create paper trading data layer: migration 007, types, and DB CRUD functions (Phase 1A-1C)
+[2026-02-26 14:22] fullstack-dev (sonnet) - Create production deployment infrastructure (Dockerfile.prod, docker-compose.prod.yml, ecosystem.config.cjs, nginx.conf, src/config/env.ts, backup-db.sh, .env.prod.example, .dockerignore, docs/DEPLOYMENT.md)
+[2026-02-26 14:28] be-dev (sonnet) - Implement paper trading Phase 1D-1F: live-data.ts, engine.ts, session-manager.ts
+[2026-02-26 14:33] be-dev (sonnet) - Phase 2: Paper trading REST API routes + SSE + server integration
+[2026-02-26 15:10] be-dev (sonnet) - Phase 4: Telegram notifications module + session manager integration
+[2026-02-26 14:39] fe-dev (sonnet) - Paper Trading frontend UI: types, API client, store, hooks, panel components, tab integration
+[2026-02-26 14:45] qa (sonnet) - create unit tests for paper trading system phases 6A-6F
+[2026-02-26 14:57] qa (sonnet) - all 115 new paper trading tests passing, 418 total tests green
+[2026-02-26 16:00] qa (sonnet) - Phase 6: Critical unit tests for paper trading (115 tests, 6 test files)
+[2026-02-26 16:05] docs-writer (haiku) - Create changelog for paper trading system implementation
