@@ -13,7 +13,9 @@ import { polymarketRoutes } from './routes/polymarket.js';
 import { scanRoutes } from './routes/scan.js';
 import { fundingRateRoutes } from './routes/funding-rates.js';
 import { aggregationRoutes } from './routes/aggregations.js';
+import { paperTradingRoutes } from './routes/paper-trading.js';
 import { initDb, closeDb } from '../data/db.js';
+import { sessionManager } from '../paper-trading/session-manager.js';
 
 const fastify = Fastify({
   logger: {
@@ -28,6 +30,9 @@ await fastify.register(cors, {
 
 // Initialize database connection (run migrations)
 await initDb();
+
+// Restore any paper trading sessions that were running at last shutdown
+await sessionManager.restoreActiveSessions();
 
 // Health check endpoint
 fastify.get('/api/health', async () => {
@@ -47,10 +52,13 @@ await fastify.register(polymarketRoutes);
 await fastify.register(scanRoutes);
 await fastify.register(fundingRateRoutes);
 await fastify.register(aggregationRoutes);
+await fastify.register(paperTradingRoutes);
 
 // Graceful shutdown
 const shutdown = async () => {
   console.log('\nShutting down gracefully...');
+  // Pause all active paper trading engines before closing DB
+  await sessionManager.shutdownAll();
   await closeDb();
   await fastify.close();
   process.exit(0);
