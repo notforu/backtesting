@@ -3,7 +3,7 @@
  * Provides the layout structure with sidebar, chart, and dashboard.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Chart } from './components/Chart';
 import { PortfolioChart } from './components/Chart/PortfolioChart';
@@ -14,10 +14,12 @@ import { StrategyConfig } from './components/StrategyConfig';
 import { OptimizerModal } from './components/OptimizerModal';
 import { ScannerResults } from './components/ScannerResults';
 import { HistoryExplorer } from './components/HistoryExplorer';
+import { RunParamsModal } from './components/HistoryExplorer/RunParamsModal';
 import { useBacktestStore, useConfigStore } from './stores/backtestStore';
 import { useScannerStore } from './stores/scannerStore';
-import { useLoadBacktest, useCandles } from './hooks/useBacktest';
-import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult, type Timeframe } from './types';
+import { useLoadBacktest, useCandles, useRunBacktest } from './hooks/useBacktest';
+import { runAdhocAggregation } from './api/client';
+import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult, type BacktestSummary, type Timeframe } from './types';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,10 +46,13 @@ function AppContent() {
   const { currentResult, selectedBacktestId } = useBacktestStore();
   const { applyHistoryParams } = useConfigStore();
   const { loadBacktest } = useLoadBacktest();
+  const runBacktestMutation = useRunBacktest();
+  const { setRunning, setResult, setError } = useBacktestStore();
   const { scanResults } = useScannerStore();
   const isPairs = currentResult && isPairsResult(currentResult);
   const showScanner = scanResults.length > 0;
   const [showExplorer, setShowExplorer] = useState(false);
+  const [showParamsModal, setShowParamsModal] = useState(false);
 
   // Multi-asset state
   const [selectedAssetIndex, setSelectedAssetIndex] = useState<number>(-1); // -1 = portfolio view
@@ -65,6 +70,30 @@ function AppContent() {
   const selectedAsset = selectedAssetIndex >= 0 && selectedAssetIndex < multiAssets.length
     ? multiAssets[selectedAssetIndex]
     : null;
+
+  // Build a BacktestSummary-like object from currentResult for RunParamsModal
+  const currentRunSummary = useMemo<BacktestSummary | null>(() => {
+    if (!currentResult) return null;
+    return {
+      id: selectedBacktestId ?? 'current',
+      strategyName: currentResult.config.strategyName,
+      symbol: isPairs
+        ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
+        : (currentResult as BacktestResult).config.symbol ?? 'MULTI',
+      timeframe: currentResult.config.timeframe,
+      mode: (currentResult.config as any).mode ?? undefined,
+      params: currentResult.config.params ?? {},
+      runAt: new Date().toISOString(),
+      sharpeRatio: currentResult.metrics.sharpeRatio,
+      totalReturnPercent: currentResult.metrics.totalReturnPercent,
+      maxDrawdownPercent: currentResult.metrics.maxDrawdownPercent,
+      winRate: currentResult.metrics.winRate,
+      profitFactor: currentResult.metrics.profitFactor,
+      totalTrades: currentResult.metrics.totalTrades,
+      aggregationId: (currentResult as any).aggregationId ?? undefined,
+      aggregationName: (currentResult as any).aggregationName ?? undefined,
+    };
+  }, [currentResult, selectedBacktestId, isPairs]);
 
   // Reset selected asset when result changes
   useEffect(() => {
@@ -135,6 +164,18 @@ function AppContent() {
                     : (currentResult as BacktestResult).config.symbol}
                 </span>
               </span>
+            )}
+            {currentResult && currentResult.config.params && Object.keys(currentResult.config.params).length > 0 && (
+              <button
+                onClick={() => setShowParamsModal(true)}
+                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Params
+              </button>
             )}
             <button
               onClick={() => setShowExplorer(true)}
@@ -582,6 +623,55 @@ function AppContent() {
         onSelectRun={handleSelectRun}
         selectedId={selectedBacktestId}
       />
+
+      {/* Run Params Modal — view/edit params for the current loaded run */}
+      {showParamsModal && currentRunSummary && (
+        <RunParamsModal
+          run={currentRunSummary}
+          isOpen={true}
+          onClose={() => setShowParamsModal(false)}
+          isRunning={useBacktestStore.getState().isRunning}
+          onRerun={async (params) => {
+            const isAgg = currentRunSummary.symbol === 'MULTI' || !!currentRunSummary.aggregationName;
+
+            if (isAgg && params.subStrategies) {
+              // Ad-hoc aggregation run with edited config
+              setShowParamsModal(false);
+              setRunning(true);
+              try {
+                const config = currentResult!.config as any;
+                const result = await runAdhocAggregation({
+                  subStrategies: params.subStrategies as any[],
+                  allocationMode: (params.allocationMode as string) ?? config.allocationMode ?? 'top_n',
+                  maxPositions: (params.maxPositions as number) ?? config.maxPositions ?? 5,
+                  initialCapital: (params.initialCapital as number) ?? config.initialCapital ?? 10000,
+                  startDate: config.startDate,
+                  endDate: config.endDate,
+                  exchange: (params.exchange as string) ?? config.exchange ?? 'bybit',
+                  mode: (params.mode as string) ?? config.mode ?? 'futures',
+                });
+                setResult(result);
+                // Invalidate history queries
+                queryClient.invalidateQueries({ queryKey: ['explorer-history'] });
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Aggregation run failed');
+              }
+            } else {
+              // Strategy run — apply params to config and auto-trigger
+              const { applyHistoryParams } = useConfigStore.getState();
+              const updated = {
+                ...currentResult!,
+                config: { ...currentResult!.config, params },
+              } as BacktestResult | PairsBacktestResult;
+              applyHistoryParams(updated);
+              setShowParamsModal(false);
+              // Auto-trigger backtest with updated config
+              const cfg = useConfigStore.getState().getConfig();
+              runBacktestMutation.mutate(cfg);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
