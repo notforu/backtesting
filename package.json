@@ -19,7 +19,8 @@
     "quant:optimize": "tsx src/cli/quant-optimize.ts",
     "quant:score": "tsx src/cli/quant-score.ts",
     "paper-trade": "tsx scripts/pm-paper-trade.ts",
-    "quant:cache-candles": "tsx scripts/cache-candles.ts"
+    "quant:cache-candles": "tsx scripts/cache-candles.ts",
+    "paper:seed": "npx tsx scripts/seed-paper-test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
