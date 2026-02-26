@@ -2,6 +2,7 @@
 
 Track agent invocations to understand token consumption patterns.
 Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
+[2026-02-25 19:30] docs-writer (haiku) - Create changelog for params modal and explorer improvements (aggregation editing, ad-hoc runs, tooltips)
 [2026-02-19 10:00] be-dev (sonnet) - Write and run scripts/run-fr-backtests-save.ts to persist ATOM/DOT 4h funding-rate-spike backtests to PostgreSQL
 [2026-02-24 14:00] docs-writer (haiku) - Create changelog for FR spike aggregation exploration (27 configs tested, weighted_multi bug fix)
 [2026-02-22 08:28] be-dev (sonnet) - Write failing unit tests exposing aggregate engine calculation bugs (TDD red phase)
@@ -589,3 +590,16 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-25 16:45] runner (bash) - Run first v2 aggregation config test
 [2026-02-25 17:00] runner (bash) - Run remaining 19 v2 aggregation configs
 [2026-02-25 17:00] runner (bash) - Run tuned variants 2-5 on key assets
+[2026-02-25 17:15] commit (haiku) - FR spike v2 strategy, batch scans, 20-variant aggregation exploration with 1.89 Sharpe top config
+[2026-02-25 14:57] fe-dev (sonnet) - Add Params button to main header in App.tsx to open RunParamsModal for current run
+[2026-02-25 18:00] Explore (sonnet) - Find run selection UI in dashboard
+[2026-02-25 18:05] fe-dev (sonnet) - Add Params button to main header with RunParamsModal
+[2026-02-25 15:54] be-dev (sonnet) - Add POST /api/backtest/aggregate/run endpoint and runAdhocAggregation client function
+[2026-02-25 15:54] fe-dev (sonnet) - Rewrite RunParamsModal to support full aggregation editing with substrategy add/remove and Load & Run
+[2026-02-25 15:56] fe-dev (sonnet) - Replace params modal with hover tooltip, remove modal state/import, update selected row styling with left border accent
+[2026-02-25 19:00] Explore (sonnet) - Find run selection UI in dashboard for params button
+[2026-02-25 19:05] fe-dev (sonnet) - Add Params button to main header with RunParamsModal
+[2026-02-25 19:15] be-dev (sonnet) - Add ad-hoc aggregation run API endpoint
+[2026-02-25 19:15] fe-dev (sonnet) - Revamp RunParamsModal for aggregation editing
+[2026-02-25 19:15] fe-dev (sonnet) - Explorer inline params tooltip + selection highlight
+[2026-02-26 12:37] fe-dev (sonnet) - Add loading states to StrategyConfig history list and HistoryExplorerContent rows

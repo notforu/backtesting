@@ -4,6 +4,41 @@ All notable changes to this project are documented here. Newest entries first.
 
 ---
 
+## [2026-02-25] Params Modal and Explorer Improvements
+
+### Summary
+Major improvements to the Run Params Modal, History Explorer, and header UX. Added editable params modal for aggregation runs with support for ad-hoc backtest execution, new API endpoint for inline aggregation runs, and enhanced history explorer with params tooltips and visual highlighting.
+
+### Added
+- **Params button in header**: Gear icon "Params" button in main header bar (next to "Explore Runs")
+  - Only visible when a run is loaded that has parameters
+  - Opens RunParamsModal for the currently displayed backtest
+- **New API endpoint**: `POST /api/backtest/aggregate/run` - Runs aggregation backtest with inline config
+  - Accepts full `AggregateBacktestConfig` in body
+  - Validates with Zod schema, saves result to DB
+- **Client-side function**: `runAdhocAggregation()` in `src/web/api/client.ts`
+- **History Explorer params tooltip**: Hover tooltip showing key:value parameters
+  - SubStrategies array displays as "N sub-strategies" instead of raw JSON
+
+### Changed
+- **RunParamsModal (full rewrite)**:
+  - No longer read-only for aggregation runs
+  - Full editing of top-level settings and sub-strategy list
+  - Delete sub-strategies with X button
+  - Add new sub-strategies via inline form
+  - Fixed `[object Object]` rendering: SubStrategy params now display as `key=value` tokens
+  - "Load & Run" button now triggers actual backtest execution (strategy: auto-backtest, aggregation: ad-hoc run)
+- **History Explorer**: Replaced params modal trigger with hover tooltip, enhanced selected run highlighting with `bg-primary-900/40` + left accent border
+
+### Files Modified
+- `src/web/App.tsx` - Params button and modal integration
+- `src/web/components/HistoryExplorer/RunParamsModal.tsx` - Complete rewrite
+- `src/web/components/HistoryExplorer/HistoryExplorer.tsx` - Tooltip and highlighting updates
+- `src/api/routes/backtest.ts` - New `aggregate/run` endpoint
+- `src/web/api/client.ts` - New `runAdhocAggregation()` function
+
+---
+
 ## [2026-02-24] FR Spike Aggregation Exploration & Bug Fix
 
 ### Summary
