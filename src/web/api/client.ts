@@ -687,6 +687,31 @@ export async function runAggregation(id: string, request: RunAggregationRequest)
   });
 }
 
+/**
+ * Run an ad-hoc aggregation backtest with an inline config (no saved aggregation ID needed)
+ */
+export async function runAdhocAggregation(config: {
+  subStrategies: Array<{
+    strategyName: string;
+    symbol: string;
+    timeframe: string;
+    params: Record<string, unknown>;
+    exchange: string;
+  }>;
+  allocationMode: string;
+  maxPositions: number;
+  initialCapital: number;
+  startDate: number;
+  endDate: number;
+  exchange: string;
+  mode?: string;
+}): Promise<AggregateBacktestResult> {
+  return apiFetch<AggregateBacktestResult>('/backtest/aggregate/run', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
 // ============================================================================
 // Health Check
 // ============================================================================

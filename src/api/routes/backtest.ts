@@ -14,9 +14,11 @@ import {
   getBacktestGroups,
   deleteBacktestRun,
   deleteAllBacktestRuns,
+  saveBacktestRun,
   getCandles,
   type HistoryFilters,
 } from '../../data/index.js';
+import { runAggregateBacktest } from '../../core/aggregate-engine.js';
 // Request schema for running a backtest
 const RunBacktestRequestSchema = z.object({
   strategyName: z.string().min(1),
@@ -67,6 +69,28 @@ const RunPairsBacktestRequestSchema = z.object({
 });
 
 type RunPairsBacktestRequest = z.infer<typeof RunPairsBacktestRequestSchema>;
+
+// Request schema for ad-hoc aggregate backtest (no saved aggregation ID needed)
+const RunAdhocAggregationRequestSchema = z.object({
+  subStrategies: z.array(
+    z.object({
+      strategyName: z.string().min(1),
+      symbol: z.string().min(1),
+      timeframe: z.enum(['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']),
+      params: z.record(z.string(), z.unknown()).optional().default({}),
+      exchange: z.string().optional(),
+    })
+  ).min(1),
+  allocationMode: z.enum(['single_strongest', 'weighted_multi', 'top_n']),
+  maxPositions: z.number().int().min(1),
+  initialCapital: z.number().positive(),
+  startDate: z.number().or(z.string().transform((s) => new Date(s).getTime())),
+  endDate: z.number().or(z.string().transform((s) => new Date(s).getTime())),
+  exchange: z.string().min(1),
+  mode: z.enum(['spot', 'futures']).default('spot').optional(),
+});
+
+type RunAdhocAggregationRequest = z.infer<typeof RunAdhocAggregationRequestSchema>;
 
 
 export async function backtestRoutes(fastify: FastifyInstance) {
@@ -450,6 +474,75 @@ export async function backtestRoutes(fastify: FastifyInstance) {
           details: error.issues,
         });
       }
+
+      if (error instanceof Error) {
+        return reply.status(500).send({
+          error: error.message,
+        });
+      }
+
+      return reply.status(500).send({
+        error: 'Unknown error occurred',
+      });
+    }
+  });
+
+  /**
+   * POST /api/backtest/aggregate/run
+   * Execute an ad-hoc aggregate backtest with an inline config (no saved aggregation ID needed)
+   */
+  fastify.post('/api/backtest/aggregate/run', async (
+    request: FastifyRequest<{ Body: RunAdhocAggregationRequest }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const parsed = RunAdhocAggregationRequestSchema.parse(request.body);
+
+      const aggregateConfig = {
+        subStrategies: parsed.subStrategies.map((s) => ({
+          strategyName: s.strategyName,
+          symbol: s.symbol,
+          timeframe: s.timeframe as any,
+          params: s.params ?? {},
+          exchange: s.exchange ?? parsed.exchange,
+        })),
+        allocationMode: parsed.allocationMode as any,
+        maxPositions: parsed.maxPositions,
+        initialCapital: parsed.initialCapital,
+        startDate: parsed.startDate,
+        endDate: parsed.endDate,
+        exchange: parsed.exchange,
+        mode: (parsed.mode ?? 'spot') as 'spot' | 'futures',
+      };
+
+      const startTime = Date.now();
+      const result = await runAggregateBacktest(aggregateConfig, {
+        enableLogging: true,
+        saveResults: false, // We save manually below (no aggregation_id link)
+      });
+      const duration = Date.now() - startTime;
+
+      // Save result without an aggregation_id (ad-hoc run)
+      await saveBacktestRun(result);
+
+      return reply.status(200).send({
+        ...result,
+        candles: [],
+        duration,
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.status(400).send({
+          error: 'Validation error',
+          details: error.issues,
+        });
+      }
+
+      fastify.log.error({
+        err: error,
+        msg: 'Error in /api/backtest/aggregate/run',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
 
       if (error instanceof Error) {
         return reply.status(500).send({
