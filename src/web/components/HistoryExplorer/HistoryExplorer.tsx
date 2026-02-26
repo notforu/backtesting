@@ -7,7 +7,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getHistory, getHistoryGroups, type HistoryParams, type BacktestGroup } from '../../api/client';
 import type { BacktestSummary } from '../../types';
-import { RunParamsModal } from './RunParamsModal';
 
 // ============================================================================
 // Types
@@ -16,6 +15,7 @@ import { RunParamsModal } from './RunParamsModal';
 interface HistoryExplorerContentProps {
   onSelectRun: (run: BacktestSummary) => void;
   selectedId?: string | null;
+  loadingId?: string | null;
   fixedRunType?: 'strategies' | 'aggregations';
   compact?: boolean;
   showFilters?: boolean;
@@ -118,24 +118,28 @@ function SortHeader({ label, column, currentSort, currentDir, onSort, className 
 // Run Row — params shown as expandable sub-row
 // ============================================================================
 
-function RunRow({ run, isSelected, isHighlighted, onSelect, onShowParams }: {
+function RunRow({ run, isSelected, isHighlighted, isLoading, onSelect }: {
   run: BacktestSummary;
   isSelected: boolean;
   isHighlighted?: boolean;
+  isLoading?: boolean;
   onSelect: (run: BacktestSummary) => void;
-  onShowParams: (run: BacktestSummary) => void;
 }) {
   const hasParams = run.params && Object.keys(run.params).length > 0;
   const isAgg = run.aggregationName || run.symbol === 'MULTI';
 
   return (
     <tr
-      className={`border-b border-gray-700/50 cursor-pointer transition-colors ${
-        isSelected ? 'bg-primary-900/30' : isHighlighted ? 'bg-green-900/10 hover:bg-green-900/20' : 'hover:bg-gray-700/30'
+      className={`border-b border-gray-700/50 cursor-pointer transition-colors ${isLoading ? 'opacity-70' : ''} ${
+        isSelected
+          ? 'bg-primary-900/40'
+          : isHighlighted
+          ? 'bg-green-900/10 hover:bg-green-900/20'
+          : 'hover:bg-gray-700/30'
       }`}
       onClick={() => onSelect(run)}
     >
-      <td className="py-2 pr-3">
+      <td className={`py-2 pr-3 ${isSelected ? 'shadow-[inset_3px_0_0_0_rgb(96,165,250)]' : ''}`}>
         <div className="font-medium text-white text-sm truncate max-w-[160px]" title={run.aggregationName ?? run.strategyName}>
           {isAgg ? (
             <span className="flex items-center gap-1.5">
@@ -165,9 +169,16 @@ function RunRow({ run, isSelected, isHighlighted, onSelect, onShowParams }: {
         ) : <span className="text-xs text-gray-600">-</span>}
       </td>
       <td className="py-2 pr-3">
-        <span className={`font-medium text-sm ${(run.totalReturnPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          {formatReturn(run.totalReturnPercent)}
-        </span>
+        {isLoading ? (
+          <svg className="animate-spin h-3 w-3 text-primary-400" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+        ) : (
+          <span className={`font-medium text-sm ${(run.totalReturnPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {formatReturn(run.totalReturnPercent)}
+          </span>
+        )}
       </td>
       <td className="py-2 pr-3">
         <span className={`text-sm ${(run.sharpeRatio ?? 0) >= 1 ? 'text-green-400' : (run.sharpeRatio ?? 0) >= 0 ? 'text-gray-300' : 'text-red-400'}`}>
@@ -180,12 +191,30 @@ function RunRow({ run, isSelected, isHighlighted, onSelect, onShowParams }: {
       <td className="py-2 pr-3 text-sm text-gray-300">{run.totalTrades ?? '-'}</td>
       <td className="py-2 pr-3">
         {hasParams && (
-          <button
-            className="text-xs text-primary-400 hover:text-primary-300"
-            onClick={(e) => { e.stopPropagation(); onShowParams(run); }}
-          >
-            params
-          </button>
+          <div className="relative group/params">
+            <span className="text-xs text-primary-400 cursor-default">params</span>
+            <div className="absolute right-0 bottom-full mb-1 hidden group-hover/params:block z-50 w-72 max-h-48 overflow-y-auto bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-3">
+              {Object.entries(run.params!).map(([key, value]) => {
+                if (key === 'subStrategies' && Array.isArray(value)) {
+                  return (
+                    <div key={key} className="flex justify-between gap-2 text-xs py-0.5">
+                      <span className="text-gray-400 font-mono truncate">{key}</span>
+                      <span className="text-gray-200 font-mono text-right">{value.length} sub-strategies</span>
+                    </div>
+                  );
+                }
+                const displayValue = typeof value === 'object' && value !== null
+                  ? JSON.stringify(value).slice(0, 60) + (JSON.stringify(value).length > 60 ? '...' : '')
+                  : String(value);
+                return (
+                  <div key={key} className="flex justify-between gap-2 text-xs py-0.5">
+                    <span className="text-gray-400 font-mono truncate">{key}</span>
+                    <span className="text-gray-200 font-mono text-right truncate">{displayValue}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </td>
       <td className="py-2 text-xs text-gray-500 whitespace-nowrap">{formatRelativeTime(run.runAt)}</td>
@@ -197,19 +226,20 @@ function RunRow({ run, isSelected, isHighlighted, onSelect, onShowParams }: {
 // Compact Run Row — minimal columns for inline use
 // ============================================================================
 
-function CompactRunRow({ run, isSelected, onSelect }: {
+function CompactRunRow({ run, isSelected, isLoading, onSelect }: {
   run: BacktestSummary;
   isSelected: boolean;
+  isLoading?: boolean;
   onSelect: (run: BacktestSummary) => void;
 }) {
   return (
     <tr
-      className={`border-b border-gray-700/50 cursor-pointer transition-colors ${
-        isSelected ? 'bg-primary-900/30' : 'hover:bg-gray-700/30'
+      className={`border-b border-gray-700/50 cursor-pointer transition-colors ${isLoading ? 'opacity-70' : ''} ${
+        isSelected ? 'bg-primary-900/40' : 'hover:bg-gray-700/30'
       }`}
       onClick={() => onSelect(run)}
     >
-      <td className="py-1.5 pr-2">
+      <td className={`py-1.5 pr-2 ${isSelected ? 'shadow-[inset_3px_0_0_0_rgb(96,165,250)]' : ''}`}>
         <div className="text-xs text-white truncate max-w-[120px]" title={run.aggregationName ?? run.strategyName}>
           {(run.aggregationName || run.symbol === 'MULTI') ? (
             <span className="flex items-center gap-1">
@@ -221,9 +251,16 @@ function CompactRunRow({ run, isSelected, onSelect }: {
         <div className="text-[10px] text-gray-500 truncate">{run.symbol !== 'MULTI' ? run.symbol : ''}</div>
       </td>
       <td className="py-1.5 pr-2">
-        <span className={`text-xs font-medium ${(run.totalReturnPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          {formatReturn(run.totalReturnPercent)}
-        </span>
+        {isLoading ? (
+          <svg className="animate-spin h-3 w-3 text-primary-400" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+        ) : (
+          <span className={`text-xs font-medium ${(run.totalReturnPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {formatReturn(run.totalReturnPercent)}
+          </span>
+        )}
       </td>
       <td className="py-1.5 pr-2">
         <span className={`text-xs ${(run.sharpeRatio ?? 0) >= 1 ? 'text-green-400' : (run.sharpeRatio ?? 0) >= 0 ? 'text-gray-300' : 'text-red-400'}`}>
@@ -283,12 +320,11 @@ function CompactTableHead() {
 // Expandable Group (fetches its own runs from API when expanded)
 // ============================================================================
 
-function AssetGroup({ group, filters, selectedId, onSelectRun, onShowParams }: {
+function AssetGroup({ group, filters, selectedId, onSelectRun }: {
   group: BacktestGroup;
   filters: FilterState;
   selectedId?: string | null;
   onSelectRun: (run: BacktestSummary) => void;
-  onShowParams: (run: BacktestSummary) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -357,7 +393,6 @@ function AssetGroup({ group, filters, selectedId, onSelectRun, onShowParams }: {
                     isSelected={selectedId === run.id}
                     isHighlighted={idx === 0}
                     onSelect={onSelectRun}
-                    onShowParams={onShowParams}
                   />
                 ))}
               </tbody>
@@ -376,6 +411,7 @@ function AssetGroup({ group, filters, selectedId, onSelectRun, onShowParams }: {
 export function HistoryExplorerContent({
   onSelectRun,
   selectedId,
+  loadingId,
   fixedRunType,
   compact = false,
   showFilters = true,
@@ -393,7 +429,6 @@ export function HistoryExplorerContent({
   const [offset, setOffset] = useState(0);
   const [allRuns, setAllRuns] = useState<BacktestSummary[]>([]);
   const [groupByAsset, setGroupByAsset] = useState(defaultGroupByAsset);
-  const [paramsModalRun, setParamsModalRun] = useState<BacktestSummary | null>(null);
   const [filterKey, setFilterKey] = useState(0);
 
   const PAGE_SIZE = 50;
@@ -616,7 +651,6 @@ export function HistoryExplorerContent({
                 filters={filters}
                 selectedId={selectedId}
                 onSelectRun={onSelectRun}
-                onShowParams={r => setParamsModalRun(r)}
               />
             ))}
           </div>
@@ -634,6 +668,7 @@ export function HistoryExplorerContent({
                       key={run.id}
                       run={run}
                       isSelected={selectedId === run.id}
+                      isLoading={loadingId === run.id}
                       onSelect={onSelectRun}
                     />
                   ))}
@@ -648,8 +683,8 @@ export function HistoryExplorerContent({
                       key={run.id}
                       run={run}
                       isSelected={selectedId === run.id}
+                      isLoading={loadingId === run.id}
                       onSelect={onSelectRun}
-                      onShowParams={r => setParamsModalRun(r)}
                     />
                   ))}
                 </tbody>
@@ -675,18 +710,6 @@ export function HistoryExplorerContent({
         )}
       </div>
 
-      {paramsModalRun && (
-        <RunParamsModal
-          run={paramsModalRun}
-          isOpen={true}
-          onClose={() => setParamsModalRun(null)}
-          onRerun={(params) => {
-            // Load the modified run summary into the parent (so config panel picks it up)
-            onSelectRun({ ...paramsModalRun, params });
-            setParamsModalRun(null);
-          }}
-        />
-      )}
     </div>
   );
 }
