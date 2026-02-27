@@ -11,6 +11,7 @@
  * - 1-bar execution delay: uses the last CLOSED candle, not the forming bar
  * - Stale data guard: skips tick if latest candle is too old
  * - Per-tick candle cache: candles and funding rates fetched once per symbol per tick
+ * - Multi-bar processing: processes ALL new bars since last tick to catch crossovers
  */
 
 import { EventEmitter } from 'events';
@@ -37,6 +38,9 @@ interface AdapterWithConfig {
   config: SubStrategyConfig;
   candles: Candle[];
   accumulatedFunding: number;
+  /** Index of the first bar that is "new" since the last tick. Bars before this
+   *  index are warmup bars and should not generate signals or exits. */
+  newBarsStartIndex: number;
 }
 
 // ============================================================================
@@ -60,6 +64,9 @@ export class PaperTradingEngine extends EventEmitter {
 
   // Track last processed funding rate timestamp per symbol to avoid double-payments
   private lastProcessedFRTimestamps: Map<string, number> = new Map();
+
+  // Track last processed candle timestamp per symbol:timeframe to detect new bars
+  private lastProcessedCandleTs: Map<string, number> = new Map();
 
   // Guard against concurrent tick execution
   private isTicking: boolean = false;
@@ -190,6 +197,11 @@ export class PaperTradingEngine extends EventEmitter {
 
     this.tickCount = session.tickCount;
     this.lastTickAt = session.lastTickAt;
+
+    // lastProcessedCandleTs is intentionally left empty here.
+    // On the next tick, each adapter will compute newBarsStartIndex relative to
+    // lastTickAt (stored in the session), so we do not need to pre-populate it.
+    // The map will be populated at the end of the first tick after restore.
   }
 
   // ==========================================================================
@@ -236,8 +248,10 @@ export class PaperTradingEngine extends EventEmitter {
 
   /**
    * Calculate milliseconds until the next candle close, using the shortest
-   * timeframe among sub-strategies. Adds a 30-second buffer after candle close
-   * to ensure the bar has fully settled.
+   * timeframe among sub-strategies. Adds a scaled buffer after candle close
+   * to ensure the bar has fully settled (10% of the timeframe, max 30s).
+   * This prevents drift on short timeframes like 1m where a 30s buffer would
+   * cause every-other-minute ticking instead of every minute.
    */
   private calculateNextTickDelay(): number {
     let shortestTfMs = Infinity;
@@ -249,14 +263,16 @@ export class PaperTradingEngine extends EventEmitter {
     if (!isFinite(shortestTfMs)) shortestTfMs = 4 * 60 * 60 * 1000; // Default 4h
 
     const now = Date.now();
-    const buffer = 30_000; // 30 second buffer after candle close
+    // Scale buffer with timeframe: 10% of TF, capped at 30s.
+    // For 1m: 6s, for 5m: 30s, for 4h: 30s.
+    const buffer = Math.min(30_000, Math.floor(shortestTfMs * 0.1));
 
     // Find the next candle close: smallest multiple of shortestTfMs strictly after now
     const nextClose = Math.ceil(now / shortestTfMs) * shortestTfMs;
     const delay = nextClose - now + buffer;
 
-    // Minimum 10 seconds to prevent tight loops
-    return Math.max(delay, 10_000);
+    // Minimum 2 seconds to prevent tight loops
+    return Math.max(delay, 2_000);
   }
 
   // ==========================================================================
@@ -306,6 +322,8 @@ export class PaperTradingEngine extends EventEmitter {
       // Step 2: Build adapters for each sub-strategy.
       // Each sub-strategy may use its own timeframe, so we fetch timeframe-specific
       // candles. Re-uses the cache when the same symbol+timeframe is requested.
+      // Also determine newBarsStartIndex: the index of the first candle that is
+      // newer than the last processed candle for this symbol:timeframe pair.
       // ------------------------------------------------------------------
 
       this.adapters = [];
@@ -368,11 +386,34 @@ export class PaperTradingEngine extends EventEmitter {
           adapter.confirmExecution(pos.direction as 'long' | 'short');
         }
 
+        // Determine which bars are new since the last tick.
+        // - If we have a stored last-processed timestamp for this key, scan for the
+        //   first bar strictly after it.
+        // - If this is the first tick (no stored timestamp), only process the very
+        //   last bar to avoid replaying all 200 warmup bars as signals.
+        const lastTs = this.lastProcessedCandleTs.get(cacheKey);
+        let newBarsStartIndex: number;
+
+        if (lastTs === undefined) {
+          // First tick for this adapter: only process the last (most recent closed) bar.
+          newBarsStartIndex = subCandles.length - 1;
+        } else {
+          // Find the first bar strictly after lastTs
+          newBarsStartIndex = subCandles.length; // default: no new bars
+          for (let i = 0; i < subCandles.length; i++) {
+            if (subCandles[i].timestamp > lastTs) {
+              newBarsStartIndex = i;
+              break;
+            }
+          }
+        }
+
         this.adapters.push({
           adapter,
           config: subConfig,
           candles: subCandles,
           accumulatedFunding: 0,
+          newBarsStartIndex,
         });
       }
 
@@ -381,256 +422,296 @@ export class PaperTradingEngine extends EventEmitter {
       }
 
       // ------------------------------------------------------------------
-      // Step 3: Update portfolio prices with the latest close price for
-      // each symbol (mirrors aggregate-engine.ts step 4a).
+      // Steps 3-8: Process each new bar across all adapters.
+      // This mimics the backtest loop bar-by-bar so that crossover signals
+      // between ticks are never missed.
       // ------------------------------------------------------------------
 
+      const minNewStart = Math.min(...this.adapters.map(a => a.newBarsStartIndex));
+      const maxBarIndex = Math.max(...this.adapters.map(a => a.candles.length - 1));
+
+      for (let barIdx = minNewStart; barIdx <= maxBarIndex; barIdx++) {
+        // ----------------------------------------------------------------
+        // Step 3: Update portfolio prices with the close of this bar.
+        // ----------------------------------------------------------------
+        for (const awd of this.adapters) {
+          if (barIdx < awd.candles.length) {
+            this.portfolio.updatePrice(awd.config.symbol, awd.candles[barIdx].close);
+          }
+        }
+
+        // ----------------------------------------------------------------
+        // Step 4: Process funding payments (futures mode only).
+        // Only apply FR timestamps that fall within the range of this bar
+        // (between the previous bar's open and this bar's close timestamp).
+        // ----------------------------------------------------------------
+        if (this.config.mode === 'futures') {
+          for (const awd of this.adapters) {
+            if (barIdx >= awd.candles.length) continue;
+
+            const symbol = awd.config.symbol;
+            const fundingRates = frCache.get(symbol) ?? [];
+            const currentBar = awd.candles[barIdx];
+            const prevBarTs = barIdx > 0 ? awd.candles[barIdx - 1].timestamp : 0;
+            const lastProcessedFRTs = this.lastProcessedFRTimestamps.get(symbol) ??
+              (this.lastTickAt ?? 0);
+
+            for (const fr of fundingRates) {
+              // Only apply FR events within this bar's time window and not yet processed
+              if (fr.timestamp <= lastProcessedFRTs) continue;
+              if (fr.timestamp <= prevBarTs) continue;
+              if (fr.timestamp > currentBar.timestamp) continue;
+
+              const positions = this.portfolio.getPositionForSymbol(symbol);
+              if (!positions.longPosition && !positions.shortPosition) continue;
+
+              const markPrice = fr.markPrice ?? currentBar.close;
+              if (markPrice === 0) continue;
+
+              if (positions.longPosition) {
+                const payment = -positions.longPosition.amount * markPrice * fr.fundingRate;
+                this.portfolio.applyFundingPayment(payment);
+                awd.accumulatedFunding += payment;
+                fundingPayments.push({ symbol, amount: payment });
+
+                this.emitEvent({
+                  type: 'funding_payment',
+                  sessionId: this.sessionId,
+                  symbol,
+                  amount: payment,
+                  equity: this.portfolio.equity,
+                });
+              }
+
+              if (positions.shortPosition) {
+                const payment = positions.shortPosition.amount * markPrice * fr.fundingRate;
+                this.portfolio.applyFundingPayment(payment);
+                awd.accumulatedFunding += payment;
+                fundingPayments.push({ symbol, amount: payment });
+
+                this.emitEvent({
+                  type: 'funding_payment',
+                  sessionId: this.sessionId,
+                  symbol,
+                  amount: payment,
+                  equity: this.portfolio.equity,
+                });
+              }
+            }
+
+            // Advance the FR pointer up to this bar's timestamp
+            if (fundingRates.length > 0) {
+              const lastFrInBar = [...fundingRates]
+                .filter(fr => fr.timestamp <= currentBar.timestamp)
+                .pop();
+              if (lastFrInBar && lastFrInBar.timestamp > (this.lastProcessedFRTimestamps.get(symbol) ?? 0)) {
+                this.lastProcessedFRTimestamps.set(symbol, lastFrInBar.timestamp);
+              }
+            }
+          }
+        }
+
+        // ----------------------------------------------------------------
+        // Step 5: Check exits for this bar.
+        // Only process adapters that have reached this bar index and where
+        // this bar is within the "new bars" window.
+        // ----------------------------------------------------------------
+        for (const awd of this.adapters) {
+          if (barIdx >= awd.candles.length) continue;
+          if (barIdx < awd.newBarsStartIndex) continue; // warmup bar for this adapter
+
+          if (!awd.adapter.isInPosition()) continue;
+
+          const positions = this.portfolio.getPositionForSymbol(awd.config.symbol);
+          const hasRealPosition =
+            positions.longPosition !== null || positions.shortPosition !== null;
+          if (!hasRealPosition) continue;
+
+          if (awd.adapter.wantsExit(barIdx)) {
+            const closeCandle = awd.candles[barIdx];
+            const closePrice = closeCandle.close;
+            const closeTimestamp = closeCandle.timestamp;
+
+            if (positions.longPosition) {
+              const trade = this.portfolio.closeLong(
+                awd.config.symbol,
+                'all',
+                closePrice,
+                closeTimestamp,
+                FEE_RATE,
+              );
+              const paperTrade = await this.saveTrade(awd, trade, 'close_long', awd.accumulatedFunding);
+              tradesClosed.push(paperTrade);
+              awd.accumulatedFunding = 0;
+              await paperDb.deletePaperPosition(this.sessionId, awd.config.symbol, 'long');
+            }
+
+            if (positions.shortPosition) {
+              const trade = this.portfolio.closeShort(
+                awd.config.symbol,
+                'all',
+                closePrice,
+                closeTimestamp,
+                FEE_RATE,
+              );
+              const paperTrade = await this.saveTrade(awd, trade, 'close_short', awd.accumulatedFunding);
+              tradesClosed.push(paperTrade);
+              awd.accumulatedFunding = 0;
+              await paperDb.deletePaperPosition(this.sessionId, awd.config.symbol, 'short');
+            }
+
+            awd.adapter.confirmExit();
+          }
+        }
+
+        // ----------------------------------------------------------------
+        // Step 6: Collect entry signals for this bar.
+        // ----------------------------------------------------------------
+        const barSignals: Array<{ signal: Signal; awd: AdapterWithConfig; barIndex: number }> = [];
+
+        for (const awd of this.adapters) {
+          if (barIdx >= awd.candles.length) continue;
+          if (barIdx < awd.newBarsStartIndex) continue;
+
+          if (awd.adapter.isInPosition()) continue;
+
+          const signal = awd.adapter.getSignal(barIdx);
+          if (signal && signal.direction !== 'flat') {
+            barSignals.push({ signal, awd, barIndex: barIdx });
+          }
+        }
+
+        // ----------------------------------------------------------------
+        // Step 7: Select signals based on allocation mode.
+        // ----------------------------------------------------------------
+        const currentPositionCount = this.portfolio.getPositionCount();
+        let selectedSignals: Array<{ signal: Signal; awd: AdapterWithConfig; barIndex: number }> = [];
+
+        if (barSignals.length > 0) {
+          barSignals.sort((a, b) => b.signal.weight - a.signal.weight);
+
+          switch (this.config.allocationMode) {
+            case 'single_strongest': {
+              if (currentPositionCount === 0) {
+                selectedSignals = [barSignals[0]];
+              }
+              break;
+            }
+            case 'top_n': {
+              const availableSlots = Math.max(0, this.config.maxPositions - currentPositionCount);
+              selectedSignals = barSignals.slice(0, availableSlots);
+              break;
+            }
+            case 'weighted_multi': {
+              const availableSlots = Math.max(0, this.config.maxPositions - currentPositionCount);
+              selectedSignals = barSignals.slice(0, availableSlots);
+              break;
+            }
+          }
+        }
+
+        // ----------------------------------------------------------------
+        // Step 8: Execute selected signals.
+        // Snapshot cash before the loop so all allocations share the same base.
+        // ----------------------------------------------------------------
+        const cashSnapshot = this.portfolio.cash;
+        const totalWeightSnapshot = selectedSignals.reduce(
+          (sum, s) => sum + s.signal.weight,
+          0,
+        );
+
+        for (const { signal, awd, barIndex } of selectedSignals) {
+          const entryCandle = awd.candles[barIndex];
+          const entryPrice = entryCandle.close;
+          const entryTimestamp = entryCandle.timestamp;
+
+          let capitalForTrade: number;
+          if (this.config.allocationMode === 'weighted_multi' && selectedSignals.length > 1) {
+            capitalForTrade =
+              totalWeightSnapshot > 0
+                ? (signal.weight / totalWeightSnapshot) * cashSnapshot * 0.9
+                : (cashSnapshot * 0.9) / selectedSignals.length;
+          } else if (this.config.allocationMode === 'top_n' && selectedSignals.length > 1) {
+            capitalForTrade = (cashSnapshot * 0.9) / selectedSignals.length;
+          } else {
+            capitalForTrade = cashSnapshot * 0.9;
+          }
+
+          const amount = capitalForTrade / entryPrice;
+          if (amount <= 0) continue;
+
+          try {
+            let trade: Trade;
+            if (signal.direction === 'long') {
+              trade = this.portfolio.openLong(
+                awd.config.symbol,
+                amount,
+                entryPrice,
+                entryTimestamp,
+                FEE_RATE,
+              );
+            } else {
+              trade = this.portfolio.openShort(
+                awd.config.symbol,
+                amount,
+                entryPrice,
+                entryTimestamp,
+                FEE_RATE,
+              );
+            }
+
+            const action = signal.direction === 'long' ? 'open_long' : 'open_short';
+            const paperTrade = await this.saveTrade(awd, trade, action, 0);
+            tradesOpened.push(paperTrade);
+
+            // Confirm in adapter so shadow state stays in sync
+            awd.adapter.confirmExecutionAtBar(signal.direction, barIndex);
+            awd.accumulatedFunding = 0;
+
+            // Persist position to DB
+            // signal.direction is guaranteed to be 'long' | 'short' here because
+            // 'flat' signals were filtered out before selectedSignals was built.
+            await paperDb.savePaperPosition({
+              sessionId: this.sessionId,
+              symbol: awd.config.symbol,
+              direction: signal.direction as 'long' | 'short',
+              entryPrice,
+              amount,
+              entryTime: entryTimestamp,
+              unrealizedPnl: 0,
+              fundingAccumulated: 0,
+            });
+          } catch (err) {
+            console.warn(
+              `[PaperEngine ${this.sessionId}] Could not execute ${signal.direction} ` +
+              `for ${signal.symbol}: ${err instanceof Error ? err.message : 'unknown'}`,
+            );
+          }
+        }
+      } // end bar loop
+
+      // ------------------------------------------------------------------
+      // After bar loop: advance lastProcessedCandleTs for all adapters.
+      // ------------------------------------------------------------------
       for (const awd of this.adapters) {
         const lastCandle = awd.candles[awd.candles.length - 1];
-        this.portfolio.updatePrice(awd.config.symbol, lastCandle.close);
+        const cacheKey = `${awd.config.symbol}:${awd.config.timeframe}`;
+        this.lastProcessedCandleTs.set(cacheKey, lastCandle.timestamp);
       }
 
-      // ------------------------------------------------------------------
-      // Step 4: Process funding payments (futures mode only).
-      // Only apply funding rate timestamps that we haven't processed yet.
-      // Mirrors aggregate-engine.ts step 4b.
-      // ------------------------------------------------------------------
-
+      // Also advance FR timestamps for any remaining funding rates not covered
+      // by the bar-level loop (non-futures mode skips the inner loop entirely).
       if (this.config.mode === 'futures') {
         for (const awd of this.adapters) {
           const symbol = awd.config.symbol;
           const fundingRates = frCache.get(symbol) ?? [];
-          const lastProcessedTs = this.lastProcessedFRTimestamps.get(symbol) ??
-            (this.lastTickAt ?? 0);
-
-          for (const fr of fundingRates) {
-            if (fr.timestamp <= lastProcessedTs) continue;
-
-            const positions = this.portfolio.getPositionForSymbol(symbol);
-            if (!positions.longPosition && !positions.shortPosition) continue;
-
-            // Use the FR mark price if available; fall back to latest candle close
-            const lastCandle = awd.candles[awd.candles.length - 1];
-            const markPrice = fr.markPrice ?? lastCandle.close;
-            if (markPrice === 0) continue;
-
-            if (positions.longPosition) {
-              const payment = -positions.longPosition.amount * markPrice * fr.fundingRate;
-              this.portfolio.applyFundingPayment(payment);
-              awd.accumulatedFunding += payment;
-              fundingPayments.push({ symbol, amount: payment });
-
-              this.emitEvent({
-                type: 'funding_payment',
-                sessionId: this.sessionId,
-                symbol,
-                amount: payment,
-                equity: this.portfolio.equity,
-              });
-            }
-
-            if (positions.shortPosition) {
-              const payment = positions.shortPosition.amount * markPrice * fr.fundingRate;
-              this.portfolio.applyFundingPayment(payment);
-              awd.accumulatedFunding += payment;
-              fundingPayments.push({ symbol, amount: payment });
-
-              this.emitEvent({
-                type: 'funding_payment',
-                sessionId: this.sessionId,
-                symbol,
-                amount: payment,
-                equity: this.portfolio.equity,
-              });
-            }
-          }
-
-          // Advance the last-processed pointer for this symbol
           if (fundingRates.length > 0) {
-            this.lastProcessedFRTimestamps.set(
-              symbol,
-              fundingRates[fundingRates.length - 1].timestamp,
-            );
-          }
-        }
-      }
-
-      // ------------------------------------------------------------------
-      // Step 5: Check exits (mirrors aggregate-engine.ts step 4c).
-      // ------------------------------------------------------------------
-
-      for (const awd of this.adapters) {
-        const lastBarIndex = awd.candles.length - 1;
-
-        if (!awd.adapter.isInPosition()) continue;
-
-        const positions = this.portfolio.getPositionForSymbol(awd.config.symbol);
-        const hasRealPosition =
-          positions.longPosition !== null || positions.shortPosition !== null;
-        if (!hasRealPosition) continue;
-
-        if (awd.adapter.wantsExit(lastBarIndex)) {
-          const closeCandle = awd.candles[lastBarIndex];
-          const closePrice = closeCandle.close;
-          const closeTimestamp = closeCandle.timestamp;
-
-          if (positions.longPosition) {
-            const trade = this.portfolio.closeLong(
-              awd.config.symbol,
-              'all',
-              closePrice,
-              closeTimestamp,
-              FEE_RATE,
-            );
-            const paperTrade = await this.saveTrade(awd, trade, 'close_long', awd.accumulatedFunding);
-            tradesClosed.push(paperTrade);
-            awd.accumulatedFunding = 0;
-            await paperDb.deletePaperPosition(this.sessionId, awd.config.symbol, 'long');
-          }
-
-          if (positions.shortPosition) {
-            const trade = this.portfolio.closeShort(
-              awd.config.symbol,
-              'all',
-              closePrice,
-              closeTimestamp,
-              FEE_RATE,
-            );
-            const paperTrade = await this.saveTrade(awd, trade, 'close_short', awd.accumulatedFunding);
-            tradesClosed.push(paperTrade);
-            awd.accumulatedFunding = 0;
-            await paperDb.deletePaperPosition(this.sessionId, awd.config.symbol, 'short');
-          }
-
-          awd.adapter.confirmExit();
-        }
-      }
-
-      // ------------------------------------------------------------------
-      // Step 6: Collect entry signals (mirrors aggregate-engine.ts step 4d).
-      // ------------------------------------------------------------------
-
-      const signals: Array<{ signal: Signal; awd: AdapterWithConfig; barIndex: number }> = [];
-
-      for (const awd of this.adapters) {
-        const lastBarIndex = awd.candles.length - 1;
-
-        if (awd.adapter.isInPosition()) continue;
-
-        const signal = awd.adapter.getSignal(lastBarIndex);
-        if (signal && signal.direction !== 'flat') {
-          signals.push({ signal, awd, barIndex: lastBarIndex });
-        }
-      }
-
-      // ------------------------------------------------------------------
-      // Step 7: Select signals based on allocation mode
-      // (mirrors aggregate-engine.ts step 4e).
-      // ------------------------------------------------------------------
-
-      const currentPositionCount = this.portfolio.getPositionCount();
-      let selectedSignals: Array<{ signal: Signal; awd: AdapterWithConfig; barIndex: number }> = [];
-
-      if (signals.length > 0) {
-        signals.sort((a, b) => b.signal.weight - a.signal.weight);
-
-        switch (this.config.allocationMode) {
-          case 'single_strongest': {
-            if (currentPositionCount === 0) {
-              selectedSignals = [signals[0]];
+            const lastFrTs = fundingRates[fundingRates.length - 1].timestamp;
+            const currentMax = this.lastProcessedFRTimestamps.get(symbol) ?? 0;
+            if (lastFrTs > currentMax) {
+              this.lastProcessedFRTimestamps.set(symbol, lastFrTs);
             }
-            break;
           }
-          case 'top_n': {
-            const availableSlots = Math.max(0, this.config.maxPositions - currentPositionCount);
-            selectedSignals = signals.slice(0, availableSlots);
-            break;
-          }
-          case 'weighted_multi': {
-            const availableSlots = Math.max(0, this.config.maxPositions - currentPositionCount);
-            selectedSignals = signals.slice(0, availableSlots);
-            break;
-          }
-        }
-      }
-
-      // ------------------------------------------------------------------
-      // Step 8: Execute selected signals (mirrors aggregate-engine.ts step 4f).
-      // Snapshot cash before the loop so all allocations share the same base.
-      // ------------------------------------------------------------------
-
-      const cashSnapshot = this.portfolio.cash;
-      const totalWeightSnapshot = selectedSignals.reduce(
-        (sum, s) => sum + s.signal.weight,
-        0,
-      );
-
-      for (const { signal, awd, barIndex } of selectedSignals) {
-        const entryCandle = awd.candles[barIndex];
-        const entryPrice = entryCandle.close;
-        const entryTimestamp = entryCandle.timestamp;
-
-        let capitalForTrade: number;
-        if (this.config.allocationMode === 'weighted_multi' && selectedSignals.length > 1) {
-          capitalForTrade =
-            totalWeightSnapshot > 0
-              ? (signal.weight / totalWeightSnapshot) * cashSnapshot * 0.9
-              : (cashSnapshot * 0.9) / selectedSignals.length;
-        } else if (this.config.allocationMode === 'top_n' && selectedSignals.length > 1) {
-          capitalForTrade = (cashSnapshot * 0.9) / selectedSignals.length;
-        } else {
-          capitalForTrade = cashSnapshot * 0.9;
-        }
-
-        const amount = capitalForTrade / entryPrice;
-        if (amount <= 0) continue;
-
-        try {
-          let trade: Trade;
-          if (signal.direction === 'long') {
-            trade = this.portfolio.openLong(
-              awd.config.symbol,
-              amount,
-              entryPrice,
-              entryTimestamp,
-              FEE_RATE,
-            );
-          } else {
-            trade = this.portfolio.openShort(
-              awd.config.symbol,
-              amount,
-              entryPrice,
-              entryTimestamp,
-              FEE_RATE,
-            );
-          }
-
-          const action = signal.direction === 'long' ? 'open_long' : 'open_short';
-          const paperTrade = await this.saveTrade(awd, trade, action, 0);
-          tradesOpened.push(paperTrade);
-
-          // Confirm in adapter so shadow state stays in sync
-          awd.adapter.confirmExecutionAtBar(signal.direction, barIndex);
-          awd.accumulatedFunding = 0;
-
-          // Persist position to DB
-          // signal.direction is guaranteed to be 'long' | 'short' here because
-          // 'flat' signals were filtered out before selectedSignals was built.
-          await paperDb.savePaperPosition({
-            sessionId: this.sessionId,
-            symbol: awd.config.symbol,
-            direction: signal.direction as 'long' | 'short',
-            entryPrice,
-            amount,
-            entryTime: entryTimestamp,
-            unrealizedPnl: 0,
-            fundingAccumulated: 0,
-          });
-        } catch (err) {
-          console.warn(
-            `[PaperEngine ${this.sessionId}] Could not execute ${signal.direction} ` +
-            `for ${signal.symbol}: ${err instanceof Error ? err.message : 'unknown'}`,
-          );
         }
       }
 
@@ -796,6 +877,7 @@ export class PaperTradingEngine extends EventEmitter {
             this.config.subStrategies[0],
           candles,
           accumulatedFunding: 0,
+          newBarsStartIndex: 0,
         };
 
         if (pos.direction === 'long') {

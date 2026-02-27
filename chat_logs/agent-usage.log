@@ -638,3 +638,4 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-27 14:00] be-dev (sonnet) - Fix shorts bug in signal-adapter.ts + investigate price diff
 [2026-02-27 14:15] be-dev (haiku) - Fix comparison script trade matching logic
 [2026-02-27 14:16] docs-writer (haiku) - Create changelog for paper trading bug fixes (tick timing, crossovers, short entries)
+[2026-02-27 14:20] commit (haiku) - fix paper trading signal handling and comparison script
