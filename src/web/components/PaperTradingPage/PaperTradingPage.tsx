@@ -25,11 +25,13 @@ import {
   fmtPct,
   fmtDate,
   returnPercent,
+  configDisplayName,
 } from '../PaperTradingPanel/PaperTradingPanel';
 import { Chart } from '../Chart';
 import { Dashboard } from '../Dashboard';
+import { PaperDrawdownChart } from './PaperDrawdownChart';
 import { mapPaperTrades, computePaperMetrics } from './paperUtils';
-import type { Timeframe } from '../../types';
+import type { Timeframe, PerformanceMetrics, PaperEquitySnapshot } from '../../types';
 
 // ============================================================================
 // Candle range helper — compute a start date providing ~200 candles of context
@@ -46,11 +48,168 @@ const TIMEFRAME_MS: Record<string, number> = {
   '1w': 7 * 86_400_000,
 };
 
-function candleStartDate(timeframe: string, earliestTs: number): string {
+function candleStartDate(timeframe: string, referenceTs: number): string {
   const barMs = TIMEFRAME_MS[timeframe] ?? 3_600_000;
-  const bufferMs = barMs * 200; // ~200 candles of context
-  const start = new Date(earliestTs - bufferMs);
+  const bufferMs = barMs * 200; // ~200 candles of context before reference point
+  const start = new Date(referenceTs - bufferMs);
   return start.toISOString().split('T')[0];
+}
+
+// ============================================================================
+// Chart tab type definitions
+// ============================================================================
+
+type AssetChartTab = 'price' | 'equity' | 'drawdown' | 'stats';
+type PortfolioChartTab = 'equity' | 'drawdown' | 'stats';
+
+// ============================================================================
+// StatsTab — performance statistics grid
+// ============================================================================
+
+function StatCard({
+  label,
+  value,
+  valueClass,
+  subValue,
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+  subValue?: string;
+}) {
+  return (
+    <div className="bg-gray-900 rounded-lg border border-gray-700 px-4 py-4">
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <p className={`text-2xl font-bold ${valueClass ?? 'text-white'}`}>{value}</p>
+      {subValue && <p className="text-xs text-gray-500 mt-1">{subValue}</p>}
+    </div>
+  );
+}
+
+function StatsTab({
+  metrics,
+  isFutures,
+}: {
+  metrics: PerformanceMetrics | null;
+  isFutures: boolean;
+}) {
+  if (!metrics) {
+    return (
+      <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
+        No data yet
+      </div>
+    );
+  }
+
+  const pfDisplay =
+    metrics.profitFactor === Infinity
+      ? 'Perfect'
+      : metrics.profitFactor === 0
+        ? '0.00'
+        : metrics.profitFactor.toFixed(2);
+
+  return (
+    <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <StatCard
+          label="Win Rate"
+          value={`${metrics.winRate.toFixed(1)}%`}
+          valueClass={metrics.winRate >= 50 ? 'text-green-400' : 'text-red-400'}
+          subValue={`${metrics.winningTrades}W / ${metrics.losingTrades}L`}
+        />
+        <StatCard
+          label="Profit Factor"
+          value={pfDisplay}
+          valueClass={metrics.profitFactor >= 1 ? 'text-green-400' : 'text-red-400'}
+        />
+        <StatCard
+          label="Total Trades"
+          value={metrics.totalTrades.toString()}
+          subValue="closed trades"
+        />
+        <StatCard
+          label="Expectancy"
+          value={fmtUsd(metrics.expectancy)}
+          valueClass={metrics.expectancy >= 0 ? 'text-green-400' : 'text-red-400'}
+          subValue={`${metrics.expectancyPercent >= 0 ? '+' : ''}${metrics.expectancyPercent.toFixed(2)}% per trade`}
+        />
+        <StatCard
+          label="Avg Win"
+          value={fmtUsd(metrics.avgWin)}
+          valueClass="text-green-400"
+          subValue={`${metrics.avgWinPercent >= 0 ? '+' : ''}${metrics.avgWinPercent.toFixed(2)}%`}
+        />
+        <StatCard
+          label="Avg Loss"
+          value={fmtUsd(metrics.avgLoss)}
+          valueClass="text-red-400"
+          subValue={`${metrics.avgLossPercent.toFixed(2)}%`}
+        />
+        <StatCard
+          label="Best Trade"
+          value={fmtUsd(metrics.largestWin)}
+          valueClass="text-green-400"
+        />
+        <StatCard
+          label="Worst Trade"
+          value={fmtUsd(metrics.largestLoss)}
+          valueClass="text-red-400"
+        />
+        <StatCard
+          label="Total Fees"
+          value={fmtUsd(metrics.totalFees)}
+          valueClass="text-yellow-400"
+        />
+        {isFutures && metrics.totalFundingIncome !== undefined && (
+          <StatCard
+            label="Total Funding Income"
+            value={fmtUsd(metrics.totalFundingIncome)}
+            valueClass={metrics.totalFundingIncome >= 0 ? 'text-green-400' : 'text-red-400'}
+          />
+        )}
+        {isFutures && metrics.tradingPnl !== undefined && (
+          <StatCard
+            label="Trading PnL"
+            value={fmtUsd(metrics.tradingPnl)}
+            valueClass={metrics.tradingPnl >= 0 ? 'text-green-400' : 'text-red-400'}
+            subValue="excl. funding"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Chart tab bar — thin horizontal row of tab pills
+// ============================================================================
+
+function ChartTabBar<T extends string>({
+  tabs,
+  active,
+  onChange,
+}: {
+  tabs: { id: T; label: string }[];
+  active: T;
+  onChange: (tab: T) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 mb-2">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => onChange(tab.id)}
+          className={`px-3 py-1 rounded text-xs font-medium transition-colors border ${
+            active === tab.id
+              ? 'bg-gray-700 border-gray-500 text-white'
+              : 'bg-transparent border-transparent text-gray-500 hover:text-gray-300 hover:border-gray-600'
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 // ============================================================================
@@ -69,6 +228,10 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
 
   // Asset tabs for multi-asset sessions
   const [selectedAssetIndex, setSelectedAssetIndex] = useState<number>(-1);
+
+  // Chart view tabs
+  const [assetChartTab, setAssetChartTab] = useState<AssetChartTab>('price');
+  const [portfolioChartTab, setPortfolioChartTab] = useState<PortfolioChartTab>('equity');
 
   const subStrategies = session?.aggregationConfig?.subStrategies ?? [];
   const isMultiAsset = subStrategies.length > 1;
@@ -90,16 +253,25 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   const allPaperTrades = tradesData?.trades ?? [];
   const backtestTrades = useMemo(() => mapPaperTrades(allPaperTrades), [allPaperTrades]);
 
-  // Compute candle date range — go back ~200 candles from the earliest trade for context
+  // Compute candle date range — always show at least 200 candles of history.
+  // Use earliest trade timestamp as reference when trades exist, otherwise use now.
+  // endDate is tomorrow to ensure the current (forming) candle is included.
+  const now = Date.now();
   const earliestTradeTs = allPaperTrades.length > 0
     ? Math.min(...allPaperTrades.map((t) => t.timestamp))
-    : session?.createdAt ?? Date.now();
+    : now;
+  const referenceTs = Math.min(earliestTradeTs, now);
+  const tomorrowDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  })();
   const candleParams = activeAsset && session ? {
     exchange: activeAsset.exchange,
     symbol: activeAsset.symbol,
     timeframe: activeAsset.timeframe as Timeframe,
-    startDate: candleStartDate(activeAsset.timeframe, earliestTradeTs),
-    endDate: new Date().toISOString().split('T')[0],
+    startDate: candleStartDate(activeAsset.timeframe, referenceTs),
+    endDate: tomorrowDate,
   } : null;
   const { data: assetCandles } = useCandles(candleParams);
 
@@ -117,8 +289,19 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     return computePaperMetrics(displayedPaperTrades, session.initialCapital, session.currentEquity);
   }, [session, displayedPaperTrades]);
 
-  // Reset asset index on session change
-  useEffect(() => { setSelectedAssetIndex(-1); }, [sessionId]);
+  // Reset asset index on session change; reset chart tabs too
+  useEffect(() => {
+    setSelectedAssetIndex(-1);
+    setAssetChartTab('price');
+    setPortfolioChartTab('equity');
+  }, [sessionId]);
+
+  // When switching from multi-asset portfolio view to an asset view, default to Price tab
+  useEffect(() => {
+    if (selectedAsset) {
+      setAssetChartTab('price');
+    }
+  }, [selectedAsset?.symbol]);
 
   if (isLoading) {
     return (
@@ -149,6 +332,30 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     setSelectedSession(null);
   };
 
+  // Determine which snapshot set to use for equity/drawdown charts in asset view.
+  // For a specific selected asset we still use the overall session equity snapshots
+  // (we don't have per-asset snapshots in paper trading).
+  const snapshots: PaperEquitySnapshot[] = equitySnapshots ?? [];
+
+  // Asset chart tab definitions
+  const assetTabs: { id: AssetChartTab; label: string }[] = [
+    { id: 'price', label: 'Price' },
+    { id: 'equity', label: 'Equity' },
+    { id: 'drawdown', label: 'Drawdown' },
+    { id: 'stats', label: 'Stats' },
+  ];
+
+  // Portfolio chart tab definitions
+  const portfolioTabs: { id: PortfolioChartTab; label: string }[] = [
+    { id: 'equity', label: 'Equity' },
+    { id: 'drawdown', label: 'Drawdown' },
+    { id: 'stats', label: 'Stats' },
+  ];
+
+  // Whether we are in the "per-asset" view or the "portfolio/single" view
+  // (multi-asset with portfolio selected, or single-asset session)
+  const isAssetView = !!activeAsset && (isMultiAsset ? !!selectedAsset : true);
+
   return (
     <div className="p-4 space-y-4">
       {/* Session header */}
@@ -156,7 +363,7 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
         <div>
           <h2 className="text-xl font-bold text-white">{session.name}</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            {session.aggregationConfig?.name ?? session.aggregationConfigId ?? 'Unknown config'}
+            {configDisplayName(session)}
           </p>
         </div>
         <StatusBadge status={status} />
@@ -283,32 +490,69 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      {/* Chart section */}
+      {/* Chart section with tabs */}
       <section>
-        <h3 className="text-lg font-semibold text-white mb-2">
-          {isMultiAsset && !selectedAsset ? 'Portfolio Equity' : activeAsset ? `${activeAsset.label} Chart` : 'Equity Curve'}
-        </h3>
-        {isMultiAsset && !selectedAsset ? (
-          /* Portfolio equity curve */
-          <PaperEquityChart snapshots={equitySnapshots ?? []} height={450} />
-        ) : activeAsset && assetCandles && assetCandles.length > 0 ? (
-          /* Per-asset candlestick chart with trade markers */
-          <Chart
-            candles={assetCandles}
-            trades={displayedBacktestTrades}
-            height={450}
-            isFutures={isFutures}
-            backtestTimeframe={activeAsset.timeframe as Timeframe}
-            exchange={activeAsset.exchange}
-            symbol={activeAsset.symbol}
-          />
-        ) : activeAsset ? (
-          <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
-            Loading candles for {activeAsset.label}...
-          </div>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-sm font-medium text-gray-400">
+            {isAssetView
+              ? `${activeAsset!.label} (${activeAsset!.timeframe})`
+              : isMultiAsset
+                ? 'Portfolio'
+                : 'Equity Curve'}
+          </h3>
+        </div>
+
+        {isAssetView ? (
+          <>
+            <ChartTabBar
+              tabs={assetTabs}
+              active={assetChartTab}
+              onChange={setAssetChartTab}
+            />
+            {assetChartTab === 'price' && (
+              assetCandles && assetCandles.length > 0 ? (
+                <Chart
+                  candles={assetCandles}
+                  trades={displayedBacktestTrades}
+                  height={450}
+                  isFutures={isFutures}
+                  backtestTimeframe={activeAsset!.timeframe as Timeframe}
+                  exchange={activeAsset!.exchange}
+                  symbol={activeAsset!.symbol}
+                />
+              ) : (
+                <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
+                  Loading candles for {activeAsset!.label}...
+                </div>
+              )
+            )}
+            {assetChartTab === 'equity' && (
+              <PaperEquityChart snapshots={snapshots} height={450} />
+            )}
+            {assetChartTab === 'drawdown' && (
+              <PaperDrawdownChart snapshots={snapshots} height={450} />
+            )}
+            {assetChartTab === 'stats' && (
+              <StatsTab metrics={metrics} isFutures={isFutures} />
+            )}
+          </>
         ) : (
-          /* Single-asset or no asset — show equity curve */
-          <PaperEquityChart snapshots={equitySnapshots ?? []} height={450} />
+          <>
+            <ChartTabBar
+              tabs={portfolioTabs}
+              active={portfolioChartTab}
+              onChange={setPortfolioChartTab}
+            />
+            {portfolioChartTab === 'equity' && (
+              <PaperEquityChart snapshots={snapshots} height={450} />
+            )}
+            {portfolioChartTab === 'drawdown' && (
+              <PaperDrawdownChart snapshots={snapshots} height={450} />
+            )}
+            {portfolioChartTab === 'stats' && (
+              <StatsTab metrics={metrics} isFutures={isFutures} />
+            )}
+          </>
         )}
       </section>
 

@@ -20,6 +20,24 @@ import { PaperEquityChart } from './PaperEquityChart';
 import type { PaperSession, PaperTrade } from '../../types';
 
 // ============================================================================
+// Config display name helper
+// ============================================================================
+
+export function configDisplayName(session: Pick<PaperSession, 'aggregationConfig' | 'aggregationConfigId'>): string {
+  const subs = session.aggregationConfig?.subStrategies;
+  if (subs && subs.length > 0) {
+    if (subs.length === 1) {
+      const s = subs[0];
+      const sym = s.symbol.replace('/USDT:USDT', '').replace('/USDT', '');
+      return `${s.strategyName} on ${sym} ${s.timeframe}`;
+    }
+    const mode = session.aggregationConfig?.allocationMode ?? 'multi';
+    return `${subs.length} strategies (${mode})`;
+  }
+  return session.aggregationConfigId ?? 'Manual config';
+}
+
+// ============================================================================
 // Status Badge
 // ============================================================================
 
@@ -153,7 +171,7 @@ export function SessionCard({ session, isSelected, onSelect }: SessionCardProps)
         <div className="min-w-0">
           <p className="text-sm font-medium text-white truncate">{session.name}</p>
           <p className="text-xs text-gray-500 mt-0.5 truncate">
-            {session.aggregationConfig?.name ?? session.aggregationConfigId ?? 'Unknown config'}
+            {configDisplayName(session)}
           </p>
         </div>
         <StatusBadge status={session.status} />
@@ -272,7 +290,7 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
         <div>
           <h3 className="text-base font-semibold text-white">{session.name}</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            {session.aggregationConfig?.name ?? session.aggregationConfigId}
+            {configDisplayName(session)}
           </p>
         </div>
         <StatusBadge status={status} />

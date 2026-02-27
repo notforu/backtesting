@@ -1,24 +1,42 @@
 /**
  * Modal for creating a new paper trading session.
- * Supports two modes:
+ * Supports three modes:
  *   1. From Aggregation — select a saved aggregation config
- *   2. Simple Strategy — configure a single strategy inline
+ *   2. From History — select a past aggregation backtest run
+ *   3. Simple Strategy — configure a single strategy inline
  */
 
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getAggregations, getStrategies } from '../../api/client';
+import { getAggregations, getStrategies, getHistory } from '../../api/client';
 import { useCreatePaperSession } from '../../hooks/usePaperTrading';
-import type { StrategyParam } from '../../types';
+import type { StrategyParam, BacktestSummary } from '../../types';
 
 interface CreatePaperSessionModalProps {
   onClose: () => void;
   onCreated?: (sessionId: string) => void;
 }
 
-type Mode = 'aggregation' | 'strategy';
+type Mode = 'aggregation' | 'history' | 'strategy';
 
 const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'];
+
+function formatDate(isoOrTimestamp: string | number | undefined): string {
+  if (!isoOrTimestamp) return '—';
+  const d = new Date(typeof isoOrTimestamp === 'number' ? isoOrTimestamp : isoOrTimestamp);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatPct(value: number | undefined): string {
+  if (value === undefined || value === null) return '—';
+  const sign = value >= 0 ? '+' : '';
+  return `${sign}${value.toFixed(1)}%`;
+}
+
+function formatSharpe(value: number | undefined): string {
+  if (value === undefined || value === null) return '—';
+  return value.toFixed(2);
+}
 
 export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessionModalProps) {
   const { data: aggregations, isLoading: loadingAggregations } = useQuery({
@@ -29,6 +47,11 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
   const { data: strategies, isLoading: loadingStrategies } = useQuery({
     queryKey: ['strategies'],
     queryFn: getStrategies,
+  });
+
+  const { data: historyData, isLoading: loadingHistory } = useQuery({
+    queryKey: ['backtest-history-aggregations'],
+    queryFn: () => getHistory({ runType: 'aggregations', limit: 20, sortBy: 'runAt', sortDir: 'desc' }),
   });
 
   const createMutation = useCreatePaperSession();
@@ -43,6 +66,9 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
 
   // Aggregation mode
   const [aggregationConfigId, setAggregationConfigId] = useState('');
+
+  // History mode
+  const [selectedHistoryRun, setSelectedHistoryRun] = useState<BacktestSummary | null>(null);
 
   // Simple strategy mode — defaults optimised for quick paper trading test
   const [strategyName, setStrategyName] = useState('sma-crossover');
@@ -65,6 +91,16 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
       setInitialCapitalStr(String(agg.initialCapital));
     }
   }, [aggregationConfigId, aggregations]);
+
+  // When a history run is selected, auto-populate capital from the run's config
+  useEffect(() => {
+    if (!selectedHistoryRun) return;
+    // Use the run's initial capital if available (BacktestSummary doesn't store it directly,
+    // but we can populate the name automatically)
+    const runDate = formatDate(selectedHistoryRun.runAt);
+    const aggLabel = selectedHistoryRun.aggregationName || selectedHistoryRun.strategyName;
+    setName(`${aggLabel} — ${runDate}`);
+  }, [selectedHistoryRun]);
 
   // When strategy selection changes, pre-fill defaults from strategy definition.
   // Uses a ref to track the previous strategy name so we only reset params on actual change,
@@ -107,6 +143,7 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
     if (!name.trim()) return true;
     if (createMutation.isPending) return true;
     if (mode === 'aggregation') return !aggregationConfigId;
+    if (mode === 'history') return !selectedHistoryRun;
     if (mode === 'strategy') return !strategyName;
     return false;
   })();
@@ -120,6 +157,16 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
         const session = await createMutation.mutateAsync({
           name: name.trim(),
           aggregationConfigId,
+          initialCapital,
+        });
+        onCreated?.(session.id);
+      } else if (mode === 'history') {
+        if (!selectedHistoryRun) return;
+        // If the run has an aggregationId, use it as the config reference
+        // Otherwise fall back to what we have (aggregationId may be undefined for ad-hoc runs)
+        const session = await createMutation.mutateAsync({
+          name: name.trim(),
+          aggregationConfigId: selectedHistoryRun.aggregationId,
           initialCapital,
         });
         onCreated?.(session.id);
@@ -151,12 +198,14 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
   const inputClass =
     'w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent';
 
+  const historyRuns = historyData?.results ?? [];
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={handleBackdropClick}
     >
-      <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold text-white">New Paper Trading Session</h2>
@@ -172,7 +221,7 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Mode Toggle */}
+          {/* Mode Toggle — 3 buttons */}
           <div className="flex rounded overflow-hidden border border-gray-600 text-sm">
             <button
               type="button"
@@ -184,6 +233,17 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
               }`}
             >
               From Aggregation
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('history')}
+              className={`flex-1 py-2 transition-colors font-medium border-l border-gray-600 ${
+                mode === 'history'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-700 text-gray-400 hover:text-white'
+              }`}
+            >
+              From History
             </button>
             <button
               type="button"
@@ -235,6 +295,86 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
               {aggregations?.length === 0 && (
                 <p className="text-xs text-amber-400 mt-1">
                   No aggregation configs found. Create one in the Aggregations tab first.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* History Mode Fields */}
+          {mode === 'history' && (
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Recent Aggregation Runs</label>
+              {loadingHistory ? (
+                <div className="text-sm text-gray-500 py-4 text-center">Loading history...</div>
+              ) : historyRuns.length === 0 ? (
+                <p className="text-xs text-amber-400 mt-1">
+                  No aggregation runs found in history. Run an aggregation backtest first.
+                </p>
+              ) : (
+                <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
+                  {historyRuns.map((run) => {
+                    const isSelected = selectedHistoryRun?.id === run.id;
+                    const returnPct = run.totalReturnPercent;
+                    const returnColor =
+                      returnPct === undefined || returnPct === null
+                        ? 'text-gray-400'
+                        : returnPct >= 0
+                        ? 'text-green-400'
+                        : 'text-red-400';
+
+                    return (
+                      <button
+                        key={run.id}
+                        type="button"
+                        onClick={() => setSelectedHistoryRun(run)}
+                        className={`w-full text-left px-3 py-2.5 rounded border transition-colors ${
+                          isSelected
+                            ? 'border-primary-500 bg-primary-600/20'
+                            : 'border-gray-600 bg-gray-700/50 hover:border-gray-500 hover:bg-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-white truncate">
+                              {run.aggregationName || run.strategyName}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-0.5">
+                              {formatDate(run.runAt)}
+                            </div>
+                          </div>
+                          <div className="flex gap-3 shrink-0 text-xs">
+                            <div className="text-center">
+                              <div className="text-gray-500 uppercase tracking-wide text-[10px]">Return</div>
+                              <div className={`font-medium ${returnColor}`}>
+                                {formatPct(run.totalReturnPercent)}
+                              </div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-gray-500 uppercase tracking-wide text-[10px]">Sharpe</div>
+                              <div className="text-gray-200 font-medium">
+                                {formatSharpe(run.sharpeRatio)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        {run.aggregationId && (
+                          <div className="text-[10px] text-gray-500 mt-1">
+                            Config ID: {run.aggregationId.slice(0, 8)}...
+                          </div>
+                        )}
+                        {!run.aggregationId && (
+                          <div className="text-[10px] text-amber-500 mt-1">
+                            Ad-hoc run (no saved config)
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedHistoryRun && !selectedHistoryRun.aggregationId && (
+                <p className="text-xs text-amber-400 mt-2">
+                  This was an ad-hoc run without a saved aggregation config. The paper session may not have a strategy config to execute.
                 </p>
               )}
             </div>
