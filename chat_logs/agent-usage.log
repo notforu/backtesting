@@ -623,3 +623,18 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-26 14:57] qa (sonnet) - all 115 new paper trading tests passing, 418 total tests green
 [2026-02-26 16:00] qa (sonnet) - Phase 6: Critical unit tests for paper trading (115 tests, 6 test files)
 [2026-02-26 16:05] docs-writer (haiku) - Create changelog for paper trading system implementation
+[2026-02-26 15:35] commit (haiku) - Paper Trading System: 8 commits (Phase 1-7)
+[2026-02-26 16:10] commit (sonnet) - Commit paper trading system (8 commits)
+[2026-02-26 16:20] Explore (sonnet) - Explore strategy interface and paper trading flow
+[2026-02-26 16:20] Explore (sonnet) - Research simple 1m test strategy patterns
+[2026-02-26 16:35] be-dev (sonnet) - Modify paper trading API to support simple strategy config alongside aggregation config
+[2026-02-26 15:33] fe-dev (sonnet) - Add mode toggle to CreatePaperSessionModal (aggregation vs simple strategy with dynamic params)
+[2026-02-26 16:30] be-dev (sonnet) - Add simple strategy support to paper trading API
+[2026-02-26 16:30] fe-dev (sonnet) - Add simple strategy mode to create session modal
+[2026-02-26 16:35] docs-writer (haiku) - Create changelog for paper trading simple strategy support
+[2026-02-27 00:00] be-dev (sonnet) - Fix two paper trading engine bugs: tick frequency drift (scaled buffer) and missed crossover signals (multi-bar processing)
+[2026-02-27 00:15] be-dev (sonnet) - Fix Bug 1: getSignal() in signal-adapter.ts now skips close actions to find first OPEN entry action (exit+entry same-bar flow)
+[2026-02-27 14:16] be-dev (haiku) - Fix trade matching logic in paper-vs-backtest.ts script
+[2026-02-27 14:00] be-dev (sonnet) - Fix shorts bug in signal-adapter.ts + investigate price diff
+[2026-02-27 14:15] be-dev (haiku) - Fix comparison script trade matching logic
+[2026-02-27 14:16] docs-writer (haiku) - Create changelog for paper trading bug fixes (tick timing, crossovers, short entries)

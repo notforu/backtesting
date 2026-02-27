@@ -187,17 +187,19 @@ export class SignalAdapter implements SignalProvider {
 
     if (this.pendingActions.length === 0) return null;
 
-    // Take the first action only
-    const action = this.pendingActions[0];
+    // Find the first entry action, skipping close actions.
+    // On exit bars, wantsExit() may have captured [CLOSE_LONG, OPEN_SHORT]
+    // or [CLOSE_SHORT, OPEN_LONG]. After confirmExit(), we need the entry action.
+    const entryAction = this.pendingActions.find(
+      a => a.action === 'OPEN_LONG' || a.action === 'OPEN_SHORT'
+    );
+    if (!entryAction) return null;
 
     let direction: SignalDirection;
-    if (action.action === 'OPEN_LONG') {
+    if (entryAction.action === 'OPEN_LONG') {
       direction = 'long';
-    } else if (action.action === 'OPEN_SHORT') {
-      direction = 'short';
     } else {
-      // Close actions are exits, not new entry signals
-      return null;
+      direction = 'short';
     }
 
     const candle = this.candles[barIndex];
