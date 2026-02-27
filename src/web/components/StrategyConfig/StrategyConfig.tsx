@@ -21,7 +21,6 @@ import type { BacktestSummary, StrategyParam, Timeframe } from '../../types';
 import { PolymarketBrowser } from '../PolymarketBrowser';
 import { AggregationsPanel } from '../AggregationsPanel/AggregationsPanel';
 import { HistoryExplorerContent } from '../HistoryExplorer/HistoryExplorer';
-import { PaperTradingPanel } from '../PaperTradingPanel/PaperTradingPanel';
 
 // Available timeframes
 const TIMEFRAMES: { value: Timeframe; label: string }[] = [
@@ -381,16 +380,6 @@ export function StrategyConfig() {
           }`}
         >
           Aggregations
-        </button>
-        <button
-          onClick={() => setActiveConfigTab('paper-trading')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeConfigTab === 'paper-trading'
-              ? 'border-primary-500 text-white'
-              : 'border-transparent text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          Paper Trading
         </button>
       </div>
 
@@ -776,8 +765,6 @@ export function StrategyConfig() {
       </>)}
 
       {activeConfigTab === 'aggregations' && <AggregationsPanel />}
-
-      {activeConfigTab === 'paper-trading' && <PaperTradingPanel />}
     </div>
   );
 }

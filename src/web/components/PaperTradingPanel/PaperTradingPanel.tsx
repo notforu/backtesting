@@ -23,7 +23,7 @@ import type { PaperSession, PaperTrade } from '../../types';
 // Status Badge
 // ============================================================================
 
-function StatusBadge({ status }: { status: PaperSession['status'] }) {
+export function StatusBadge({ status }: { status: PaperSession['status'] }) {
   const configs: Record<
     PaperSession['status'],
     { dotClass: string; label: string; textClass: string }
@@ -63,7 +63,7 @@ function StatusBadge({ status }: { status: PaperSession['status'] }) {
 // Return percentage helper
 // ============================================================================
 
-function returnPercent(currentEquity: number, initialCapital: number): number {
+export function returnPercent(currentEquity: number, initialCapital: number): number {
   if (initialCapital === 0) return 0;
   return ((currentEquity - initialCapital) / initialCapital) * 100;
 }
@@ -72,21 +72,21 @@ function returnPercent(currentEquity: number, initialCapital: number): number {
 // Format helpers
 // ============================================================================
 
-function fmtUsd(value: number): string {
+export function fmtUsd(value: number): string {
   return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function fmtPct(value: number): string {
+export function fmtPct(value: number): string {
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 }
 
-function fmtDate(ts: number | null): string {
+export function fmtDate(ts: number | null): string {
   if (!ts) return '—';
   return new Date(ts).toLocaleString();
 }
 
-function fmtDuration(ms: number): string {
+export function fmtDuration(ms: number): string {
   if (ms < 0) return '—';
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
@@ -100,7 +100,7 @@ function fmtDuration(ms: number): string {
 // Next tick countdown
 // ============================================================================
 
-function NextTickCountdown({ nextTickAt }: { nextTickAt: number | null }) {
+export function NextTickCountdown({ nextTickAt }: { nextTickAt: number | null }) {
   const [remaining, setRemaining] = useState<string>('');
 
   useEffect(() => {
@@ -130,13 +130,13 @@ function NextTickCountdown({ nextTickAt }: { nextTickAt: number | null }) {
 // Session card (in the list)
 // ============================================================================
 
-interface SessionCardProps {
+export interface SessionCardProps {
   session: PaperSession;
   isSelected: boolean;
   onSelect: () => void;
 }
 
-function SessionCard({ session, isSelected, onSelect }: SessionCardProps) {
+export function SessionCard({ session, isSelected, onSelect }: SessionCardProps) {
   const ret = returnPercent(session.currentEquity, session.initialCapital);
   const isPositive = ret >= 0;
 

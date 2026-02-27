@@ -39,6 +39,7 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
   // Shared
   const [name, setName] = useState('SMA Crossover 1m Test');
   const [initialCapital, setInitialCapital] = useState<number>(10000);
+  const [initialCapitalStr, setInitialCapitalStr] = useState<string>('10000');
 
   // Aggregation mode
   const [aggregationConfigId, setAggregationConfigId] = useState('');
@@ -61,6 +62,7 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
     const agg = aggregations.find((a) => a.id === aggregationConfigId);
     if (agg) {
       setInitialCapital(agg.initialCapital);
+      setInitialCapitalStr(String(agg.initialCapital));
     }
   }, [aggregationConfigId, aggregations]);
 
@@ -405,10 +407,20 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
             <label className="block text-sm text-gray-400 mb-1">Initial Capital ($)</label>
             <input
               type="number"
-              value={initialCapital}
-              onChange={(e) => setInitialCapital(parseFloat(e.target.value) || 0)}
+              value={initialCapitalStr}
+              onChange={(e) => {
+                setInitialCapitalStr(e.target.value);
+                const parsed = parseFloat(e.target.value);
+                if (!isNaN(parsed)) setInitialCapital(parsed);
+              }}
+              onBlur={() => {
+                if (!initialCapitalStr || isNaN(parseFloat(initialCapitalStr))) {
+                  setInitialCapital(10000);
+                  setInitialCapitalStr('10000');
+                }
+              }}
               min={1}
-              step={1000}
+              step="any"
               className={inputClass}
             />
           </div>

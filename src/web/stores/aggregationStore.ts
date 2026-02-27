@@ -7,7 +7,7 @@ import { create } from 'zustand';
 
 interface AggregationStore {
   // Active tab in the sidebar config panel
-  activeConfigTab: 'strategies' | 'aggregations' | 'paper-trading';
+  activeConfigTab: 'strategies' | 'aggregations';
 
   // Selected aggregation for viewing/running
   selectedAggregationId: string | null;
@@ -21,7 +21,7 @@ interface AggregationStore {
   isCreateModalOpen: boolean;
 
   // Actions
-  setActiveConfigTab: (tab: 'strategies' | 'aggregations' | 'paper-trading') => void;
+  setActiveConfigTab: (tab: 'strategies' | 'aggregations') => void;
   setSelectedAggregation: (id: string | null) => void;
   setStartDate: (date: string) => void;
   setEndDate: (date: string) => void;

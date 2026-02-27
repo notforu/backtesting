@@ -20,6 +20,8 @@ import { useScannerStore } from './stores/scannerStore';
 import { useLoadBacktest, useCandles, useRunBacktest } from './hooks/useBacktest';
 import { runAdhocAggregation } from './api/client';
 import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult, type BacktestSummary, type Timeframe } from './types';
+import { PaperTradingPage } from './components/PaperTradingPage';
+import { usePaperTradingStore } from './stores/paperTradingStore';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -49,6 +51,7 @@ function AppContent() {
   const runBacktestMutation = useRunBacktest();
   const { setRunning, setResult, setError } = useBacktestStore();
   const { scanResults } = useScannerStore();
+  const { activePage, setActivePage } = usePaperTradingStore();
   const isPairs = currentResult && isPairsResult(currentResult);
   const showScanner = scanResults.length > 0;
   const [showExplorer, setShowExplorer] = useState(false);
@@ -130,67 +133,96 @@ function AppContent() {
       {/* Header */}
       <header className="border-b border-gray-700 px-4 py-3 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <svg
-              className="w-8 h-8 text-primary-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"
-              />
-            </svg>
-            <h1 className="text-xl font-bold text-white">
-              Backtesting Platform
-            </h1>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3">
+              <svg
+                className="w-8 h-8 text-primary-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"
+                />
+              </svg>
+              <h1 className="text-xl font-bold text-white">
+                Backtesting Platform
+              </h1>
+            </div>
+
+            {/* Page navigation */}
+            <nav className="flex items-center gap-1">
+              <button
+                onClick={() => setActivePage('backtesting')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  activePage === 'backtesting'
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                }`}
+              >
+                Backtesting
+              </button>
+              <button
+                onClick={() => setActivePage('paper-trading')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  activePage === 'paper-trading'
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                }`}
+              >
+                Paper Trading
+              </button>
+            </nav>
           </div>
 
-          {/* Status indicator + actions */}
-          <div className="flex items-center gap-4 text-sm">
-            {currentResult && (
-              <span className="text-gray-400">
-                Last run:{' '}
-                <span className="text-white">
-                  {currentResult.config.strategyName}
-                </span>{' '}
-                on{' '}
-                <span className="text-white">
-                  {isPairs
-                    ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
-                    : (currentResult as BacktestResult).config.symbol}
+          {/* Status indicator + actions (only show in backtesting mode) */}
+          {activePage === 'backtesting' && (
+            <div className="flex items-center gap-4 text-sm">
+              {currentResult && (
+                <span className="text-gray-400">
+                  Last run:{' '}
+                  <span className="text-white">
+                    {currentResult.config.strategyName}
+                  </span>{' '}
+                  on{' '}
+                  <span className="text-white">
+                    {isPairs
+                      ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
+                      : (currentResult as BacktestResult).config.symbol}
+                  </span>
                 </span>
-              </span>
-            )}
-            {currentResult && currentResult.config.params && Object.keys(currentResult.config.params).length > 0 && (
+              )}
+              {currentResult && currentResult.config.params && Object.keys(currentResult.config.params).length > 0 && (
+                <button
+                  onClick={() => setShowParamsModal(true)}
+                  className="px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Params
+                </button>
+              )}
               <button
-                onClick={() => setShowParamsModal(true)}
+                onClick={() => setShowExplorer(true)}
                 className="px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
                 </svg>
-                Params
+                Explore Runs
               </button>
-            )}
-            <button
-              onClick={() => setShowExplorer(true)}
-              className="px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-              </svg>
-              Explore Runs
-            </button>
-          </div>
+            </div>
+          )}
         </div>
       </header>
 
       {/* Main Content */}
+      {activePage === 'backtesting' && (
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar */}
         <aside className="w-96 flex-shrink-0 border-r border-gray-700 overflow-y-auto">
@@ -600,18 +632,22 @@ function AppContent() {
           </div>
         </main>
       </div>
+      )}
+
+      {activePage === 'paper-trading' && <PaperTradingPage />}
 
       {/* Footer */}
       <footer className="border-t border-gray-700 px-4 py-2 text-xs text-gray-500 flex-shrink-0">
         <div className="flex items-center justify-between">
           <span>Backtesting Platform v1.0.0</span>
           <span>
-            {currentResult && (
+            {activePage === 'backtesting' && currentResult && (
               <>
                 Backtest completed in {currentResult.duration}ms |{' '}
                 {currentResult.trades.length} trades
               </>
             )}
+            {activePage === 'paper-trading' && 'Paper Trading Mode'}
           </span>
         </div>
       </footer>

@@ -51,6 +51,14 @@ export function usePaperTrades(id: string | null, limit = 20) {
   });
 }
 
+export function usePaperAllTrades(id: string | null) {
+  return useQuery({
+    queryKey: [...tradesKey(id ?? ''), 'all'],
+    queryFn: () => getPaperTrades(id!, 10000, 0),
+    enabled: !!id,
+  });
+}
+
 export function usePaperEquity(id: string | null) {
   return useQuery({
     queryKey: equityKey(id ?? ''),
