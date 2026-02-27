@@ -609,8 +609,18 @@ export type PaperTradingEvent =
   | { type: 'error'; sessionId: string; message: string }
   | { type: 'status_change'; sessionId: string; oldStatus: string; newStatus: string };
 
+export interface SimpleStrategyConfig {
+  strategyName: string;
+  symbol: string;
+  timeframe: string;
+  exchange: string;
+  params: Record<string, unknown>;
+  mode?: 'spot' | 'futures';
+}
+
 export interface CreatePaperSessionRequest {
   name: string;
-  aggregationConfigId: string;
+  aggregationConfigId?: string;
+  strategyConfig?: SimpleStrategyConfig;
   initialCapital?: number;
 }

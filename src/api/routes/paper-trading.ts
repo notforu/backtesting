@@ -19,11 +19,25 @@ import type { AggregateBacktestConfig } from '../../core/signal-types.js';
 // Zod schemas
 // ============================================================================
 
-const CreateSessionSchema = z.object({
-  name: z.string().min(1),
-  aggregationConfigId: z.string().min(1),
-  initialCapital: z.number().positive().optional(),
+const SimpleStrategyConfigSchema = z.object({
+  strategyName: z.string().min(1),
+  symbol: z.string().min(1),
+  timeframe: z.enum(['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']),
+  exchange: z.string().min(1).default('bybit'),
+  params: z.record(z.string(), z.unknown()).optional().default({}),
+  mode: z.enum(['spot', 'futures']).default('spot').optional(),
 });
+
+const CreateSessionSchema = z
+  .object({
+    name: z.string().min(1),
+    aggregationConfigId: z.string().min(1).optional(),
+    strategyConfig: SimpleStrategyConfigSchema.optional(),
+    initialCapital: z.number().positive().optional(),
+  })
+  .refine((data) => data.aggregationConfigId || data.strategyConfig, {
+    message: 'Either aggregationConfigId or strategyConfig is required',
+  });
 
 const TradesQuerySchema = z.object({
   limit: z.string().transform(Number).pipe(z.number().int().positive()).optional().default(50),
@@ -42,37 +56,65 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
     try {
       const parsed = CreateSessionSchema.parse(request.body);
 
-      // Load the aggregation config from DB
-      const config = await getAggregationConfig(parsed.aggregationConfigId);
-      if (!config) {
-        return reply.status(404).send({
-          error: `Aggregation config "${parsed.aggregationConfigId}" not found`,
-        });
-      }
+      let aggregationConfig: AggregateBacktestConfig;
+      let aggregationConfigId: string | undefined;
 
-      // Transform DB AggregationConfig -> AggregateBacktestConfig
-      // startDate/endDate set to 0 since they are not used in paper trading (live data only)
-      const aggregationConfig: AggregateBacktestConfig = {
-        subStrategies: config.subStrategies.map((s) => ({
-          strategyName: s.strategyName,
-          symbol: s.symbol,
-          timeframe: s.timeframe as AggregateBacktestConfig['subStrategies'][number]['timeframe'],
-          params: s.params ?? {},
-          exchange: s.exchange ?? config.exchange,
-        })),
-        allocationMode: config.allocationMode as AggregateBacktestConfig['allocationMode'],
-        maxPositions: config.maxPositions,
-        initialCapital: parsed.initialCapital ?? config.initialCapital,
-        startDate: 0,
-        endDate: 0,
-        exchange: config.exchange,
-        mode: config.mode as 'spot' | 'futures' | undefined,
-      };
+      if (parsed.aggregationConfigId) {
+        // Existing flow: load aggregation config from DB
+        const config = await getAggregationConfig(parsed.aggregationConfigId);
+        if (!config) {
+          return reply.status(404).send({
+            error: `Aggregation config "${parsed.aggregationConfigId}" not found`,
+          });
+        }
+
+        // Transform DB AggregationConfig -> AggregateBacktestConfig
+        // startDate/endDate set to 0 since they are not used in paper trading (live data only)
+        aggregationConfig = {
+          subStrategies: config.subStrategies.map((s) => ({
+            strategyName: s.strategyName,
+            symbol: s.symbol,
+            timeframe: s.timeframe as AggregateBacktestConfig['subStrategies'][number]['timeframe'],
+            params: s.params ?? {},
+            exchange: s.exchange ?? config.exchange,
+          })),
+          allocationMode: config.allocationMode as AggregateBacktestConfig['allocationMode'],
+          maxPositions: config.maxPositions,
+          initialCapital: parsed.initialCapital ?? config.initialCapital,
+          startDate: 0,
+          endDate: 0,
+          exchange: config.exchange,
+          mode: config.mode as 'spot' | 'futures' | undefined,
+        };
+        aggregationConfigId = parsed.aggregationConfigId;
+      } else {
+        // New flow: wrap single strategy config as a single-sub-strategy AggregateBacktestConfig
+        const sc = parsed.strategyConfig!;
+        aggregationConfig = {
+          subStrategies: [
+            {
+              strategyName: sc.strategyName,
+              symbol: sc.symbol,
+              timeframe: sc.timeframe as AggregateBacktestConfig['subStrategies'][number]['timeframe'],
+              params: sc.params ?? {},
+              exchange: sc.exchange,
+            },
+          ],
+          allocationMode: 'single_strongest',
+          maxPositions: 1,
+          initialCapital: parsed.initialCapital ?? 10000,
+          startDate: 0,
+          endDate: 0,
+          exchange: sc.exchange,
+          mode: sc.mode,
+        };
+        aggregationConfigId = undefined;
+      }
 
       const session = await sessionManager.createSession({
         name: parsed.name,
         aggregationConfig,
-        aggregationConfigId: parsed.aggregationConfigId,
+        aggregationConfigId,
         initialCapital: parsed.initialCapital,
       });
 
