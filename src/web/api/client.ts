@@ -719,6 +719,69 @@ export async function runAdhocAggregation(config: {
 }
 
 // ============================================================================
+// Config Export / Import Endpoints
+// ============================================================================
+
+/**
+ * Export configs for selected run IDs. Returns a Blob for file download.
+ */
+export async function exportConfigs(runIds: string[]): Promise<Blob> {
+  const url = `${API_BASE}/configs/export`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runIds }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ message: 'Export failed' }));
+    throw new ApiClientError((err as { message?: string }).message || 'Export failed', response.status);
+  }
+  return response.blob();
+}
+
+/**
+ * Import preview response item.
+ */
+export interface ImportConfigPreviewItem {
+  index: number;
+  type: string;
+  strategy: string;
+  symbols: string;
+  timeframe: string;
+  originalMetrics?: {
+    sharpeRatio: number;
+    totalReturnPercent: number;
+    maxDrawdownPercent: number;
+  };
+}
+
+/**
+ * Result item returned after running imported configs.
+ */
+export interface ImportConfigResultItem {
+  index: number;
+  strategy: string;
+  symbols: string;
+  status: 'success' | 'error';
+  runId?: string;
+  error?: string;
+}
+
+/**
+ * Import configs file. When rerun=false, returns validation/preview summary.
+ * When rerun=true, runs all configs and returns results.
+ */
+export async function importConfigs(
+  file: unknown,
+  rerun: boolean
+): Promise<{ configs: ImportConfigPreviewItem[]; results?: ImportConfigResultItem[] }> {
+  return apiFetch<{ configs: ImportConfigPreviewItem[]; results?: ImportConfigResultItem[] }>('/configs/import', {
+    method: 'POST',
+    body: JSON.stringify({ file, rerun }),
+  });
+}
+
+// ============================================================================
 // Health Check
 // ============================================================================
 

@@ -5,8 +5,9 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getHistory, getHistoryGroups, type HistoryParams, type BacktestGroup } from '../../api/client';
+import { getHistory, getHistoryGroups, exportConfigs, type HistoryParams, type BacktestGroup } from '../../api/client';
 import type { BacktestSummary } from '../../types';
+import { ImportConfigModal } from '../ImportConfigModal/ImportConfigModal';
 
 // ============================================================================
 // Types
@@ -118,12 +119,14 @@ function SortHeader({ label, column, currentSort, currentDir, onSort, className 
 // Run Row — params shown as expandable sub-row
 // ============================================================================
 
-function RunRow({ run, isSelected, isHighlighted, isLoading, onSelect }: {
+function RunRow({ run, isSelected, isHighlighted, isLoading, onSelect, isSelectedForExport, onToggleExport }: {
   run: BacktestSummary;
   isSelected: boolean;
   isHighlighted?: boolean;
   isLoading?: boolean;
   onSelect: (run: BacktestSummary) => void;
+  isSelectedForExport?: boolean;
+  onToggleExport?: (id: string, e: React.MouseEvent) => void;
 }) {
   const hasParams = run.params && Object.keys(run.params).length > 0;
   const isAgg = run.aggregationName || run.symbol === 'MULTI';
@@ -139,6 +142,17 @@ function RunRow({ run, isSelected, isHighlighted, isLoading, onSelect }: {
       }`}
       onClick={() => onSelect(run)}
     >
+      {onToggleExport && (
+        <td className="py-2 pr-1 w-8 pl-1">
+          <input
+            type="checkbox"
+            checked={isSelectedForExport || false}
+            onClick={(e) => { e.stopPropagation(); onToggleExport(run.id, e as unknown as React.MouseEvent); }}
+            onChange={() => {}}
+            className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-primary-500 focus:ring-0 cursor-pointer"
+          />
+        </td>
+      )}
       <td className={`py-2 pr-3 ${isSelected ? 'shadow-[inset_3px_0_0_0_rgb(96,165,250)]' : ''}`}>
         <div className="font-medium text-white text-sm truncate max-w-[160px]" title={run.aggregationName ?? run.strategyName}>
           {isAgg ? (
@@ -278,10 +292,28 @@ function CompactRunRow({ run, isSelected, isLoading, onSelect }: {
 // Table header
 // ============================================================================
 
-function TableHead({ sortBy, sortDir, onSort }: { sortBy: SortColumn; sortDir: 'asc' | 'desc'; onSort: (c: SortColumn) => void }) {
+function TableHead({ sortBy, sortDir, onSort, showCheckbox, allSelected, onSelectAll }: {
+  sortBy: SortColumn;
+  sortDir: 'asc' | 'desc';
+  onSort: (c: SortColumn) => void;
+  showCheckbox?: boolean;
+  allSelected?: boolean;
+  onSelectAll?: () => void;
+}) {
   return (
     <thead className="sticky top-0 bg-gray-900 z-10">
       <tr className="text-left border-b border-gray-700 text-xs">
+        {showCheckbox && (
+          <th className="py-2 pr-1 w-8 pl-1">
+            <input
+              type="checkbox"
+              checked={allSelected || false}
+              onChange={() => onSelectAll?.()}
+              className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-primary-500 focus:ring-0 cursor-pointer"
+              title="Select all"
+            />
+          </th>
+        )}
         <th className="py-2 pr-3 text-gray-400">Strategy</th>
         <th className="py-2 pr-3 text-gray-400">Symbol</th>
         <th className="py-2 pr-3 text-gray-400">TF</th>
@@ -428,6 +460,9 @@ export function HistoryExplorerContent({
   const [pendingFilters, setPendingFilters] = useState<FilterState>(filters);
   const [offset, setOffset] = useState(0);
   const [allRuns, setAllRuns] = useState<BacktestSummary[]>([]);
+  const [selectedForExport, setSelectedForExport] = useState<Set<string>>(new Set());
+  const [isExporting, setIsExporting] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [groupByAsset, setGroupByAsset] = useState(defaultGroupByAsset);
   const [filterKey, setFilterKey] = useState(0);
 
@@ -521,6 +556,35 @@ export function HistoryExplorerContent({
   }, [filters]);
 
   const hasActiveFilters = filters.strategy || filters.symbol || filters.timeframe || filters.mode || filters.minSharpe || (!fixedRunType && filters.runType !== 'all');
+
+  const handleToggleExport = useCallback((id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedForExport(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleExportSelected = useCallback(async () => {
+    if (selectedForExport.size === 0) return;
+    setIsExporting(true);
+    try {
+      const blob = await exportConfigs(Array.from(selectedForExport));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `backtest-configs-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setSelectedForExport(new Set());
+    } catch (err) {
+      console.error('Export failed:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [selectedForExport]);
 
   const scrollContainerStyle = maxHeight ? { maxHeight, overflowY: 'auto' as const } : {};
 
@@ -621,6 +685,47 @@ export function HistoryExplorerContent({
         </div>
       )}
 
+      {/* Export / Import toolbar — only shown in non-compact flat list view */}
+      {!compact && !groupByAsset && (
+        <div className="flex items-center justify-between py-2 border-b border-gray-700/50 mb-2">
+          <div className="flex items-center gap-2">
+            {selectedForExport.size > 0 && (
+              <span className="text-xs text-gray-400">{selectedForExport.size} selected</span>
+            )}
+            <button
+              onClick={handleExportSelected}
+              disabled={selectedForExport.size === 0 || isExporting}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                selectedForExport.size > 0
+                  ? 'bg-green-700 hover:bg-green-600 text-white'
+                  : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              {isExporting
+                ? 'Exporting...'
+                : `Export Selected${selectedForExport.size > 0 ? ` (${selectedForExport.size})` : ''}`}
+            </button>
+            {selectedForExport.size > 0 && (
+              <button
+                onClick={() => setSelectedForExport(new Set())}
+                className="px-2 py-1 text-xs text-gray-400 hover:text-gray-200 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-3 py-1 bg-primary-700 hover:bg-primary-600 text-white rounded text-xs font-medium transition-colors"
+          >
+            Import Configs
+          </button>
+        </div>
+      )}
+
+      {/* Import modal */}
+      <ImportConfigModal isOpen={showImportModal} onClose={() => setShowImportModal(false)} />
+
       {/* Content */}
       <div ref={scrollRef} style={scrollContainerStyle} onScroll={handleScroll} key={filterKey}>
         {/* Loading state */}
@@ -676,7 +781,20 @@ export function HistoryExplorerContent({
               </table>
             ) : (
               <table className="w-full text-sm">
-                <TableHead sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={handleSort} />
+                <TableHead
+                  sortBy={filters.sortBy}
+                  sortDir={filters.sortDir}
+                  onSort={handleSort}
+                  showCheckbox={true}
+                  allSelected={filteredRuns.length > 0 && selectedForExport.size === filteredRuns.length}
+                  onSelectAll={() => {
+                    if (selectedForExport.size === filteredRuns.length && filteredRuns.length > 0) {
+                      setSelectedForExport(new Set());
+                    } else {
+                      setSelectedForExport(new Set(filteredRuns.map(r => r.id)));
+                    }
+                  }}
+                />
                 <tbody>
                   {filteredRuns.map(run => (
                     <RunRow
@@ -685,6 +803,8 @@ export function HistoryExplorerContent({
                       isSelected={selectedId === run.id}
                       isLoading={loadingId === run.id}
                       onSelect={onSelectRun}
+                      isSelectedForExport={selectedForExport.has(run.id)}
+                      onToggleExport={handleToggleExport}
                     />
                   ))}
                 </tbody>

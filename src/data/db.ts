@@ -1330,6 +1330,74 @@ export async function deleteAggregationConfig(id: string): Promise<boolean> {
 }
 
 // ============================================================================
+// Config Export/Import Operations
+// ============================================================================
+
+/**
+ * Get backtest runs by IDs, with aggregation config data joined in.
+ * Used by the config export feature.
+ */
+export async function getBacktestRunsByIds(ids: string[]): Promise<Array<{
+  id: string;
+  config: unknown;
+  metrics: unknown;
+  aggregation_id: string | null;
+  agg_name: string | null;
+  agg_allocation_mode: string | null;
+  agg_max_positions: number | null;
+  agg_sub_strategies: unknown;
+  agg_exchange: string | null;
+  agg_mode: string | null;
+}>> {
+  if (ids.length === 0) return [];
+  const p = getPool();
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+  const { rows } = await p.query(
+    `SELECT br.id, br.config, br.metrics, br.aggregation_id,
+            ac.name AS agg_name,
+            ac.allocation_mode AS agg_allocation_mode,
+            ac.max_positions AS agg_max_positions,
+            ac.sub_strategies AS agg_sub_strategies,
+            ac.exchange AS agg_exchange,
+            ac.mode AS agg_mode
+     FROM backtest_runs br
+     LEFT JOIN aggregation_configs ac ON br.aggregation_id = ac.id
+     WHERE br.id IN (${placeholders})`,
+    ids
+  );
+  return rows;
+}
+
+/**
+ * Get all backtest run IDs, with optional filters.
+ * Used by the CLI export script.
+ */
+export async function getBacktestRunIds(filters?: {
+  strategy?: string;
+  minSharpe?: number;
+}): Promise<string[]> {
+  const p = getPool();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters?.strategy) {
+    params.push(filters.strategy);
+    conditions.push(`strategy_name = $${params.length}`);
+  }
+  if (filters?.minSharpe != null) {
+    params.push(filters.minSharpe);
+    conditions.push(`(metrics->>'sharpeRatio')::float >= $${params.length}`);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const { rows } = await p.query<{ id: string }>(
+    `SELECT id FROM backtest_runs ${whereClause} ORDER BY created_at DESC`,
+    params
+  );
+  return rows.map((r) => r.id);
+}
+
+// ============================================================================
 // Funding Rate Operations
 // ============================================================================
 

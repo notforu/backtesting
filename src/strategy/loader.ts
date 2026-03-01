@@ -1,6 +1,9 @@
 /**
  * Dynamic strategy loader
  * Loads strategy plugins from the /strategies folder
+ *
+ * In development (tsx): loads .ts files from /strategies/
+ * In production (compiled JS): loads .js files from /dist/strategies/
  */
 
 import { readdir } from 'fs/promises';
@@ -10,7 +13,19 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import type { Strategy, StrategyParam } from './base.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const STRATEGIES_DIR = path.resolve(__dirname, '../../strategies');
+
+// Detect whether we're running compiled JS (production) or via tsx (development).
+// In dev: __dirname = /workspace/src/strategy
+// In prod: __dirname = /app/dist/strategy
+const isCompiled = __dirname.includes('/dist/');
+
+// In dev: resolve to /workspace/strategies (two levels up from src/strategy)
+// In prod: resolve to /app/dist/strategies (sibling of dist/strategy)
+const STRATEGIES_DIR = isCompiled
+  ? path.resolve(__dirname, '../strategies')   // dist/strategy -> dist/strategies
+  : path.resolve(__dirname, '../../strategies'); // src/strategy -> strategies
+
+const STRATEGY_EXT = isCompiled ? '.js' : '.ts';
 
 /**
  * Strategy metadata for listing
@@ -31,7 +46,7 @@ const strategyCache = new Map<string, Strategy>();
 
 /**
  * Load a strategy by name
- * @param name - Strategy name (without .ts extension)
+ * @param name - Strategy name (without extension)
  * @returns The loaded strategy
  * @throws Error if strategy not found or invalid
  */
@@ -42,7 +57,7 @@ export async function loadStrategy(name: string): Promise<Strategy> {
   }
 
   // Determine the file path
-  const filePath = path.join(STRATEGIES_DIR, `${name}.ts`);
+  const filePath = path.join(STRATEGIES_DIR, `${name}${STRATEGY_EXT}`);
 
   if (!existsSync(filePath)) {
     throw new Error(
@@ -81,7 +96,7 @@ export async function loadStrategy(name: string): Promise<Strategy> {
 
 /**
  * List all available strategies
- * @returns Array of strategy names (without .ts extension)
+ * @returns Array of strategy names (without extension)
  */
 export async function listStrategies(): Promise<string[]> {
   if (!existsSync(STRATEGIES_DIR)) {
@@ -91,8 +106,8 @@ export async function listStrategies(): Promise<string[]> {
   try {
     const files = await readdir(STRATEGIES_DIR);
     return files
-      .filter((f) => f.endsWith('.ts') && !f.startsWith('.'))
-      .map((f) => f.replace('.ts', ''));
+      .filter((f) => f.endsWith(STRATEGY_EXT) && !f.startsWith('.'))
+      .map((f) => f.replace(STRATEGY_EXT, ''));
   } catch {
     return [];
   }
@@ -111,7 +126,7 @@ export async function getStrategyDetails(name: string): Promise<StrategyInfo> {
     description: strategy.description,
     version: strategy.version,
     params: strategy.params,
-    filePath: path.join(STRATEGIES_DIR, `${name}.ts`),
+    filePath: path.join(STRATEGIES_DIR, `${name}${STRATEGY_EXT}`),
     isPairs: (strategy as any).isPairs === true,
   };
 }
@@ -231,6 +246,6 @@ export function clearStrategyCache(): void {
  * Check if a strategy exists
  */
 export function strategyExists(name: string): boolean {
-  const filePath = path.join(STRATEGIES_DIR, `${name}.ts`);
+  const filePath = path.join(STRATEGIES_DIR, `${name}${STRATEGY_EXT}`);
   return existsSync(filePath);
 }

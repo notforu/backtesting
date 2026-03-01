@@ -3,6 +3,7 @@
 Track agent invocations to understand token consumption patterns.
 Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-03-01 16:23] fullstack-dev (sonnet) - Create scripts/deploy-hetzner.sh deployment script for Hetzner VDS
+[2026-03-01 12:22] be-dev (sonnet) - Improve API error responses for paper trading routes with structured error codes
 [2026-03-01 00:00] be-dev (sonnet) - Add @fastify/static to serve dist/web/ frontend in production with SPA fallback
 [2026-02-26 16:05] docs-writer (haiku) - Create changelog for paper trading system implementation (115 tests, full engine, UI, API, production Docker stack)
 [2026-02-27 10:15] fe-dev (sonnet) - Add tabbed chart views to paper trading page (Price/Equity/Drawdown/Stats tabs + PaperDrawdownChart component)
@@ -699,3 +700,30 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-03-01 19:00] quant-lead (opus) - Comprehensive quantitative review of paper trading engine: execution fidelity, slippage gaps, shadow state bugs, capital management, real-money risk assessment with 6 prioritized recommendations
 [2026-03-01 10:55] architect (opus) - Deep review of paper trading engine correctness, tick frequency, completeness
 [2026-03-01 10:55] quant-lead (opus) - Quantitative review of paper trading engine for realism and P&L risks
+[2026-03-01 11:28] be-dev (sonnet) - Fix shadow entry price restoration on paper trading resume - TDD implementation
+[2026-03-01 11:45] be-dev (sonnet) - Fix duplicate symbol shadow state pollution in paper trading engine - TDD (subStrategyKey, migration 008, 2 new tests)
+[2026-03-01 00:00] be-dev (sonnet) - Fix H2 (persist adapter state across ticks) and H3 (handle missed bars during downtime) in paper trading engine
+[2026-03-01 11:08] be-dev (sonnet) - C1+C3: Add configurable slippage and fee rate to paper trading + aggregate engine (TDD)
+[2026-03-01 11:08] be-dev (sonnet) - H1: Fix shadow entry price restoration on resume with confirmExecutionWithPrice (TDD)
+[2026-03-01 11:08] be-dev (sonnet) - H4: Fix duplicate symbol shadow state with subStrategyKey tracking (TDD)
+[2026-03-01 11:08] be-dev (sonnet) - M1: Make shadow cash dynamic based on actual portfolio equity (TDD)
+[2026-03-01 11:34] be-dev (sonnet) - H2+H3: Persist adapter state across ticks + handle missed bars during downtime (TDD)
+[2026-03-01 11:34] be-dev (sonnet) - M2+M3+M4+M5: Medium severity fixes batch (TDD)
+[2026-03-01 00:00] be-dev (sonnet) - Fix 4 medium-severity paper trading engine issues: M2 onEnd, M3 candle timestamp, M4 funding accumulated, M5 remove redundant candle fetch
+[2026-03-01 11:51] be-dev (sonnet) - Fix H2 failing tests: implement adapter caching in paper trading engine
+[2026-03-01 11:56] be-dev (sonnet) - Fix H2 test failures from agent conflict
+[2026-03-01 14:31] commit (haiku) - paper trading engine hardening (11 fixes, 30 tests)
+[2026-03-01 12:20] be-dev (sonnet) - Add auto-retry with exponential backoff and error recovery to paper trading engine
+[2026-03-01 12:25] be-dev (sonnet) - Engine auto-retry with exponential backoff and error recovery
+[2026-03-01 12:25] be-dev (sonnet) - API error responses improvement
+[2026-03-01 12:30] commit (haiku) - auto-retry exponential backoff for transient paper trading errors
+[2026-03-01 15:00] be-dev (sonnet) - Fix strategy loading in production: compile strategies to JS, update loader for prod/dev detection, update Dockerfile.prod
+[2026-03-01 14:00] be-dev (sonnet) - Implement import/export backtest configurations (Phases 1-3)
+[2026-03-01 13:30] be-dev (sonnet) - Phase 0: Fix strategy loading in production (dual .ts/.js loader, tsconfig.strategies, Dockerfile)
+[2026-03-01 13:30] be-dev (sonnet) - Phases 1-3: Import/export config types, DB functions, API routes, CLI scripts
+[2026-03-01 13:30] fe-dev (sonnet) - Phase 4: Dashboard export/import UI (checkboxes, export button, import modal)
+[2026-03-01 16:18] fe-dev (sonnet) - Add export/import UI to HistoryExplorer dashboard (Phase 4)
+[2026-03-01 15:05] docs-writer (haiku) - Changelog for strategy production loading fix
+[2026-03-01 14:15] docs-writer (haiku) - Create changelog for config import/export feature
+[2026-03-01 16:26] fe-dev (sonnet) - Completed export/import UI implementation (Phase 4)
+[2026-03-01 13:38] docs-writer (haiku) - Changelog for import/export configs + fix prod strategies

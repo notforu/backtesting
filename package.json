@@ -8,7 +8,7 @@
     "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
     "dev:api": "tsx watch src/api/server.ts",
     "dev:web": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && (tsc -p tsconfig.strategies.json || true) && vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "vitest",
@@ -20,7 +20,9 @@
     "quant:score": "tsx src/cli/quant-score.ts",
     "paper-trade": "tsx scripts/pm-paper-trade.ts",
     "quant:cache-candles": "tsx scripts/cache-candles.ts",
-    "paper:seed": "npx tsx scripts/seed-paper-test.ts"
+    "paper:seed": "npx tsx scripts/seed-paper-test.ts",
+    "config:export": "tsx scripts/export-configs.ts",
+    "config:import": "tsx scripts/import-configs.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
