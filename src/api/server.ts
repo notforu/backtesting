@@ -3,8 +3,12 @@
  * Entry point for the REST API
  */
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
 import { backtestRoutes } from './routes/backtest.js';
 import { strategyRoutes } from './routes/strategies.js';
 import { candleRoutes } from './routes/candles.js';
@@ -55,6 +59,28 @@ await fastify.register(fundingRateRoutes);
 await fastify.register(aggregationRoutes);
 await fastify.register(paperTradingRoutes);
 await fastify.register(priceStreamRoutes);
+
+// Serve frontend static files in production
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// Compiled server lives at dist/api/server.js, so ../web resolves to dist/web
+const webDistPath = path.join(__dirname, '..', 'web');
+
+if (existsSync(webDistPath)) {
+  await fastify.register(fastifyStatic, {
+    root: webDistPath,
+    prefix: '/',
+    wildcard: false,
+  });
+
+  // SPA fallback: serve index.html for any non-API, non-file route
+  fastify.setNotFoundHandler(async (request, reply) => {
+    if (request.url.startsWith('/api/')) {
+      return reply.code(404).send({ error: 'Not found' });
+    }
+    return reply.sendFile('index.html');
+  });
+}
 
 // Graceful shutdown
 const shutdown = async () => {

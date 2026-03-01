@@ -2,7 +2,14 @@
 
 Track agent invocations to understand token consumption patterns.
 Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
+[2026-03-01 16:23] fullstack-dev (sonnet) - Create scripts/deploy-hetzner.sh deployment script for Hetzner VDS
+[2026-03-01 00:00] be-dev (sonnet) - Add @fastify/static to serve dist/web/ frontend in production with SPA fallback
 [2026-02-26 16:05] docs-writer (haiku) - Create changelog for paper trading system implementation (115 tests, full engine, UI, API, production Docker stack)
+[2026-02-27 10:15] fe-dev (sonnet) - Add tabbed chart views to paper trading page (Price/Equity/Drawdown/Stats tabs + PaperDrawdownChart component)
+[2026-02-27 00:00] fe-dev (sonnet) - Fix candle date range in PaperTradingPage: use ~200-candle lookback from earliest trade instead of session.createdAt
+[2026-02-27 10:15] fe-dev (sonnet) - Create PaperTradingPage component files (index.ts, paperUtils.ts, PaperTradingPage.tsx)
+[2026-02-27 00:00] fe-dev (sonnet) - Export helper functions and components from PaperTradingPanel for reuse by PaperTradingPage
+[2026-02-27 00:00] fe-dev (sonnet) - Add usePaperAllTrades hook to usePaperTrading.ts to fetch all trades (limit 10000)
 [2026-02-26 15:20] fe-dev (sonnet) - Phase 3: Paper trading frontend UI (types, API, store, hooks, panel, chart, tabs)
 [2026-02-26 16:00] fullstack-dev (sonnet) - Phase 7C: Create seed-paper-test.ts script and add paper:seed npm script
 [2026-02-26 15:20] fullstack-dev (sonnet) - Phase 7: Local testing setup (seed script, npm scripts)
@@ -639,3 +646,46 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-02-27 14:15] be-dev (haiku) - Fix comparison script trade matching logic
 [2026-02-27 14:16] docs-writer (haiku) - Create changelog for paper trading bug fixes (tick timing, crossovers, short entries)
 [2026-02-27 14:20] commit (haiku) - fix paper trading signal handling and comparison script
+[2026-02-27 14:21] commit (haiku) - paper trading simple strategy support and engine tick/multi-bar fixes
+[2026-02-27 14:30] fe-dev (sonnet) - Add activePage state to paperTradingStore for page-level navigation
+[2026-02-27 14:35] fe-dev (sonnet) - Remove paper-trading tab from aggregationStore and StrategyConfig (type narrowing + tab removal + import cleanup)
+[2026-02-27 14:45] fe-dev (sonnet) - Add header navigation tabs (Backtesting/Paper Trading) and conditional page rendering in App.tsx
+[2026-02-27 12:30] Explore (sonnet) - Explore paper trading codebase structure
+[2026-02-27 12:35] fe-dev (sonnet) - Add activePage state to paperTradingStore
+[2026-02-27 12:35] fe-dev (sonnet) - Remove paper-trading tab from StrategyConfig and aggregationStore
+[2026-02-27 12:35] fe-dev (sonnet) - Add usePaperAllTrades hook
+[2026-02-27 12:35] fe-dev (sonnet) - Export helpers from PaperTradingPanel
+[2026-02-27 12:35] fe-dev (sonnet) - Create PaperTradingPage component and utilities
+[2026-02-27 12:45] fe-dev (sonnet) - Add header nav and conditional rendering in App.tsx
+[2026-02-27 12:50] runner (haiku) - Run typecheck and lint verification
+[2026-02-27 12:30] docs-writer (haiku) - Create changelog for paper trading full-page view implementation
+[2026-02-27 13:10] fe-dev (sonnet) - Fix candle date range for paper trading chart (200-bar lookback)
+[2026-02-27 13:20] claude-main (opus) - Fix initial capital input in CreatePaperSessionModal (direct edit)
+[2026-02-27 16:49] commit (haiku) - Paper trading full page feature with navigation
+[2026-02-27 17:02] fe-dev (sonnet) - Add From History mode to CreatePaperSessionModal for selecting aggregation backtest history runs
+[2026-02-27 17:02] fe-dev (sonnet) - Fix paper trading: unknown config display and chart candle range
+[2026-02-27 15:30] Explore (sonnet) - Explore paper trading system architecture
+[2026-02-27 15:35] fe-dev (sonnet) - Fix Unknown config display + chart 1-candle issue
+[2026-02-27 15:35] fe-dev (sonnet) - Add "From History" mode to CreatePaperSessionModal
+[2026-02-27 15:35] fe-dev (sonnet) - Add chart tabs (Price/Equity/Drawdown/Stats) to paper trading page
+[2026-02-27 15:40] docs-writer (haiku) - Changelog for paper trading UI improvements
+[2026-02-27 15:31] commit (haiku) - paper trading UI improvements: config naming, history import, tabbed charts
+[2026-02-27 17:14] fullstack-dev (sonnet) - Implement real-time WebSocket price updates for paper trading chart via Bybit WS + SSE proxy
+[2026-02-27 17:30] fe-dev (sonnet) - PaperTradingPage: remove Stats tab, add session startDate to Chart, add equity/drawdown resolution selector
+[2026-02-27 16:00] Explore (sonnet) - Explore WS, resolution, chart infrastructure
+[2026-02-27 16:05] fe-dev (sonnet) - Remove stats tab, add session range, add equity resolution
+[2026-02-27 16:05] fullstack-dev (sonnet) - Add Bybit WS real-time price streaming
+[2026-03-01 08:28] fullstack-dev (sonnet) - Fix 3 paper trading bugs: candle cache partial hit, price stream always-on, stable useMemo deps
+[2026-03-01 10:30] fullstack-dev (sonnet) - Fix resume 500, candle caching, realtime streaming
+[2026-03-01 09:03] commit (haiku) - paper trading bug fixes
+[2026-03-01 11:00] fe-dev (sonnet) - Add session start/pause/resume visual markers on paper trading price chart
+[2026-03-01 11:30] fe-dev (sonnet) - Add session activity markers (start/pause/resume) on price chart
+[2026-03-01 00:00] commit (haiku) - paper trading streaming, session management, and session event markers
+[2026-03-01 16:35] general-purpose (sonnet) - Research cheapest VDS/VPS deployment options
+[2026-03-01 16:35] Explore (sonnet) - Explore full deployment requirements and stack analysis
+[2026-03-01 16:35] be-dev (sonnet) - Add @fastify/static for production frontend serving
+[2026-03-01 16:35] fullstack-dev (sonnet) - Create Hetzner deploy script
+[2026-03-01 17:00] fe-dev (sonnet) - Fix paper trading chart real-time updates: stable endRounded via useState+useEffect timer, Chart update() for single-candle additions
+[2026-03-01 16:00] fe-dev (sonnet) - Fix chart real-time updates when paused: stable endRounded timer + Chart update() for single candle additions
+[2026-03-01 01:20] commit (haiku) - fix real-time chart updates for paused paper trading sessions
+[2026-03-01 16:10] docs-writer (haiku) - Create changelog for chart real-time update fix when session paused/stopped
