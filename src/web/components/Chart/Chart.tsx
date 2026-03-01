@@ -304,15 +304,17 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
         chartRef.current.timeScale().fitContent();
       }
     } else if (formattedCandles.length > 0) {
-      // Subsequent updates (e.g. real-time WS ticks) — only update the last candle
-      // to avoid resetting zoom/scroll position
+      // Subsequent updates — avoid resetting zoom/scroll position whenever possible.
       const last = formattedCandles[formattedCandles.length - 1];
-      if (formattedCandles.length !== prevCount) {
-        // Number of candles changed (new bar appeared or data replaced) — full setData
-        candleSeriesRef.current.setData(formattedCandles);
-      } else {
-        // Same number of candles — just update the last one in-place
+      if (formattedCandles.length === prevCount || formattedCandles.length === prevCount + 1) {
+        // Same count (WS tick updating the forming candle) OR exactly one new bar
+        // from the WS stream — use update() which appends a new candle when its
+        // timestamp is newer than the current last bar, without resetting zoom.
         candleSeriesRef.current.update(last);
+      } else {
+        // Significant data change (resolution switch, refetch with many new candles,
+        // or initial WS catch-up) — full setData to keep chart consistent.
+        candleSeriesRef.current.setData(formattedCandles);
       }
     }
   }, [displayCandles]);

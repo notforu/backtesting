@@ -3,7 +3,7 @@
  * Layout mirrors the backtesting page: left sidebar (session list) + main area (detail).
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePaperTradingStore } from '../../stores/paperTradingStore';
 import {
   usePaperSessions,
@@ -67,6 +67,7 @@ function computeSessionEvents(
   snapshots: PaperEquitySnapshot[],
   timeframeMs: number,
   sessionCreatedAt: number,
+  sessionStatus: string,
 ): SessionEvent[] {
   const events: SessionEvent[] = [];
 
@@ -81,10 +82,18 @@ function computeSessionEvents(
   for (let i = 1; i < snapshots.length; i++) {
     const gap = snapshots[i].timestamp - snapshots[i - 1].timestamp;
     if (gap > gapThreshold) {
-      // Mark the end of the last active snapshot as a pause point,
-      // and the current snapshot as a resume point.
       events.push({ timestamp: snapshots[i - 1].timestamp, type: 'pause' });
       events.push({ timestamp: snapshots[i].timestamp, type: 'resume' });
+    }
+  }
+
+  // If session is currently paused/stopped, mark the last snapshot as a pause point
+  if (sessionStatus === 'paused' || sessionStatus === 'stopped') {
+    const lastTs = snapshots[snapshots.length - 1].timestamp;
+    // Avoid duplicate if already marked as pause
+    const alreadyMarked = events.some(e => e.type === 'pause' && e.timestamp === lastTs);
+    if (!alreadyMarked) {
+      events.push({ timestamp: lastTs, type: 'pause' });
     }
   }
 
@@ -200,13 +209,44 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   // Use earliest trade timestamp as reference when trades exist, otherwise use now.
   // endDate is current time rounded to 5 minutes for a stable React Query key
   // that still triggers the backend to fetch recent candles.
+  //
+  // IMPORTANT: endRounded is kept in state and only updated every 5 minutes to
+  // prevent React Query key churn on every render from WS ticks. If it were
+  // recalculated inline, crossing a 5-min boundary mid-stream would invalidate
+  // the cache key, causing a refetch that temporarily replaces assetCandles with
+  // stale data, breaks the chartCandles merge, and triggers setData() in Chart
+  // (resetting zoom). Using a timer ensures the key only changes once per period.
+  const FIVE_MIN = 5 * 60_000;
+  const [endRounded, setEndRounded] = useState(() =>
+    new Date(Math.ceil(Date.now() / FIVE_MIN) * FIVE_MIN).toISOString()
+  );
+  const endRoundedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    const tick = () => {
+      setEndRounded(new Date(Math.ceil(Date.now() / FIVE_MIN) * FIVE_MIN).toISOString());
+    };
+    // Fire at the next 5-minute boundary, then every 5 minutes thereafter
+    const now = Date.now();
+    const next = Math.ceil(now / FIVE_MIN) * FIVE_MIN;
+    const delay = next - now + 100; // small buffer to land after the boundary
+    const timeout = setTimeout(() => {
+      tick();
+      endRoundedIntervalRef.current = setInterval(tick, FIVE_MIN);
+    }, delay);
+    return () => {
+      clearTimeout(timeout);
+      if (endRoundedIntervalRef.current) {
+        clearInterval(endRoundedIntervalRef.current);
+        endRoundedIntervalRef.current = null;
+      }
+    };
+  }, []);
+
   const now = Date.now();
   const earliestTradeTs = allPaperTrades.length > 0
     ? Math.min(...allPaperTrades.map((t) => t.timestamp))
     : now;
   const referenceTs = Math.min(earliestTradeTs, now);
-  const FIVE_MIN = 5 * 60_000;
-  const endRounded = new Date(Math.ceil(now / FIVE_MIN) * FIVE_MIN).toISOString();
   const candleParams = activeAsset && session ? {
     exchange: activeAsset.exchange,
     symbol: activeAsset.symbol,
@@ -276,6 +316,16 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     }
   }, [selectedAsset?.symbol]);
 
+  // Derive session start/pause/resume markers from equity snapshot gaps.
+  // Must be before early returns so hooks are always called in the same order.
+  const snapshots: PaperEquitySnapshot[] = equitySnapshots ?? [];
+  const sessionEvents = useMemo(() => {
+    if (!activeAsset || !session) return undefined;
+    const tfMs = TIMEFRAME_MS[activeAsset.timeframe] ?? 3_600_000;
+    return computeSessionEvents(snapshots, tfMs, session.createdAt, session.status);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshots, snapshots.length, activeAsset?.timeframe, session?.createdAt, session?.status]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -304,20 +354,6 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     await deleteMutation.mutateAsync(sessionId);
     setSelectedSession(null);
   };
-
-  // Determine which snapshot set to use for equity/drawdown charts in asset view.
-  // For a specific selected asset we still use the overall session equity snapshots
-  // (we don't have per-asset snapshots in paper trading).
-  const snapshots: PaperEquitySnapshot[] = equitySnapshots ?? [];
-
-  // Derive session start/pause/resume markers from equity snapshot gaps.
-  // Must be computed after `snapshots` is available (cannot be hoisted above early returns).
-  const sessionEvents = useMemo(() => {
-    if (!activeAsset) return undefined;
-    const tfMs = TIMEFRAME_MS[activeAsset.timeframe] ?? 3_600_000;
-    return computeSessionEvents(snapshots, tfMs, session.createdAt);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshots, snapshots.length, activeAsset?.timeframe, session.createdAt]);
 
   // Asset chart tab definitions
   const assetTabs: { id: AssetChartTab; label: string }[] = [
