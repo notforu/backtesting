@@ -497,6 +497,8 @@ export async function runAggregateBacktest(
           strategyName: s.strategyName,
           symbol: s.symbol,
           timeframe: s.timeframe,
+          params: s.params,
+          exchange: s.exchange,
         })),
         assets: subStrategies.map(s => `${s.symbol}@${s.timeframe}`).join(','),
         perAssetSummary: Object.values(perAssetResults).map(r => ({

@@ -622,5 +622,6 @@ export interface CreatePaperSessionRequest {
   name: string;
   aggregationConfigId?: string;
   strategyConfig?: SimpleStrategyConfig;
+  backtestRunId?: string;
   initialCapital?: number;
 }

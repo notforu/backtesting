@@ -11,7 +11,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z, ZodError } from 'zod';
 import { sessionManager } from '../../paper-trading/session-manager.js';
-import { getAggregationConfig } from '../../data/db.js';
+import { getAggregationConfig, getBacktestRun } from '../../data/db.js';
 import { getPaperSession, listPaperSessions, getPaperPositions, getPaperTrades, getPaperEquitySnapshots } from '../../paper-trading/db.js';
 import type { AggregateBacktestConfig } from '../../core/signal-types.js';
 
@@ -33,10 +33,11 @@ const CreateSessionSchema = z
     name: z.string().min(1),
     aggregationConfigId: z.string().min(1).optional(),
     strategyConfig: SimpleStrategyConfigSchema.optional(),
+    backtestRunId: z.string().min(1).optional(),
     initialCapital: z.number().positive().optional(),
   })
-  .refine((data) => data.aggregationConfigId || data.strategyConfig, {
-    message: 'Either aggregationConfigId or strategyConfig is required',
+  .refine((data) => data.aggregationConfigId || data.strategyConfig || data.backtestRunId, {
+    message: 'Either aggregationConfigId, strategyConfig, or backtestRunId is required',
   });
 
 const TradesQuerySchema = z.object({
@@ -87,6 +88,67 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
           mode: config.mode as 'spot' | 'futures' | undefined,
         };
         aggregationConfigId = parsed.aggregationConfigId;
+      } else if (parsed.backtestRunId) {
+        // Load config from a saved backtest run (supports ad-hoc aggregation runs without a saved aggregation config)
+        const run = await getBacktestRun(parsed.backtestRunId);
+        if (!run) {
+          return reply.status(404).send({ error: `Backtest run "${parsed.backtestRunId}" not found` });
+        }
+
+        const runConfig = run.config;
+        const params = runConfig.params as Record<string, unknown> | undefined;
+        const subStrats = params?.subStrategies as
+          | Array<{
+              strategyName: string;
+              symbol: string;
+              timeframe: string;
+              params?: Record<string, unknown>;
+              exchange?: string;
+            }>
+          | undefined;
+
+        if (subStrats && Array.isArray(subStrats) && subStrats.length > 0) {
+          // Aggregation run — reconstruct from stored sub-strategies
+          aggregationConfig = {
+            subStrategies: subStrats.map((s) => ({
+              strategyName: s.strategyName,
+              symbol: s.symbol,
+              timeframe: s.timeframe as AggregateBacktestConfig['subStrategies'][number]['timeframe'],
+              params: s.params ?? {},
+              exchange: s.exchange ?? runConfig.exchange ?? 'bybit',
+            })),
+            allocationMode: (
+              params?.allocationMode as string ?? 'single_strongest'
+            ) as AggregateBacktestConfig['allocationMode'],
+            maxPositions: (params?.maxPositions as number) ?? 1,
+            initialCapital: parsed.initialCapital ?? runConfig.initialCapital ?? 10000,
+            startDate: 0,
+            endDate: 0,
+            exchange: runConfig.exchange ?? 'bybit',
+            mode: runConfig.mode as 'spot' | 'futures' | undefined,
+          };
+        } else {
+          // Single strategy run — wrap as a single sub-strategy aggregation
+          aggregationConfig = {
+            subStrategies: [
+              {
+                strategyName: runConfig.strategyName,
+                symbol: runConfig.symbol,
+                timeframe: runConfig.timeframe as AggregateBacktestConfig['subStrategies'][number]['timeframe'],
+                params: (params as Record<string, unknown>) ?? {},
+                exchange: runConfig.exchange ?? 'bybit',
+              },
+            ],
+            allocationMode: 'single_strongest',
+            maxPositions: 1,
+            initialCapital: parsed.initialCapital ?? runConfig.initialCapital ?? 10000,
+            startDate: 0,
+            endDate: 0,
+            exchange: runConfig.exchange ?? 'bybit',
+            mode: runConfig.mode as 'spot' | 'futures' | undefined,
+          };
+        }
+        aggregationConfigId = undefined;
       } else {
         // New flow: wrap single strategy config as a single-sub-strategy AggregateBacktestConfig
         const sc = parsed.strategyConfig!;

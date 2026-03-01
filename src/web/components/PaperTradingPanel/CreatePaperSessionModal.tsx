@@ -162,11 +162,14 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
         onCreated?.(session.id);
       } else if (mode === 'history') {
         if (!selectedHistoryRun) return;
-        // If the run has an aggregationId, use it as the config reference
-        // Otherwise fall back to what we have (aggregationId may be undefined for ad-hoc runs)
+        // If the run has an aggregationId, reference the saved config directly.
+        // For ad-hoc runs without a saved config, pass the backtestRunId so the
+        // backend can reconstruct the session from the stored run configuration.
         const session = await createMutation.mutateAsync({
           name: name.trim(),
-          aggregationConfigId: selectedHistoryRun.aggregationId,
+          ...(selectedHistoryRun.aggregationId
+            ? { aggregationConfigId: selectedHistoryRun.aggregationId }
+            : { backtestRunId: selectedHistoryRun.id }),
           initialCapital,
         });
         onCreated?.(session.id);
@@ -373,8 +376,8 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
                 </div>
               )}
               {selectedHistoryRun && !selectedHistoryRun.aggregationId && (
-                <p className="text-xs text-amber-400 mt-2">
-                  This was an ad-hoc run without a saved aggregation config. The paper session may not have a strategy config to execute.
+                <p className="text-xs text-gray-400 mt-2">
+                  This run will be recreated from its stored configuration.
                 </p>
               )}
             </div>
