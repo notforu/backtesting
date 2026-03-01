@@ -30,6 +30,8 @@ import * as paperDb from './db.js';
 import type { Trade } from '../core/types.js';
 
 const WARMUP_CANDLES = 200; // Historical candles for strategy warmup
+const MAX_RETRIES = 10; // Maximum transient error retries before giving up
+const RETRY_DELAYS_MS = [30_000, 60_000, 120_000, 300_000, 600_000, 900_000]; // 30s, 1m, 2m, 5m, 10m, 15m
 
 // ============================================================================
 // Internal types
@@ -82,6 +84,11 @@ export class PaperTradingEngine extends EventEmitter {
   // Guard against concurrent tick execution
   private isTicking: boolean = false;
 
+  // Retry state — reset to 0 after a successful tick
+  private retryCount: number = 0;
+  private lastError: string | null = null;
+  private lastErrorAt: number | null = null;
+
   constructor(session: PaperSession) {
     super();
     this.sessionId = session.id;
@@ -94,6 +101,18 @@ export class PaperTradingEngine extends EventEmitter {
 
   get status(): string {
     return this._status;
+  }
+
+  get currentRetryCount(): number {
+    return this.retryCount;
+  }
+
+  get currentLastError(): string | null {
+    return this.lastError;
+  }
+
+  get currentLastErrorAt(): number | null {
+    return this.lastErrorAt;
   }
 
   // ==========================================================================
@@ -132,13 +151,18 @@ export class PaperTradingEngine extends EventEmitter {
   }
 
   async resume(): Promise<void> {
-    if (this._status !== 'paused') return;
+    if (this._status !== 'paused' && this._status !== 'error') return;
 
     const oldStatus = this._status;
     this._status = 'running';
 
+    // Reset retry state on manual resume
+    this.retryCount = 0;
+    this.lastError = null;
+    this.lastErrorAt = null;
+
     this.emitEvent({ type: 'status_change', sessionId: this.sessionId, oldStatus, newStatus: 'running' });
-    await paperDb.updatePaperSession(this.sessionId, { status: 'running' });
+    await paperDb.updatePaperSession(this.sessionId, { status: 'running', errorMessage: null });
 
     // Keep lastProcessedCandleTs so the next tick correctly identifies ALL bars
     // that were missed during the pause. The existing multi-bar processing loop
@@ -248,6 +272,11 @@ export class PaperTradingEngine extends EventEmitter {
       try {
         await this.executeTick();
 
+        // Reset retry state after a successful tick
+        this.retryCount = 0;
+        this.lastError = null;
+        this.lastErrorAt = null;
+
         // Schedule next tick aligned to the next candle close
         if (this._status === 'running') {
           const nextDelay = this.calculateNextTickDelay();
@@ -259,22 +288,154 @@ export class PaperTradingEngine extends EventEmitter {
         const message = error instanceof Error ? error.message : 'Unknown error';
         console.error(`[PaperEngine ${this.sessionId}] Tick error:`, message);
 
-        this._status = 'error';
-        this.emitEvent({ type: 'error', sessionId: this.sessionId, message });
-        this.emitEvent({
-          type: 'status_change',
-          sessionId: this.sessionId,
-          oldStatus: 'running',
-          newStatus: 'error',
-        });
+        if (this.isTransientError(error)) {
+          this.retryCount++;
+          this.lastError = message;
+          this.lastErrorAt = Date.now();
 
-        await paperDb.updatePaperSession(this.sessionId, {
-          status: 'error',
-          errorMessage: message,
-          nextTickAt: null,
-        });
+          if (this.retryCount > MAX_RETRIES) {
+            // Too many retries — give up and set error state
+            console.error(
+              `[PaperEngine ${this.sessionId}] Max retries (${MAX_RETRIES}) exceeded, giving up`,
+            );
+            this._status = 'error';
+            this.emitEvent({ type: 'error', sessionId: this.sessionId, message });
+            this.emitEvent({
+              type: 'status_change',
+              sessionId: this.sessionId,
+              oldStatus: 'running',
+              newStatus: 'error',
+            });
+            await paperDb.updatePaperSession(this.sessionId, {
+              status: 'error',
+              errorMessage: `Max retries exceeded: ${message}`,
+              nextTickAt: null,
+            });
+          } else {
+            // Schedule retry with exponential backoff, keep status as 'running'
+            const delay = this.getRetryDelay();
+            const nextRetryAt = Date.now() + delay;
+            console.warn(
+              `[PaperEngine ${this.sessionId}] Transient error, retry ${this.retryCount}/${MAX_RETRIES} in ${delay / 1000}s: ${message}`,
+            );
+
+            this.emitEvent({
+              type: 'retry',
+              sessionId: this.sessionId,
+              retryCount: this.retryCount,
+              nextRetryAt,
+              error: message,
+            });
+
+            await paperDb.updatePaperSession(this.sessionId, {
+              errorMessage: `Retry ${this.retryCount}/${MAX_RETRIES}: ${message}`,
+              nextTickAt: nextRetryAt,
+            });
+
+            this.scheduleTick(delay);
+          }
+        } else {
+          // Fatal error — die immediately
+          this._status = 'error';
+          this.emitEvent({ type: 'error', sessionId: this.sessionId, message });
+          this.emitEvent({
+            type: 'status_change',
+            sessionId: this.sessionId,
+            oldStatus: 'running',
+            newStatus: 'error',
+          });
+
+          await paperDb.updatePaperSession(this.sessionId, {
+            status: 'error',
+            errorMessage: message,
+            nextTickAt: null,
+          });
+        }
       }
     }, delayMs);
+  }
+
+  /**
+   * Classify an error as transient (network/rate-limit/temporary) or fatal (config/logic).
+   * Transient errors should be retried; fatal errors should permanently stop the session.
+   */
+  private isTransientError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    const lowerMsg = message.toLowerCase();
+
+    // Fatal error patterns — config or strategy errors that won't resolve on retry
+    const fatalPatterns = [
+      'session not found',
+      'strategy',
+      'not found',
+      'invalid config',
+      'validation',
+      'cannot read',
+      'cannot access',
+      'out of memory',
+    ];
+
+    for (const pattern of fatalPatterns) {
+      if (lowerMsg.includes(pattern)) return false;
+    }
+
+    // Transient error patterns — network, rate limits, temporary issues
+    const transientPatterns = [
+      'network',
+      'timeout',
+      'timed out',
+      'rate limit',
+      'ratelimit',
+      'too many requests',
+      'econnreset',
+      'econnrefused',
+      'enotfound',
+      'econnaborted',
+      'etimedout',
+      'connection refused',
+      'connection reset',
+      'socket hang up',
+      '503',
+      '502',
+      '504',
+      '429',
+      'service unavailable',
+      'bad gateway',
+      'gateway timeout',
+      'no candles',
+      'stale',
+      'fetch failed',
+      'sqlite_busy',
+      'database is locked',
+      'connection pool',
+      'pool timeout',
+      'no valid sub-strategies',
+    ];
+
+    for (const pattern of transientPatterns) {
+      if (lowerMsg.includes(pattern)) return true;
+    }
+
+    // Also treat Node.js network error codes as transient
+    if (error instanceof Error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code) {
+        const transientCodes = ['ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNABORTED'];
+        if (transientCodes.includes(code)) return true;
+      }
+    }
+
+    // Default: treat as transient (better to retry than to permanently fail)
+    return true;
+  }
+
+  /**
+   * Calculate the retry delay for the current retry count.
+   * Uses exponential backoff: 30s, 1m, 2m, 5m, 10m, 15m (capped).
+   */
+  private getRetryDelay(): number {
+    const index = Math.min(this.retryCount - 1, RETRY_DELAYS_MS.length - 1);
+    return RETRY_DELAYS_MS[index];
   }
 
   /**

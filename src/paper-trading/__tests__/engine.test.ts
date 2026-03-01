@@ -1627,4 +1627,297 @@ describe('PaperTradingEngine', () => {
     const btcCalls = fetchCalls.filter(c => c[0] === 'BTC/USDT' && c[1] === '4h');
     expect(btcCalls).toHaveLength(1);
   });
+
+  // ==========================================================================
+  // R1. Transient error triggers retry, not permanent error state
+  // ==========================================================================
+
+  it('R1: transient network error keeps status running and increments retryCount', async () => {
+    // Make executeTick throw a network error on the first call by having
+    // the candle fetcher reject with a network error.
+    mockFetchLatestCandles.mockRejectedValueOnce(new Error('ECONNRESET: connection reset'));
+
+    // After the first failure, subsequent fetches should NOT resolve (engine should wait for retry delay)
+    // We'll pause the timer after the first tick fires using advanceTimersByTimeAsync(0)
+    // which only advances by 0ms and fires immediate (0ms delay) timers only.
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // Set engine to running status so scheduleTick fires
+    (engine as unknown as Record<string, unknown>)['_status'] = 'running';
+
+    // Capture emitted events
+    const emittedEvents: unknown[] = [];
+    engine.on('paper-event', (event) => emittedEvents.push(event));
+
+    // Schedule a tick with 0 delay — will fire when we advance timers by 0ms
+    (engine as unknown as { scheduleTick: (delay: number) => void })['scheduleTick'](0);
+
+    // Advance timers by only 0ms to fire just the initial tick (delay=0),
+    // not the retry timer (delay=30000ms). This ensures we only see the
+    // result of the first tick without triggering subsequent retries.
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Status should still be 'running' (not 'error') after a transient error
+    expect(engine.status).toBe('running');
+
+    // retryCount should have incremented
+    expect(engine.currentRetryCount).toBe(1);
+
+    // lastError should be set
+    expect(engine.currentLastError).toContain('ECONNRESET');
+
+    // A 'retry' event should have been emitted (not 'error')
+    const retryEvents = emittedEvents.filter((e: unknown) => (e as { type: string }).type === 'retry');
+    expect(retryEvents).toHaveLength(1);
+    const retryEvent = retryEvents[0] as { type: string; retryCount: number; nextRetryAt: number; error: string };
+    expect(retryEvent.retryCount).toBe(1);
+    expect(retryEvent.nextRetryAt).toBeGreaterThan(Date.now());
+    expect(retryEvent.error).toContain('ECONNRESET');
+
+    // No 'error' status_change event should have been emitted
+    const errorStatusEvents = emittedEvents.filter(
+      (e: unknown) => (e as { type: string; newStatus?: string }).type === 'status_change' &&
+        (e as { newStatus: string }).newStatus === 'error'
+    );
+    expect(errorStatusEvents).toHaveLength(0);
+
+    // DB should NOT have been updated with status: 'error'
+    const errorDbCalls = vi.mocked(paperDb.updatePaperSession).mock.calls.filter(
+      c => c[1].status === 'error'
+    );
+    expect(errorDbCalls).toHaveLength(0);
+  });
+
+  // ==========================================================================
+  // R2. Fatal error immediately sets error state
+  // ==========================================================================
+
+  it('R2: fatal error (strategy not found) immediately sets error state', async () => {
+    // Strategy loading fails with a fatal error
+    vi.mocked(strategyLoader.loadStrategy).mockRejectedValueOnce(
+      new Error('Strategy my-strategy not found')
+    );
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    (engine as unknown as Record<string, unknown>)['_status'] = 'running';
+
+    const emittedEvents: unknown[] = [];
+    engine.on('paper-event', (event) => emittedEvents.push(event));
+
+    (engine as unknown as { scheduleTick: (delay: number) => void })['scheduleTick'](0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Status should be 'error' immediately for a fatal error
+    expect(engine.status).toBe('error');
+
+    // retryCount should remain 0 (no retry attempted)
+    expect(engine.currentRetryCount).toBe(0);
+
+    // An 'error' event should have been emitted
+    const errorEvents = emittedEvents.filter((e: unknown) => (e as { type: string }).type === 'error');
+    expect(errorEvents).toHaveLength(1);
+
+    // A 'status_change' event to 'error' should have been emitted
+    const errorStatusEvents = emittedEvents.filter(
+      (e: unknown) => (e as { type: string; newStatus?: string }).type === 'status_change' &&
+        (e as { newStatus: string }).newStatus === 'error'
+    );
+    expect(errorStatusEvents).toHaveLength(1);
+
+    // DB should have been updated with status: 'error'
+    const errorDbCalls = vi.mocked(paperDb.updatePaperSession).mock.calls.filter(
+      c => c[1].status === 'error'
+    );
+    expect(errorDbCalls).toHaveLength(1);
+  });
+
+  // ==========================================================================
+  // R3. Retry backoff increases with each retry attempt
+  // ==========================================================================
+
+  it('R3: getRetryDelay returns increasing delays for successive retries', () => {
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // Access private getRetryDelay via type assertion
+    const getRetryDelay = (engine as unknown as Record<string, () => number>)['getRetryDelay'].bind(engine);
+
+    // Set retryCount and check delays
+    const delays: number[] = [];
+    for (let i = 1; i <= 6; i++) {
+      (engine as unknown as Record<string, number>)['retryCount'] = i;
+      delays.push(getRetryDelay());
+    }
+
+    // Delays should be non-decreasing
+    for (let i = 1; i < delays.length; i++) {
+      expect(delays[i]).toBeGreaterThanOrEqual(delays[i - 1]);
+    }
+
+    // First delay should be 30s
+    expect(delays[0]).toBe(30_000);
+
+    // Sixth delay should be 900s (15 min, capped)
+    expect(delays[5]).toBe(900_000);
+  });
+
+  // ==========================================================================
+  // R4. Max retries exceeded sets error state
+  // ==========================================================================
+
+  it('R4: exceeding MAX_RETRIES on transient error sets status to error', async () => {
+    // Set retryCount to MAX_RETRIES (10) so the next transient error exceeds the limit
+    mockFetchLatestCandles.mockRejectedValueOnce(new Error('Network timeout'));
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // Pre-set retryCount to MAX_RETRIES so the next error pushes it over
+    (engine as unknown as Record<string, unknown>)['retryCount'] = 10;
+    (engine as unknown as Record<string, unknown>)['_status'] = 'running';
+
+    const emittedEvents: unknown[] = [];
+    engine.on('paper-event', (event) => emittedEvents.push(event));
+
+    (engine as unknown as { scheduleTick: (delay: number) => void })['scheduleTick'](0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // retryCount should be 11 (incremented from 10)
+    expect(engine.currentRetryCount).toBe(11);
+
+    // Status should now be 'error' (max retries exceeded)
+    expect(engine.status).toBe('error');
+
+    // An 'error' event should have been emitted
+    const errorEvents = emittedEvents.filter((e: unknown) => (e as { type: string }).type === 'error');
+    expect(errorEvents).toHaveLength(1);
+
+    // No 'retry' event should have been emitted (gave up)
+    const retryEvents = emittedEvents.filter((e: unknown) => (e as { type: string }).type === 'retry');
+    expect(retryEvents).toHaveLength(0);
+
+    // DB updated with 'error' status and 'Max retries exceeded' message
+    const errorDbCalls = vi.mocked(paperDb.updatePaperSession).mock.calls.filter(
+      c => c[1].status === 'error'
+    );
+    expect(errorDbCalls).toHaveLength(1);
+    expect(errorDbCalls[0][1].errorMessage).toContain('Max retries exceeded');
+  });
+
+  // ==========================================================================
+  // R5. Successful tick resets retry count
+  // ==========================================================================
+
+  it('R5: successful tick resets retryCount to 0', async () => {
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // Pre-set retryCount > 0 to simulate prior failures
+    (engine as unknown as Record<string, unknown>)['retryCount'] = 3;
+    (engine as unknown as Record<string, unknown>)['lastError'] = 'Previous error';
+    (engine as unknown as Record<string, unknown>)['lastErrorAt'] = Date.now() - 60_000;
+    (engine as unknown as Record<string, unknown>)['_status'] = 'running';
+
+    // Use advanceTimersByTimeAsync(0) to fire only the initial 0ms-delay tick,
+    // not subsequent scheduled ticks (which would use calculateNextTickDelay() delays).
+    (engine as unknown as { scheduleTick: (delay: number) => void })['scheduleTick'](0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // After a successful tick, retryCount should be reset to 0
+    expect(engine.currentRetryCount).toBe(0);
+    expect(engine.currentLastError).toBeNull();
+    expect(engine.currentLastErrorAt).toBeNull();
+  });
+
+  // ==========================================================================
+  // R6. Resume from error state works
+  // ==========================================================================
+
+  it('R6: resume() from error state transitions to running state', async () => {
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // Put engine into error state manually
+    (engine as unknown as Record<string, unknown>)['_status'] = 'error';
+    (engine as unknown as Record<string, unknown>)['retryCount'] = 5;
+    (engine as unknown as Record<string, unknown>)['lastError'] = 'Some error';
+
+    const emittedEvents: unknown[] = [];
+    engine.on('paper-event', (event) => emittedEvents.push(event));
+
+    vi.useFakeTimers();
+
+    // resume() should succeed even when in 'error' state
+    await engine.resume();
+
+    // Status should now be 'running'
+    expect(engine.status).toBe('running');
+
+    // retryCount should be reset
+    expect(engine.currentRetryCount).toBe(0);
+    expect(engine.currentLastError).toBeNull();
+    expect(engine.currentLastErrorAt).toBeNull();
+
+    // A status_change event from 'error' to 'running' should have been emitted
+    const statusEvents = emittedEvents.filter(
+      (e: unknown) => (e as { type: string }).type === 'status_change'
+    ) as Array<{ type: string; oldStatus: string; newStatus: string }>;
+    expect(statusEvents).toHaveLength(1);
+    expect(statusEvents[0].oldStatus).toBe('error');
+    expect(statusEvents[0].newStatus).toBe('running');
+
+    // DB should have been updated with status: 'running'
+    const runningDbCalls = vi.mocked(paperDb.updatePaperSession).mock.calls.filter(
+      c => c[1].status === 'running'
+    );
+    expect(runningDbCalls).toHaveLength(1);
+    expect(runningDbCalls[0][1].errorMessage).toBeNull();
+  });
+
+  // ==========================================================================
+  // R7. isTransientError correctly classifies error messages
+  // ==========================================================================
+
+  it('R7: isTransientError classifies network/rate-limit errors as transient', () => {
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+    const isTransientError = (engine as unknown as Record<string, (e: unknown) => boolean>)['isTransientError'].bind(engine);
+
+    // Transient errors
+    expect(isTransientError(new Error('ECONNRESET: connection reset by peer'))).toBe(true);
+    expect(isTransientError(new Error('Network request failed'))).toBe(true);
+    expect(isTransientError(new Error('Request timed out'))).toBe(true);
+    expect(isTransientError(new Error('Rate limit exceeded: too many requests'))).toBe(true);
+    expect(isTransientError(new Error('429 Too Many Requests'))).toBe(true);
+    expect(isTransientError(new Error('503 Service Unavailable'))).toBe(true);
+    expect(isTransientError(new Error('502 Bad Gateway'))).toBe(true);
+    expect(isTransientError(new Error('No candles available'))).toBe(true);
+    expect(isTransientError(new Error('SQLITE_BUSY: database is locked'))).toBe(true);
+    expect(isTransientError(new Error('No valid sub-strategies loaded (all had empty or stale candle data)'))).toBe(true);
+    expect(isTransientError(new Error('Connection pool timeout'))).toBe(true);
+
+    // Test with Node.js ErrnoException error codes
+    const connRefusedError = new Error('Connection refused') as NodeJS.ErrnoException;
+    connRefusedError.code = 'ECONNREFUSED';
+    expect(isTransientError(connRefusedError)).toBe(true);
+
+    const etimedoutError = new Error('Request timed out') as NodeJS.ErrnoException;
+    etimedoutError.code = 'ETIMEDOUT';
+    expect(isTransientError(etimedoutError)).toBe(true);
+  });
+
+  it('R7: isTransientError classifies config/strategy errors as fatal', () => {
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+    const isTransientError = (engine as unknown as Record<string, (e: unknown) => boolean>)['isTransientError'].bind(engine);
+
+    // Fatal errors
+    expect(isTransientError(new Error('Session not found'))).toBe(false);
+    expect(isTransientError(new Error('Strategy my-strategy not found'))).toBe(false);
+    expect(isTransientError(new Error('Validation error: invalid config'))).toBe(false);
+  });
 });

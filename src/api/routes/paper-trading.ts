@@ -66,6 +66,7 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
         if (!config) {
           return reply.status(404).send({
             error: `Aggregation config "${parsed.aggregationConfigId}" not found`,
+            code: 'SESSION_NOT_FOUND',
           });
         }
 
@@ -92,7 +93,10 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
         // Load config from a saved backtest run (supports ad-hoc aggregation runs without a saved aggregation config)
         const run = await getBacktestRun(parsed.backtestRunId);
         if (!run) {
-          return reply.status(404).send({ error: `Backtest run "${parsed.backtestRunId}" not found` });
+          return reply.status(404).send({
+            error: `Backtest run "${parsed.backtestRunId}" not found`,
+            code: 'SESSION_NOT_FOUND',
+          });
         }
 
         const runConfig = run.config;
@@ -186,7 +190,12 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: 'Validation error', details: error.issues });
       }
       fastify.log.error({ err: error, msg: 'Error creating paper trading session' });
-      return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return reply.status(500).send({
+        error: message,
+        code: 'INTERNAL_ERROR',
+        timestamp: Date.now(),
+      });
     }
   });
 
@@ -199,7 +208,12 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
       return reply.status(200).send(sessions);
     } catch (error) {
       fastify.log.error({ err: error, msg: 'Error listing paper trading sessions' });
-      return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return reply.status(500).send({
+        error: message,
+        code: 'INTERNAL_ERROR',
+        timestamp: Date.now(),
+      });
     }
   });
 
@@ -212,7 +226,11 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
       try {
         const session = await getPaperSession(request.params.id);
         if (!session) {
-          return reply.status(404).send({ error: `Session "${request.params.id}" not found` });
+          return reply.status(404).send({
+            error: `Session "${request.params.id}" not found`,
+            code: 'SESSION_NOT_FOUND',
+            sessionId: request.params.id,
+          });
         }
 
         const positions = await getPaperPositions(request.params.id);
@@ -220,7 +238,13 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
         return reply.status(200).send({ ...session, openPositions: positions });
       } catch (error) {
         fastify.log.error({ err: error, msg: 'Error getting paper trading session' });
-        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return reply.status(500).send({
+          error: message,
+          code: 'INTERNAL_ERROR',
+          sessionId: request.params.id,
+          timestamp: Date.now(),
+        });
       }
     }
   );
@@ -234,14 +258,24 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
       try {
         const session = await getPaperSession(request.params.id);
         if (!session) {
-          return reply.status(404).send({ error: `Session "${request.params.id}" not found` });
+          return reply.status(404).send({
+            error: `Session "${request.params.id}" not found`,
+            code: 'SESSION_NOT_FOUND',
+            sessionId: request.params.id,
+          });
         }
 
         await sessionManager.deleteSession(request.params.id);
         return reply.status(200).send({ message: `Session "${request.params.id}" deleted` });
       } catch (error) {
         fastify.log.error({ err: error, msg: 'Error deleting paper trading session' });
-        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return reply.status(500).send({
+          error: message,
+          code: 'INTERNAL_ERROR',
+          sessionId: request.params.id,
+          timestamp: Date.now(),
+        });
       }
     }
   );
@@ -253,12 +287,35 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
     '/api/paper-trading/sessions/:id/start',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       try {
-        await sessionManager.startSession(request.params.id);
         const session = await getPaperSession(request.params.id);
-        return reply.status(200).send(session);
+        if (!session) {
+          return reply.status(404).send({
+            error: `Session "${request.params.id}" not found`,
+            code: 'SESSION_NOT_FOUND',
+            sessionId: request.params.id,
+          });
+        }
+
+        if (session.status === 'running') {
+          return reply.status(409).send({
+            error: `Session "${request.params.id}" is already running`,
+            code: 'SESSION_ALREADY_RUNNING',
+            sessionId: request.params.id,
+          });
+        }
+
+        await sessionManager.startSession(request.params.id);
+        const updatedSession = await getPaperSession(request.params.id);
+        return reply.status(200).send(updatedSession);
       } catch (error) {
         fastify.log.error({ err: error, msg: 'Error starting paper trading session' });
-        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return reply.status(500).send({
+          error: message,
+          code: 'INTERNAL_ERROR',
+          sessionId: request.params.id,
+          timestamp: Date.now(),
+        });
       }
     }
   );
@@ -270,12 +327,35 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
     '/api/paper-trading/sessions/:id/pause',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       try {
-        await sessionManager.pauseSession(request.params.id);
         const session = await getPaperSession(request.params.id);
-        return reply.status(200).send(session);
+        if (!session) {
+          return reply.status(404).send({
+            error: `Session "${request.params.id}" not found`,
+            code: 'SESSION_NOT_FOUND',
+            sessionId: request.params.id,
+          });
+        }
+
+        if (session.status !== 'running') {
+          return reply.status(409).send({
+            error: `Session "${request.params.id}" is not running (current status: ${session.status})`,
+            code: 'SESSION_NOT_RUNNING',
+            sessionId: request.params.id,
+          });
+        }
+
+        await sessionManager.pauseSession(request.params.id);
+        const updatedSession = await getPaperSession(request.params.id);
+        return reply.status(200).send(updatedSession);
       } catch (error) {
         fastify.log.error({ err: error, msg: 'Error pausing paper trading session' });
-        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return reply.status(500).send({
+          error: message,
+          code: 'INTERNAL_ERROR',
+          sessionId: request.params.id,
+          timestamp: Date.now(),
+        });
       }
     }
   );
@@ -287,12 +367,36 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
     '/api/paper-trading/sessions/:id/resume',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       try {
-        await sessionManager.resumeSession(request.params.id);
         const session = await getPaperSession(request.params.id);
-        return reply.status(200).send(session);
+        if (!session) {
+          return reply.status(404).send({
+            error: `Session "${request.params.id}" not found`,
+            code: 'SESSION_NOT_FOUND',
+            sessionId: request.params.id,
+          });
+        }
+
+        // Accept paused or error status — error state sessions can be resumed (engine recovers)
+        if (session.status !== 'paused' && session.status !== 'error') {
+          return reply.status(409).send({
+            error: `Session "${request.params.id}" cannot be resumed (current status: ${session.status})`,
+            code: 'SESSION_NOT_RUNNING',
+            sessionId: request.params.id,
+          });
+        }
+
+        await sessionManager.resumeSession(request.params.id);
+        const updatedSession = await getPaperSession(request.params.id);
+        return reply.status(200).send(updatedSession);
       } catch (error) {
         fastify.log.error({ err: error, msg: 'Error resuming paper trading session' });
-        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return reply.status(500).send({
+          error: message,
+          code: 'INTERNAL_ERROR',
+          sessionId: request.params.id,
+          timestamp: Date.now(),
+        });
       }
     }
   );
@@ -304,12 +408,35 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
     '/api/paper-trading/sessions/:id/stop',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       try {
-        await sessionManager.stopSession(request.params.id);
         const session = await getPaperSession(request.params.id);
-        return reply.status(200).send(session);
+        if (!session) {
+          return reply.status(404).send({
+            error: `Session "${request.params.id}" not found`,
+            code: 'SESSION_NOT_FOUND',
+            sessionId: request.params.id,
+          });
+        }
+
+        if (session.status === 'stopped') {
+          return reply.status(409).send({
+            error: `Session "${request.params.id}" is already stopped`,
+            code: 'SESSION_NOT_RUNNING',
+            sessionId: request.params.id,
+          });
+        }
+
+        await sessionManager.stopSession(request.params.id);
+        const updatedSession = await getPaperSession(request.params.id);
+        return reply.status(200).send(updatedSession);
       } catch (error) {
         fastify.log.error({ err: error, msg: 'Error stopping paper trading session' });
-        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return reply.status(500).send({
+          error: message,
+          code: 'INTERNAL_ERROR',
+          sessionId: request.params.id,
+          timestamp: Date.now(),
+        });
       }
     }
   );
@@ -328,7 +455,11 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
 
         const session = await getPaperSession(request.params.id);
         if (!session) {
-          return reply.status(404).send({ error: `Session "${request.params.id}" not found` });
+          return reply.status(404).send({
+            error: `Session "${request.params.id}" not found`,
+            code: 'SESSION_NOT_FOUND',
+            sessionId: request.params.id,
+          });
         }
 
         const { trades, total } = await getPaperTrades(request.params.id, query.limit, query.offset);
@@ -338,7 +469,13 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
           return reply.status(400).send({ error: 'Validation error', details: error.issues });
         }
         fastify.log.error({ err: error, msg: 'Error fetching paper trading trades' });
-        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return reply.status(500).send({
+          error: message,
+          code: 'INTERNAL_ERROR',
+          sessionId: request.params.id,
+          timestamp: Date.now(),
+        });
       }
     }
   );
@@ -352,14 +489,24 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
       try {
         const session = await getPaperSession(request.params.id);
         if (!session) {
-          return reply.status(404).send({ error: `Session "${request.params.id}" not found` });
+          return reply.status(404).send({
+            error: `Session "${request.params.id}" not found`,
+            code: 'SESSION_NOT_FOUND',
+            sessionId: request.params.id,
+          });
         }
 
         const snapshots = await getPaperEquitySnapshots(request.params.id);
         return reply.status(200).send(snapshots);
       } catch (error) {
         fastify.log.error({ err: error, msg: 'Error fetching paper trading equity snapshots' });
-        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return reply.status(500).send({
+          error: message,
+          code: 'INTERNAL_ERROR',
+          sessionId: request.params.id,
+          timestamp: Date.now(),
+        });
       }
     }
   );
@@ -375,7 +522,11 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
       // Verify the session exists before opening SSE connection
       const session = await getPaperSession(sessionId);
       if (!session) {
-        return reply.status(404).send({ error: `Session "${sessionId}" not found` });
+        return reply.status(404).send({
+          error: `Session "${sessionId}" not found`,
+          code: 'SESSION_NOT_FOUND',
+          sessionId,
+        });
       }
 
       // Set SSE headers
@@ -417,7 +568,13 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
           return reply.status(200).send(result);
         } catch (error) {
           fastify.log.error({ err: error, msg: 'Error force-ticking paper trading session' });
-          return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          return reply.status(500).send({
+            error: message,
+            code: 'INTERNAL_ERROR',
+            sessionId: request.params.id,
+            timestamp: Date.now(),
+          });
         }
       }
     );

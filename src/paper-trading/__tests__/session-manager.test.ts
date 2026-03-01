@@ -193,8 +193,15 @@ describe('SessionManager', () => {
       expect(manager.getEngine('sess-001')).toBeUndefined();
     });
 
-    it('stop throws if no active engine', async () => {
-      await expect(manager.stopSession('not-started')).rejects.toThrow('No active engine');
+    it('stop without engine in memory: updates DB status to stopped directly', async () => {
+      // No engine in memory — stopSession should update DB gracefully without throwing
+      await expect(manager.stopSession('not-started')).resolves.not.toThrow();
+
+      // DB should have been updated with status: 'stopped'
+      expect(paperDb.updatePaperSession).toHaveBeenCalledWith(
+        'not-started',
+        expect.objectContaining({ status: 'stopped' }),
+      );
     });
   });
 
@@ -217,12 +224,32 @@ describe('SessionManager', () => {
       expect(mockEngineResume).toHaveBeenCalledOnce();
     });
 
-    it('pause throws if no active engine', async () => {
-      await expect(manager.pauseSession('not-started')).rejects.toThrow('No active engine');
+    it('pause without engine in memory: updates DB status to paused directly', async () => {
+      // No engine in memory — pauseSession should update DB gracefully without throwing
+      await expect(manager.pauseSession('not-started')).resolves.not.toThrow();
+
+      // DB should have been updated with status: 'paused'
+      expect(paperDb.updatePaperSession).toHaveBeenCalledWith(
+        'not-started',
+        expect.objectContaining({ status: 'paused' }),
+      );
     });
 
-    it('resume throws if no active engine', async () => {
-      await expect(manager.resumeSession('not-started')).rejects.toThrow('No active engine');
+    it('resume without engine in memory: re-creates engine from DB and starts it', async () => {
+      // resumeSession with no in-memory engine should re-create from DB and start
+      const session = makeSession({ id: 'not-started', status: 'paused' });
+      vi.mocked(paperDb.getPaperSession).mockResolvedValueOnce(session);
+
+      await expect(manager.resumeSession('not-started')).resolves.not.toThrow();
+
+      // Engine should have been started
+      expect(mockEngineStart).toHaveBeenCalledOnce();
+    });
+
+    it('resume throws if session not found in DB', async () => {
+      vi.mocked(paperDb.getPaperSession).mockResolvedValueOnce(null);
+
+      await expect(manager.resumeSession('not-found')).rejects.toThrow('not found');
     });
   });
 

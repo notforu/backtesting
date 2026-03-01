@@ -132,14 +132,15 @@ export class SessionManager {
   }
 
   /**
-   * Resume a paused session.
+   * Resume a paused or errored session.
    * Recreates the engine from DB if it is not in memory (e.g. after server restart).
+   * Also handles sessions in 'error' state by creating a new engine and starting it.
    */
   async resumeSession(sessionId: string): Promise<void> {
     let engine = this.engines.get(sessionId);
 
     if (!engine) {
-      // Engine not in memory — recreate from DB (e.g. after server restart while paused)
+      // Engine not in memory — recreate from DB (e.g. after server restart while paused/errored)
       const session = await paperDb.getPaperSession(sessionId);
       if (!session) {
         throw new Error(`Session ${sessionId} not found`);
@@ -173,6 +174,7 @@ export class SessionManager {
       return;
     }
 
+    // Engine is in memory — call resume() which now handles both 'paused' and 'error' states
     await engine.resume();
   }
 
