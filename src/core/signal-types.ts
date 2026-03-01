@@ -65,6 +65,10 @@ export interface AggregateBacktestConfig {
   endDate: number; // Unix ms
   exchange: string;
   mode?: 'spot' | 'futures';
+  /** Trading fee rate as a decimal (default: 0.00055 for Bybit taker) */
+  feeRate?: number;
+  /** Slippage as a percentage (e.g., 0.1 for 0.1%) — applied to entry/exit prices (default: 0) */
+  slippagePercent?: number;
 }
 
 /** Per-asset result data */

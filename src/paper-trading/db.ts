@@ -41,6 +41,7 @@ interface PaperPositionRow {
   session_id: string;
   symbol: string;
   direction: string;
+  sub_strategy_key: string;
   entry_price: number | string;
   amount: number | string;
   entry_time: string;
@@ -101,6 +102,7 @@ function rowToPosition(row: PaperPositionRow): PaperPosition {
     sessionId: row.session_id,
     symbol: row.symbol,
     direction: row.direction as 'long' | 'short',
+    subStrategyKey: row.sub_strategy_key,
     entryPrice: Number(row.entry_price),
     amount: Number(row.amount),
     entryTime: Number(row.entry_time),
@@ -287,10 +289,10 @@ export async function savePaperPosition(
 
   await p.query(
     `INSERT INTO paper_positions
-     (session_id, symbol, direction, entry_price, amount, entry_time,
+     (session_id, symbol, direction, sub_strategy_key, entry_price, amount, entry_time,
       unrealized_pnl, funding_accumulated)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     ON CONFLICT (session_id, symbol, direction) DO UPDATE SET
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (session_id, sub_strategy_key, direction) DO UPDATE SET
        entry_price = EXCLUDED.entry_price,
        amount = EXCLUDED.amount,
        entry_time = EXCLUDED.entry_time,
@@ -300,6 +302,7 @@ export async function savePaperPosition(
       position.sessionId,
       position.symbol,
       position.direction,
+      position.subStrategyKey,
       position.entryPrice,
       position.amount,
       position.entryTime,
@@ -323,18 +326,20 @@ export async function getPaperPositions(sessionId: string): Promise<PaperPositio
 }
 
 /**
- * Delete a specific open position by session + symbol + direction.
+ * Delete a specific open position by session + subStrategyKey + direction.
  * Called when a position is closed.
+ * The second argument is the sub-strategy key (e.g. "funding-rate-spike:BTC/USDT:4h"),
+ * not the plain symbol.
  */
 export async function deletePaperPosition(
   sessionId: string,
-  symbol: string,
+  subStrategyKey: string,
   direction: string
 ): Promise<void> {
   const p = getPool();
   await p.query(
-    `DELETE FROM paper_positions WHERE session_id = $1 AND symbol = $2 AND direction = $3`,
-    [sessionId, symbol, direction]
+    `DELETE FROM paper_positions WHERE session_id = $1 AND sub_strategy_key = $2 AND direction = $3`,
+    [sessionId, subStrategyKey, direction]
   );
 }
 

@@ -5,28 +5,30 @@
  * one real-time tick at a time, driven by closed candle intervals.
  *
  * Design decisions:
- * - Adapter re-init per tick: matches backtest pattern, acceptable at 4h+ intervals
- * - Shadow state restore: adapters are re-created each tick; DB positions are used
- *   to confirm execution so strategies see the right position state
+ * - Adapter caching: adapters are created once per sub-strategy and reused across ticks.
+ *   strategy.init() is only called on the first tick; subsequent ticks call appendCandles()
+ *   to update candle data without losing strategy internal state.
+ * - Shadow state restore: on the first tick after start/resume, DB positions are used
+ *   to restore the adapter's shadow position so strategies see the right position state.
  * - 1-bar execution delay: uses the last CLOSED candle, not the forming bar
  * - Stale data guard: skips tick if latest candle is too old
- * - Per-tick candle cache: candles and funding rates fetched once per symbol per tick
+ * - Per-tick candle cache: candles fetched once per unique symbol:timeframe per tick (M5)
  * - Multi-bar processing: processes ALL new bars since last tick to catch crossovers
  */
 
 import { EventEmitter } from 'events';
-import type { Candle, FundingRate, Timeframe } from '../core/types.js';
+import type { Candle, FundingRate } from '../core/types.js';
 import { timeframeToMs } from '../core/types.js';
 import type { AggregateBacktestConfig, SubStrategyConfig, Signal } from '../core/signal-types.js';
 import { SignalAdapter } from '../core/signal-adapter.js';
 import { MultiSymbolPortfolio } from '../core/multi-portfolio.js';
 import { loadStrategy } from '../strategy/loader.js';
+import type { Strategy } from '../strategy/base.js';
 import { LiveDataFetcher } from './live-data.js';
 import type { PaperSession, PaperTrade, PaperTradingEvent, TickResult } from './types.js';
 import * as paperDb from './db.js';
 import type { Trade } from '../core/types.js';
 
-const FEE_RATE = 0.00055; // Bybit taker fee
 const WARMUP_CANDLES = 200; // Historical candles for strategy warmup
 
 // ============================================================================
@@ -35,6 +37,9 @@ const WARMUP_CANDLES = 200; // Historical candles for strategy warmup
 
 interface AdapterWithConfig {
   adapter: SignalAdapter;
+  /** The underlying strategy instance — needed to call optional lifecycle hooks
+   *  (e.g. onEnd) that are not exposed via the SignalAdapter public API. */
+  strategy: Strategy;
   config: SubStrategyConfig;
   candles: Candle[];
   accumulatedFunding: number;
@@ -56,6 +61,12 @@ export class PaperTradingEngine extends EventEmitter {
 
   // Active adapters for the current tick (populated at tick start, cleared after)
   private adapters: AdapterWithConfig[] = [];
+
+  // Adapter cache — keyed by `${strategyName}:${symbol}:${timeframe}`.
+  // Cached adapters persist strategy internal state across ticks so that
+  // strategy.init() is only called once (on first encounter), not every tick.
+  // Stores both the SignalAdapter (with shadow state) and the Strategy instance.
+  private adapterCache: Map<string, { adapter: SignalAdapter; strategy: Strategy }> = new Map();
 
   private tickTimer: ReturnType<typeof setTimeout> | null = null;
   private _status: 'running' | 'paused' | 'stopped' | 'error' = 'stopped';
@@ -129,10 +140,9 @@ export class PaperTradingEngine extends EventEmitter {
     this.emitEvent({ type: 'status_change', sessionId: this.sessionId, oldStatus, newStatus: 'running' });
     await paperDb.updatePaperSession(this.sessionId, { status: 'running' });
 
-    // Skip bars that occurred during the pause — only process the latest closed bar.
-    // Clear lastProcessedCandleTs so the next tick treats it as a fresh start
-    // (first-tick logic only processes the last bar, not the full backfill).
-    this.lastProcessedCandleTs.clear();
+    // Keep lastProcessedCandleTs so the next tick correctly identifies ALL bars
+    // that were missed during the pause. The existing multi-bar processing loop
+    // will process all new bars since lastProcessedCandleTs, preserving crossover signals.
 
     // Run a tick immediately on resume
     this.scheduleTick(0);
@@ -148,6 +158,22 @@ export class PaperTradingEngine extends EventEmitter {
       clearTimeout(this.tickTimer);
       this.tickTimer = null;
     }
+
+    // M2: Notify strategies that the session is ending before clearing state.
+    for (const awd of this.adapters) {
+      try {
+        awd.strategy.onEnd?.();
+      } catch (err) {
+        console.warn(
+          `[PaperEngine ${this.sessionId}] Error calling onEnd for ${awd.config.strategyName}:`,
+          err,
+        );
+      }
+    }
+
+    // Clear adapter list and cache on stop so a fresh start creates new adapters
+    this.adapters = [];
+    this.adapterCache.clear();
 
     // Force-close all open positions at current market prices
     await this.forceCloseAllPositions();
@@ -293,31 +319,23 @@ export class PaperTradingEngine extends EventEmitter {
     const tradesOpened: PaperTrade[] = [];
     const tradesClosed: PaperTrade[] = [];
     const fundingPayments: Array<{ symbol: string; amount: number }> = [];
-    const timestamp = Date.now();
+    // wallClockTimestamp is used for lastTickAt, events, and the tick result timestamp.
+    // The equity snapshot uses the latest candle timestamp instead (M3 fix).
+    const wallClockTimestamp = Date.now();
 
     try {
       // ------------------------------------------------------------------
-      // Step 1: Fetch candles and funding rates for each sub-strategy.
-      // Cache by symbol to avoid redundant network calls within this tick.
+      // Step 1: Fetch funding rates for futures mode (per unique symbol).
+      // M5 fix: Removed the redundant candle fetch from this step. Candles are
+      // fetched in Step 2 via perSubCandleCache, which deduplicates by
+      // symbol:timeframe. This eliminates one full round of network calls.
       // ------------------------------------------------------------------
 
-      const candleCache = new Map<string, Candle[]>(); // symbol -> candles
       const frCache = new Map<string, FundingRate[]>(); // symbol -> funding rates
 
-      // Collect unique symbols
-      const uniqueSymbols = [...new Set(this.config.subStrategies.map(s => s.symbol))];
-
-      for (const symbol of uniqueSymbols) {
-        // Find the shortest timeframe for this symbol (for candle alignment)
-        const symbolConfigs = this.config.subStrategies.filter(s => s.symbol === symbol);
-        const shortestTf = symbolConfigs.reduce<Timeframe>((shortest, s) => {
-          return timeframeToMs(s.timeframe) < timeframeToMs(shortest) ? s.timeframe : shortest;
-        }, symbolConfigs[0].timeframe);
-
-        const candles = await this.fetcher.fetchLatestCandles(symbol, shortestTf, WARMUP_CANDLES);
-        candleCache.set(symbol, candles);
-
-        if (this.config.mode === 'futures') {
+      if (this.config.mode === 'futures') {
+        const uniqueSymbols = [...new Set(this.config.subStrategies.map(s => s.symbol))];
+        for (const symbol of uniqueSymbols) {
           const fundingRates = await this.fetcher.fetchLatestFundingRates(symbol, 100);
           frCache.set(symbol, fundingRates);
         }
@@ -325,8 +343,8 @@ export class PaperTradingEngine extends EventEmitter {
 
       // ------------------------------------------------------------------
       // Step 2: Build adapters for each sub-strategy.
-      // Each sub-strategy may use its own timeframe, so we fetch timeframe-specific
-      // candles. Re-uses the cache when the same symbol+timeframe is requested.
+      // Candles are fetched per sub-strategy timeframe and cached by
+      // symbol:timeframe so each unique pair is only fetched once per tick.
       // Also determine newBarsStartIndex: the index of the first candle that is
       // newer than the last processed candle for this symbol:timeframe pair.
       // ------------------------------------------------------------------
@@ -373,22 +391,50 @@ export class PaperTradingEngine extends EventEmitter {
         // Get funding rates for this symbol (already fetched above)
         const fundingRates = frCache.get(subConfig.symbol) ?? [];
 
-        // Create and initialize adapter
-        const strategy = await loadStrategy(subConfig.strategyName);
-        const adapter = new SignalAdapter(
-          strategy,
-          subConfig.symbol,
-          subConfig.timeframe,
-          subConfig.params,
-        );
-        adapter.init(subCandles, fundingRates);
+        // Check adapter cache — keyed by strategyName:symbol:timeframe.
+        // On cache hit: reuse the existing adapter and update its candle data
+        //   via appendCandles() so strategy internal state is preserved and
+        //   strategy.init() is NOT called again.
+        // On cache miss: load the strategy, create a fresh adapter, call init().
+        const adapterCacheKey = `${subConfig.strategyName}:${subConfig.symbol}:${subConfig.timeframe}`;
+        const cachedEntry = this.adapterCache.get(adapterCacheKey);
+
+        let strategy: Strategy;
+        let adapter: SignalAdapter;
+
+        if (cachedEntry) {
+          // Reuse cached adapter — update candles without re-initialising
+          strategy = cachedEntry.strategy;
+          adapter = cachedEntry.adapter;
+          adapter.appendCandles(subCandles, fundingRates);
+        } else {
+          // First encounter — create fresh adapter and call init()
+          strategy = await loadStrategy(subConfig.strategyName);
+          adapter = new SignalAdapter(
+            strategy,
+            subConfig.symbol,
+            subConfig.timeframe,
+            subConfig.params,
+          );
+          adapter.init(subCandles, fundingRates);
+          // Store in cache for subsequent ticks
+          this.adapterCache.set(adapterCacheKey, { adapter, strategy });
+        }
 
         // Restore shadow state from open DB positions so the strategy's internal
         // logic (stop-loss, take-profit, hold period) sees the right position.
+        // Filter by subStrategyKey (not just symbol) so that two sub-strategies
+        // trading the same symbol (e.g. different timeframes) each only restore
+        // the positions they originally created.
         const dbPositions = await paperDb.getPaperPositions(this.sessionId);
-        const symbolPositions = dbPositions.filter(p => p.symbol === subConfig.symbol);
-        for (const pos of symbolPositions) {
-          adapter.confirmExecution(pos.direction as 'long' | 'short');
+        const subKey = `${subConfig.strategyName}:${subConfig.symbol}:${subConfig.timeframe}`;
+        const matchingPositions = dbPositions.filter(p => p.subStrategyKey === subKey);
+        for (const pos of matchingPositions) {
+          adapter.confirmExecutionWithPrice(
+            pos.direction as 'long' | 'short',
+            pos.entryPrice,
+            pos.entryTime,
+          );
         }
 
         // Determine which bars are new since the last tick.
@@ -415,6 +461,7 @@ export class PaperTradingEngine extends EventEmitter {
 
         this.adapters.push({
           adapter,
+          strategy,
           config: subConfig,
           candles: subCandles,
           accumulatedFunding: 0,
@@ -435,13 +482,25 @@ export class PaperTradingEngine extends EventEmitter {
       const minNewStart = Math.min(...this.adapters.map(a => a.newBarsStartIndex));
       const maxBarIndex = Math.max(...this.adapters.map(a => a.candles.length - 1));
 
+      // M3: Track latest candle timestamp across all bars and adapters.
+      // Used for the equity snapshot timestamp so it aligns with candle time,
+      // not wall-clock time. Falls back to wallClockTimestamp if no bars run.
+      let latestCandleTimestamp: number = wallClockTimestamp;
+      let latestCandleTimestampSet = false;
+
       for (let barIdx = minNewStart; barIdx <= maxBarIndex; barIdx++) {
         // ----------------------------------------------------------------
         // Step 3: Update portfolio prices with the close of this bar.
         // ----------------------------------------------------------------
         for (const awd of this.adapters) {
           if (barIdx < awd.candles.length) {
-            this.portfolio.updatePrice(awd.config.symbol, awd.candles[barIdx].close);
+            const bar = awd.candles[barIdx];
+            this.portfolio.updatePrice(awd.config.symbol, bar.close);
+            // M3: Track latest candle timestamp
+            if (!latestCandleTimestampSet || bar.timestamp > latestCandleTimestamp) {
+              latestCandleTimestamp = bar.timestamp;
+              latestCandleTimestampSet = true;
+            }
           }
         }
 
@@ -534,35 +593,46 @@ export class PaperTradingEngine extends EventEmitter {
 
           if (awd.adapter.wantsExit(barIdx)) {
             const closeCandle = awd.candles[barIdx];
-            const closePrice = closeCandle.close;
             const closeTimestamp = closeCandle.timestamp;
 
             if (positions.longPosition) {
+              // Long exit is a sell — slippage reduces the fill price
+              const closePrice = this.applySlippage(closeCandle.close, 'sell');
               const trade = this.portfolio.closeLong(
                 awd.config.symbol,
                 'all',
                 closePrice,
                 closeTimestamp,
-                FEE_RATE,
+                this.getFeeRate(),
               );
               const paperTrade = await this.saveTrade(awd, trade, 'close_long', awd.accumulatedFunding);
               tradesClosed.push(paperTrade);
               awd.accumulatedFunding = 0;
-              await paperDb.deletePaperPosition(this.sessionId, awd.config.symbol, 'long');
+              await paperDb.deletePaperPosition(
+                this.sessionId,
+                `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`,
+                'long',
+              );
             }
 
             if (positions.shortPosition) {
+              // Short exit is a buy — slippage increases the fill price
+              const closePrice = this.applySlippage(closeCandle.close, 'buy');
               const trade = this.portfolio.closeShort(
                 awd.config.symbol,
                 'all',
                 closePrice,
                 closeTimestamp,
-                FEE_RATE,
+                this.getFeeRate(),
               );
               const paperTrade = await this.saveTrade(awd, trade, 'close_short', awd.accumulatedFunding);
               tradesClosed.push(paperTrade);
               awd.accumulatedFunding = 0;
-              await paperDb.deletePaperPosition(this.sessionId, awd.config.symbol, 'short');
+              await paperDb.deletePaperPosition(
+                this.sessionId,
+                `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`,
+                'short',
+              );
             }
 
             awd.adapter.confirmExit();
@@ -627,7 +697,10 @@ export class PaperTradingEngine extends EventEmitter {
 
         for (const { signal, awd, barIndex } of selectedSignals) {
           const entryCandle = awd.candles[barIndex];
-          const entryPrice = entryCandle.close;
+          // Long entry is a buy (slippage increases price), short entry is a sell (slippage decreases price)
+          const entryPrice = signal.direction === 'long'
+            ? this.applySlippage(entryCandle.close, 'buy')
+            : this.applySlippage(entryCandle.close, 'sell');
           const entryTimestamp = entryCandle.timestamp;
 
           let capitalForTrade: number;
@@ -653,7 +726,7 @@ export class PaperTradingEngine extends EventEmitter {
                 amount,
                 entryPrice,
                 entryTimestamp,
-                FEE_RATE,
+                this.getFeeRate(),
               );
             } else {
               trade = this.portfolio.openShort(
@@ -661,7 +734,7 @@ export class PaperTradingEngine extends EventEmitter {
                 amount,
                 entryPrice,
                 entryTimestamp,
-                FEE_RATE,
+                this.getFeeRate(),
               );
             }
 
@@ -673,13 +746,16 @@ export class PaperTradingEngine extends EventEmitter {
             awd.adapter.confirmExecutionAtBar(signal.direction, barIndex);
             awd.accumulatedFunding = 0;
 
-            // Persist position to DB
+            // Persist position to DB.
             // signal.direction is guaranteed to be 'long' | 'short' here because
             // 'flat' signals were filtered out before selectedSignals was built.
+            // Include subStrategyKey so that on the next tick each adapter only
+            // restores the positions it originally created (not same-symbol others).
             await paperDb.savePaperPosition({
               sessionId: this.sessionId,
               symbol: awd.config.symbol,
               direction: signal.direction as 'long' | 'short',
+              subStrategyKey: `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`,
               entryPrice,
               amount,
               entryTime: entryTimestamp,
@@ -722,10 +798,13 @@ export class PaperTradingEngine extends EventEmitter {
 
       // ------------------------------------------------------------------
       // Step 9: Save equity snapshot and update session.
+      // M3 fix: Use latestCandleTimestamp (candle time) for the snapshot so
+      // the equity history aligns with chart candles, not wall-clock time.
+      // lastTickAt still uses wallClockTimestamp to reflect actual tick time.
       // ------------------------------------------------------------------
 
       this.tickCount++;
-      this.lastTickAt = timestamp;
+      this.lastTickAt = wallClockTimestamp;
 
       const equity = this.portfolio.equity;
       const cash = this.portfolio.cash;
@@ -733,7 +812,7 @@ export class PaperTradingEngine extends EventEmitter {
 
       await paperDb.savePaperEquitySnapshot({
         sessionId: this.sessionId,
-        timestamp,
+        timestamp: latestCandleTimestamp, // candle time, not wall clock (M3)
         equity,
         cash,
         positionsValue,
@@ -747,8 +826,17 @@ export class PaperTradingEngine extends EventEmitter {
       });
 
       // ------------------------------------------------------------------
-      // Step 10: Update unrealized PnL for all open positions in DB.
+      // Step 10: Update unrealized PnL and fundingAccumulated for all open
+      // positions in DB.
+      // M4 fix: Also persist accumulatedFunding from the matching adapter.
       // ------------------------------------------------------------------
+
+      // Build lookup map from subStrategyKey -> awd for O(1) access (M4)
+      const awdBySubKey = new Map<string, AdapterWithConfig>();
+      for (const awd of this.adapters) {
+        const subKey = `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`;
+        awdBySubKey.set(subKey, awd);
+      }
 
       const openPositions = await paperDb.getPaperPositions(this.sessionId);
       for (const pos of openPositions) {
@@ -756,9 +844,16 @@ export class PaperTradingEngine extends EventEmitter {
         const actualPos =
           pos.direction === 'long' ? posForSymbol.longPosition : posForSymbol.shortPosition;
         if (actualPos) {
+          // M4: Update fundingAccumulated from the matching adapter's running total
+          const matchingAwd = awdBySubKey.get(pos.subStrategyKey);
+          const fundingAccumulated = matchingAwd !== undefined
+            ? matchingAwd.accumulatedFunding
+            : pos.fundingAccumulated;
+
           await paperDb.savePaperPosition({
             ...pos,
             unrealizedPnl: actualPos.unrealizedPnl,
+            fundingAccumulated,
           });
         }
       }
@@ -773,7 +868,7 @@ export class PaperTradingEngine extends EventEmitter {
         equity,
         cash,
         positionsValue,
-        timestamp,
+        timestamp: wallClockTimestamp,
       });
 
       const nextDelay = this.calculateNextTickDelay();
@@ -781,7 +876,7 @@ export class PaperTradingEngine extends EventEmitter {
         type: 'tick_complete',
         sessionId: this.sessionId,
         tickNumber: this.tickCount,
-        timestamp,
+        timestamp: wallClockTimestamp,
         nextTickAt: this._status === 'running' ? Date.now() + nextDelay : null,
       });
 
@@ -791,7 +886,7 @@ export class PaperTradingEngine extends EventEmitter {
 
       const result: TickResult = {
         tickNumber: this.tickCount,
-        timestamp,
+        timestamp: wallClockTimestamp,
         tradesOpened,
         tradesClosed,
         fundingPayments,
@@ -810,6 +905,25 @@ export class PaperTradingEngine extends EventEmitter {
   // ==========================================================================
   // Helpers
   // ==========================================================================
+
+  private getFeeRate(): number {
+    return this.config.feeRate ?? 0.00055;
+  }
+
+  /**
+   * Apply slippage to a price.
+   * Buys (long entry, short exit) get a higher fill price.
+   * Sells (long exit, short entry) get a lower fill price.
+   */
+  private applySlippage(price: number, side: 'buy' | 'sell'): number {
+    const slippage = this.config.slippagePercent ?? 0;
+    if (slippage === 0) return price;
+    if (side === 'buy') {
+      return price * (1 + slippage / 100);
+    } else {
+      return price * (1 - slippage / 100);
+    }
+  }
 
   private async saveTrade(
     awd: AdapterWithConfig,
@@ -875,9 +989,20 @@ export class PaperTradingEngine extends EventEmitter {
         // Make sure the portfolio has a price for this symbol
         this.portfolio.updatePrice(pos.symbol, closePrice);
 
-        // Create a minimal fake AdapterWithConfig for saveTrade
-        const fakeAwd: AdapterWithConfig = adapterBySymbol.get(pos.symbol) ?? {
+        // Create a minimal fake AdapterWithConfig for saveTrade.
+        // If a real adapter exists for this symbol, prefer it to preserve
+        // its accumulated funding amount for the close trade record.
+        const existingAwd = adapterBySymbol.get(pos.symbol);
+        const fakeStrategy: Strategy = {
+          name: pos.subStrategyKey,
+          description: '',
+          version: '1.0.0',
+          params: [],
+          onBar: () => { /* noop */ },
+        };
+        const fakeAwd: AdapterWithConfig = existingAwd ?? {
           adapter: undefined as unknown as SignalAdapter, // Not used in saveTrade
+          strategy: fakeStrategy,
           config: this.config.subStrategies.find(s => s.symbol === pos.symbol) ??
             this.config.subStrategies[0],
           candles,
@@ -889,28 +1014,32 @@ export class PaperTradingEngine extends EventEmitter {
           const positions = this.portfolio.getPositionForSymbol(pos.symbol);
           if (!positions.longPosition) continue;
 
+          // Long force-close is a sell — slippage reduces the fill price
+          const exitPrice = this.applySlippage(closePrice, 'sell');
           const trade = this.portfolio.closeLong(
             pos.symbol,
             'all',
-            closePrice,
+            exitPrice,
             closeTimestamp,
-            FEE_RATE,
+            this.getFeeRate(),
           );
           await this.saveTrade(fakeAwd, trade, 'close_long', fakeAwd.accumulatedFunding);
-          await paperDb.deletePaperPosition(this.sessionId, pos.symbol, 'long');
+          await paperDb.deletePaperPosition(this.sessionId, pos.subStrategyKey, 'long');
         } else {
           const positions = this.portfolio.getPositionForSymbol(pos.symbol);
           if (!positions.shortPosition) continue;
 
+          // Short force-close is a buy — slippage increases the fill price
+          const exitPrice = this.applySlippage(closePrice, 'buy');
           const trade = this.portfolio.closeShort(
             pos.symbol,
             'all',
-            closePrice,
+            exitPrice,
             closeTimestamp,
-            FEE_RATE,
+            this.getFeeRate(),
           );
           await this.saveTrade(fakeAwd, trade, 'close_short', fakeAwd.accumulatedFunding);
-          await paperDb.deletePaperPosition(this.sessionId, pos.symbol, 'short');
+          await paperDb.deletePaperPosition(this.sessionId, pos.subStrategyKey, 'short');
         }
       } catch (err) {
         console.error(

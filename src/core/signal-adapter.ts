@@ -153,6 +153,30 @@ export class SignalAdapter implements SignalProvider {
   }
 
   // --------------------------------------------------------------------------
+  // appendCandles — update candle data without re-running init()
+  // --------------------------------------------------------------------------
+
+  /**
+   * Replace the internal candle array with a new one, and optionally update
+   * funding-rate data. Does NOT call strategy.init() — strategy state is
+   * preserved. Use this when reusing a cached adapter across ticks so the
+   * strategy sees fresh candle data without losing its internal state
+   * (e.g. indicator values, bar counters).
+   */
+  appendCandles(candles: Candle[], fundingRates?: FundingRate[]): void {
+    this.candles = candles;
+
+    if (fundingRates !== undefined) {
+      this.fundingRates = fundingRates;
+      this.fundingRateMap = new Map();
+      for (const fr of this.fundingRates) {
+        this.fundingRateMap.set(fr.timestamp, fr);
+      }
+    }
+    // initialized stays true — no strategy.init() call
+  }
+
+  // --------------------------------------------------------------------------
   // SignalProvider.getSignal
   // --------------------------------------------------------------------------
 
@@ -333,6 +357,37 @@ export class SignalAdapter implements SignalProvider {
         unrealizedPnl: 0,
       };
     }
+  }
+
+  /**
+   * Variant of confirmExecution that uses explicit entry price and time.
+   * Used by the paper trading engine when restoring positions from DB so that
+   * strategies see the original historical entry price rather than the current
+   * candle close price.
+   */
+  confirmExecutionWithPrice(direction: SignalDirection, entryPrice: number, entryTime: number): void {
+    if (direction === 'long') {
+      this.shadowLongPosition = {
+        id: `shadow-restored-${entryTime}`,
+        symbol: this.symbol,
+        side: 'long',
+        amount: 1,
+        entryPrice,
+        entryTime,
+        unrealizedPnl: 0,
+      };
+    } else if (direction === 'short') {
+      this.shadowShortPosition = {
+        id: `shadow-restored-${entryTime}`,
+        symbol: this.symbol,
+        side: 'short',
+        amount: 1,
+        entryPrice,
+        entryTime,
+        unrealizedPnl: 0,
+      };
+    }
+    // 'flat' direction is a no-op
   }
 
   // --------------------------------------------------------------------------

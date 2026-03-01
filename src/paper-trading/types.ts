@@ -29,6 +29,8 @@ export interface PaperPosition {
   sessionId: string;
   symbol: string;
   direction: 'long' | 'short';
+  /** Unique key for the sub-strategy that opened this position, e.g. "funding-rate-spike:BTC/USDT:4h" */
+  subStrategyKey: string;
   entryPrice: number;
   amount: number;
   entryTime: number;

@@ -43,12 +43,25 @@ export async function runAggregateBacktest(
   // Defensively convert string dates to timestamps
   const startDate = typeof config.startDate === 'string' ? new Date(config.startDate).getTime() : config.startDate;
   const endDate = typeof config.endDate === 'string' ? new Date(config.endDate).getTime() : config.endDate;
-  const feeRate = engineConfig.feeRate ?? 0.00055;
+  // engineConfig.feeRate takes priority; fall back to config.feeRate, then default
+  const feeRate = engineConfig.feeRate ?? config.feeRate ?? 0.00055;
+  const slippagePercent = config.slippagePercent ?? 0;
   const saveResults = engineConfig.saveResults ?? true;
 
   const log = (msg: string): void => {
     if (engineConfig.enableLogging) console.log(`[AggregateEngine] ${msg}`);
   };
+
+  /**
+   * Apply slippage to a fill price. Buys get a higher price, sells get lower.
+   * slippagePercent is a percentage (e.g. 0.1 for 0.1%).
+   */
+  function applySlippage(price: number, side: 'buy' | 'sell'): number {
+    if (slippagePercent === 0) return price;
+    return side === 'buy'
+      ? price * (1 + slippagePercent / 100)
+      : price * (1 - slippagePercent / 100);
+  }
 
   log(`Starting aggregate backtest: ${subStrategies.length} sub-strategies, mode=${allocationMode}`);
 
@@ -204,7 +217,9 @@ export async function runAggregateBacktest(
         const candle = awd.candles[idx];
 
         if (positions.longPosition) {
-          const trade = portfolio.closeLong(awd.config.symbol, 'all', candle.close, timestamp, feeRate);
+          // Long exit is a sell — slippage reduces the fill price
+          const exitPrice = applySlippage(candle.close, 'sell');
+          const trade = portfolio.closeLong(awd.config.symbol, 'all', exitPrice, timestamp, feeRate);
           if (awd.accumulatedFunding !== 0) {
             trade.fundingIncome = awd.accumulatedFunding;
             awd.accumulatedFunding = 0;
@@ -214,7 +229,9 @@ export async function runAggregateBacktest(
         }
 
         if (positions.shortPosition) {
-          const trade = portfolio.closeShort(awd.config.symbol, 'all', candle.close, timestamp, feeRate);
+          // Short exit is a buy — slippage increases the fill price
+          const exitPrice = applySlippage(candle.close, 'buy');
+          const trade = portfolio.closeShort(awd.config.symbol, 'all', exitPrice, timestamp, feeRate);
           if (awd.accumulatedFunding !== 0) {
             trade.fundingIncome = awd.accumulatedFunding;
             awd.accumulatedFunding = 0;
@@ -278,6 +295,10 @@ export async function runAggregateBacktest(
 
     for (const { signal, awd, barIndex } of selectedSignals) {
       const candle = awd.candles[barIndex];
+      // Long entry is a buy (slippage increases price), short entry is a sell (slippage decreases price)
+      const entryPrice = signal.direction === 'long'
+        ? applySlippage(candle.close, 'buy')
+        : applySlippage(candle.close, 'sell');
 
       // Calculate how much capital to allocate to this trade
       let capitalForTrade: number;
@@ -296,15 +317,15 @@ export async function runAggregateBacktest(
         capitalForTrade = cashSnapshot * 0.9;
       }
 
-      const amount = capitalForTrade / candle.close;
+      const amount = capitalForTrade / entryPrice;
       if (amount <= 0) continue;
 
       try {
         let trade: Trade;
         if (signal.direction === 'long') {
-          trade = portfolio.openLong(awd.config.symbol, amount, candle.close, timestamp, feeRate);
+          trade = portfolio.openLong(awd.config.symbol, amount, entryPrice, timestamp, feeRate);
         } else {
-          trade = portfolio.openShort(awd.config.symbol, amount, candle.close, timestamp, feeRate);
+          trade = portfolio.openShort(awd.config.symbol, amount, entryPrice, timestamp, feeRate);
         }
 
         // Attach the nearest funding rate to the open trade (futures mode)
@@ -351,7 +372,9 @@ export async function runAggregateBacktest(
     const lastCandle = awd.candles[awd.candles.length - 1];
 
     if (positions.longPosition) {
-      const trade = portfolio.closeLong(awd.config.symbol, 'all', lastCandle.close, lastCandle.timestamp, feeRate);
+      // Force-close long is a sell — slippage reduces the fill price
+      const exitPrice = applySlippage(lastCandle.close, 'sell');
+      const trade = portfolio.closeLong(awd.config.symbol, 'all', exitPrice, lastCandle.timestamp, feeRate);
       if (awd.accumulatedFunding !== 0) {
         trade.fundingIncome = awd.accumulatedFunding;
         awd.accumulatedFunding = 0;
@@ -361,7 +384,9 @@ export async function runAggregateBacktest(
     }
 
     if (positions.shortPosition) {
-      const trade = portfolio.closeShort(awd.config.symbol, 'all', lastCandle.close, lastCandle.timestamp, feeRate);
+      // Force-close short is a buy — slippage increases the fill price
+      const exitPrice = applySlippage(lastCandle.close, 'buy');
+      const trade = portfolio.closeShort(awd.config.symbol, 'all', exitPrice, lastCandle.timestamp, feeRate);
       if (awd.accumulatedFunding !== 0) {
         trade.fundingIncome = awd.accumulatedFunding;
         awd.accumulatedFunding = 0;

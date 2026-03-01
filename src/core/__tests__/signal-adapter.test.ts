@@ -1482,4 +1482,120 @@ describe('SignalAdapter', () => {
       expect(freshAdapter.isInPosition()).toBe(true);
     });
   });
+
+  // ==========================================================================
+  // confirmExecutionWithPrice
+  // ==========================================================================
+
+  describe('confirmExecutionWithPrice', () => {
+    it('sets shadow long position with explicit entryPrice and entryTime', () => {
+      const capturedContexts: StrategyContext[] = [];
+      const capturingStrategy: Strategy = {
+        name: 'context-capture',
+        description: 'Captures context',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          capturedContexts.push(ctx);
+        },
+      };
+      const testCandles = makeCandles([100, 200, 300]);
+      const a = new SignalAdapter(capturingStrategy, 'BTC/USDT', '1h');
+      a.init(testCandles);
+
+      const explicitEntryPrice = 40_000;
+      const explicitEntryTime = 1_700_000_000_000;
+      a.confirmExecutionWithPrice('long', explicitEntryPrice, explicitEntryTime);
+
+      a.getSignal(2);
+
+      expect(capturedContexts[0].portfolio.longPosition).not.toBeNull();
+      expect(capturedContexts[0].portfolio.longPosition!.entryPrice).toBe(explicitEntryPrice);
+      expect(capturedContexts[0].portfolio.longPosition!.entryTime).toBe(explicitEntryTime);
+      expect(capturedContexts[0].portfolio.longPosition!.side).toBe('long');
+    });
+
+    it('sets shadow short position with explicit entryPrice and entryTime', () => {
+      const capturedContexts: StrategyContext[] = [];
+      const capturingStrategy: Strategy = {
+        name: 'context-capture',
+        description: 'Captures context',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          capturedContexts.push(ctx);
+        },
+      };
+      const testCandles = makeCandles([100, 200, 300]);
+      const a = new SignalAdapter(capturingStrategy, 'BTC/USDT', '1h');
+      a.init(testCandles);
+
+      const explicitEntryPrice = 60_000;
+      const explicitEntryTime = 1_699_000_000_000;
+      a.confirmExecutionWithPrice('short', explicitEntryPrice, explicitEntryTime);
+
+      a.getSignal(2);
+
+      expect(capturedContexts[0].portfolio.shortPosition).not.toBeNull();
+      expect(capturedContexts[0].portfolio.shortPosition!.entryPrice).toBe(explicitEntryPrice);
+      expect(capturedContexts[0].portfolio.shortPosition!.entryTime).toBe(explicitEntryTime);
+      expect(capturedContexts[0].portfolio.shortPosition!.side).toBe('short');
+    });
+
+    it('does NOT use the last candle close price — uses the explicit entryPrice instead', () => {
+      // candles close at 300, but the DB entry price is 40_000 (historical)
+      // After restore via confirmExecutionWithPrice, the strategy must see 40_000, not 300.
+      const capturedContexts: StrategyContext[] = [];
+      const capturingStrategy: Strategy = {
+        name: 'context-capture',
+        description: 'Captures context',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          capturedContexts.push(ctx);
+        },
+      };
+      const testCandles = makeCandles([100, 200, 300]);
+      const a = new SignalAdapter(capturingStrategy, 'BTC/USDT', '1h');
+      a.init(testCandles);
+
+      const historicalEntryPrice = 40_000;
+      a.confirmExecutionWithPrice('long', historicalEntryPrice, 1_700_000_000_000);
+
+      a.getSignal(2); // last candle close is 300, NOT 40_000
+
+      // Must use historicalEntryPrice, not the candle close (300)
+      expect(capturedContexts[0].portfolio.longPosition!.entryPrice).toBe(historicalEntryPrice);
+      expect(capturedContexts[0].portfolio.longPosition!.entryPrice).not.toBe(300);
+    });
+
+    it('"flat" direction is a no-op — no shadow position is set', () => {
+      const a = new SignalAdapter(createMockStrategy(), 'BTC/USDT', '1h');
+      a.init(makeCandles([100]));
+
+      // TypeScript would normally prevent 'flat', but cast to test the runtime guard
+      (a as unknown as { confirmExecutionWithPrice: (d: string, p: number, t: number) => void })
+        .confirmExecutionWithPrice('flat', 50_000, 1_700_000_000_000);
+
+      expect(a.isInPosition()).toBe(false);
+    });
+
+    it('marks adapter as isInPosition() === true after setting a long', () => {
+      const a = new SignalAdapter(createMockStrategy(), 'BTC/USDT', '1h');
+      a.init(makeCandles([100]));
+
+      expect(a.isInPosition()).toBe(false);
+      a.confirmExecutionWithPrice('long', 50_000, 1_700_000_000_000);
+      expect(a.isInPosition()).toBe(true);
+    });
+
+    it('marks adapter as isInPosition() === true after setting a short', () => {
+      const a = new SignalAdapter(createMockStrategy(), 'BTC/USDT', '1h');
+      a.init(makeCandles([100]));
+
+      expect(a.isInPosition()).toBe(false);
+      a.confirmExecutionWithPrice('short', 50_000, 1_700_000_000_000);
+      expect(a.isInPosition()).toBe(true);
+    });
+  });
 });

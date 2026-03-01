@@ -300,11 +300,11 @@ export interface Strategy {
   onOrderFilled?(context: StrategyContext, order: Order): void;
 
   /**
-   * Called once at the end of the backtest
+   * Called once at the end of the backtest (or when a paper trading session stops)
    * Use for cleanup or final calculations
-   * @param context - Strategy context
+   * @param context - Strategy context (optional; not provided when called from paper trading stop)
    */
-  onEnd?(context: StrategyContext): void;
+  onEnd?(context?: StrategyContext): void;
 }
 
 // ============================================================================

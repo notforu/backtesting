@@ -340,6 +340,7 @@ describe('Paper Trading DB Persistence', () => {
         sessionId: 'sess-001',
         symbol: 'BTC/USDT',
         direction: 'long',
+        subStrategyKey: 'mock-strategy:BTC/USDT:4h',
         entryPrice: 50_000,
         amount: 0.1,
         entryTime: 1_700_000_000_000,

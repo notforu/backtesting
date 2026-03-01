@@ -255,6 +255,7 @@ describe('PaperTradingEngine', () => {
       sessionId: 'test-session-1',
       symbol: 'BTC/USDT',
       direction: 'long',
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
       entryPrice,
       amount: 0.1,
       entryTime: Date.now() - 86400000,
@@ -295,8 +296,12 @@ describe('PaperTradingEngine', () => {
     expect(closeTradeCalls.length).toBeGreaterThan(0);
     expect(closeTradeCalls[0][0].pnl).toBeGreaterThan(0);
 
-    // Position deleted from DB
-    expect(paperDb.deletePaperPosition).toHaveBeenCalledWith('test-session-1', 'BTC/USDT', 'long');
+    // Position deleted from DB — uses subStrategyKey (not raw symbol)
+    expect(paperDb.deletePaperPosition).toHaveBeenCalledWith(
+      'test-session-1',
+      'mock-strategy:BTC/USDT:4h',
+      'long',
+    );
   });
 
   // ==========================================================================
@@ -310,6 +315,7 @@ describe('PaperTradingEngine', () => {
       sessionId: 'test-session-1',
       symbol: 'BTC/USDT',
       direction: 'long',
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
       entryPrice: 40_000,
       amount: 0.1,
       entryTime: Date.now() - 86400000,
@@ -342,8 +348,12 @@ describe('PaperTradingEngine', () => {
     const closedTrade = result.tradesClosed[0];
     expect(closedTrade.action).toBe('close_long');
 
-    // Verify deletePaperPosition was called (exit happened)
-    expect(paperDb.deletePaperPosition).toHaveBeenCalledWith('test-session-1', 'BTC/USDT', 'long');
+    // Verify deletePaperPosition was called with subStrategyKey (not raw symbol)
+    expect(paperDb.deletePaperPosition).toHaveBeenCalledWith(
+      'test-session-1',
+      'mock-strategy:BTC/USDT:4h',
+      'long',
+    );
   });
 
   // ==========================================================================
@@ -371,6 +381,7 @@ describe('PaperTradingEngine', () => {
     // amount * entryPrice = 0.1 * 50000 = 5000, so currentCash = 5000
     const btcPosition: PaperPosition = {
       id: 1, sessionId: 'test-session-1', symbol: 'BTC/USDT', direction: 'long',
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
       entryPrice: 50_000, amount: 0.1, entryTime: Date.now() - 3600000,
       unrealizedPnl: 0, fundingAccumulated: 0,
     };
@@ -664,5 +675,956 @@ describe('PaperTradingEngine', () => {
 
     const posArg = vi.mocked(paperDb.savePaperPosition).mock.calls[0][0];
     expect(posArg.direction).toBe('short');
+    // Short position should also have the correct subStrategyKey
+    expect(posArg.subStrategyKey).toBe('mock-strategy:BTC/USDT:4h');
+  });
+
+  // ==========================================================================
+  // 13. Configurable fee rate: uses custom fee rate when specified in config
+  // ==========================================================================
+
+  it('configurable fee rate: uses custom fee rate when specified in config', async () => {
+    const feeRate = 0.001; // 0.1%, higher than default 0.00055
+    const config: AggregateBacktestConfig = {
+      subStrategies: [
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '4h', params: {}, exchange: 'bybit' },
+      ],
+      allocationMode: 'single_strongest',
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: Date.now() - 86400000,
+      endDate: Date.now(),
+      exchange: 'bybit',
+      mode: 'spot',
+      feeRate,
+    };
+
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!ctx.longPosition) ctx.openLong(1);
+    };
+
+    const session = makePaperSession({ aggregationConfig: config });
+    const engine = new PaperTradingEngine(session);
+
+    await engine.forceTick();
+
+    // savePaperTrade should have been called once for the open_long
+    const tradeCalls = vi.mocked(paperDb.savePaperTrade).mock.calls;
+    expect(tradeCalls.length).toBeGreaterThan(0);
+    const tradeArg = tradeCalls[0][0];
+
+    // fee = feeRate * notional = 0.001 * (amount * price)
+    const expectedFee = feeRate * (tradeArg.amount * tradeArg.price);
+    expect(tradeArg.fee).toBeCloseTo(expectedFee, 5);
+  });
+
+  // ==========================================================================
+  // 14. Default fee rate: uses 0.00055 when feeRate not specified
+  // ==========================================================================
+
+  it('default fee rate: uses 0.00055 when feeRate not specified', async () => {
+    // Config without feeRate field — should default to 0.00055
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!ctx.longPosition) ctx.openLong(1);
+    };
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    await engine.forceTick();
+
+    const tradeCalls = vi.mocked(paperDb.savePaperTrade).mock.calls;
+    expect(tradeCalls.length).toBeGreaterThan(0);
+    const tradeArg = tradeCalls[0][0];
+
+    // fee = 0.00055 * notional
+    const expectedFee = 0.00055 * (tradeArg.amount * tradeArg.price);
+    expect(tradeArg.fee).toBeCloseTo(expectedFee, 5);
+  });
+
+  // ==========================================================================
+  // 15. Slippage applied on long entry: buy price increased
+  // ==========================================================================
+
+  it('slippage applied on long entry: buy price increased by slippagePercent', async () => {
+    const slippagePercent = 0.1; // 0.1%
+    const closePrice = 50_000;
+    const config: AggregateBacktestConfig = {
+      subStrategies: [
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '4h', params: {}, exchange: 'bybit' },
+      ],
+      allocationMode: 'single_strongest',
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: Date.now() - 86400000,
+      endDate: Date.now(),
+      exchange: 'bybit',
+      mode: 'spot',
+      slippagePercent,
+    };
+
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!ctx.longPosition) ctx.openLong(1);
+    };
+
+    const session = makePaperSession({ aggregationConfig: config });
+    const engine = new PaperTradingEngine(session);
+
+    await engine.forceTick();
+
+    // Entry price for a long buy should be increased by slippage
+    const expectedEntryPrice = closePrice * (1 + slippagePercent / 100);
+    const posArg = vi.mocked(paperDb.savePaperPosition).mock.calls[0][0];
+    expect(posArg.entryPrice).toBeCloseTo(expectedEntryPrice, 5);
+  });
+
+  // ==========================================================================
+  // 16. Slippage applied on long exit: sell price decreased
+  // ==========================================================================
+
+  it('slippage applied on long exit: sell price decreased by slippagePercent', async () => {
+    const slippagePercent = 0.1; // 0.1%
+    const entryPrice = 40_000;
+    const closePrice = 50_000; // candles are at 50_000
+
+    const config: AggregateBacktestConfig = {
+      subStrategies: [
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '4h', params: {}, exchange: 'bybit' },
+      ],
+      allocationMode: 'single_strongest',
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: Date.now() - 86400000,
+      endDate: Date.now(),
+      exchange: 'bybit',
+      mode: 'spot',
+      slippagePercent,
+    };
+
+    const existingPosition: PaperPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'long',
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice,
+      amount: 0.1,
+      entryTime: Date.now() - 86400000,
+      unrealizedPnl: 0,
+      fundingAccumulated: 0,
+    };
+
+    const sessionWithPos = makePaperSession({ aggregationConfig: config, currentCash: 6000, currentEquity: 10000 });
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(sessionWithPos);
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([existingPosition]);
+
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (ctx.longPosition) ctx.closeLong();
+    };
+
+    const engine = new PaperTradingEngine(sessionWithPos);
+    await engine.start();
+
+    await engine.forceTick();
+
+    // Exit price for a long sell should be reduced by slippage
+    const expectedExitPrice = closePrice * (1 - slippagePercent / 100);
+    const closeTradeCalls = vi.mocked(paperDb.savePaperTrade).mock.calls.filter(
+      c => c[0].action === 'close_long',
+    );
+    expect(closeTradeCalls.length).toBeGreaterThan(0);
+    expect(closeTradeCalls[0][0].price).toBeCloseTo(expectedExitPrice, 5);
+  });
+
+  // ==========================================================================
+  // 17. Slippage applied on short entry: sell price decreased
+  // ==========================================================================
+
+  it('slippage applied on short entry: sell price decreased by slippagePercent', async () => {
+    const slippagePercent = 0.1; // 0.1%
+    const closePrice = 50_000;
+    const config: AggregateBacktestConfig = {
+      subStrategies: [
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '4h', params: {}, exchange: 'bybit' },
+      ],
+      allocationMode: 'single_strongest',
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: Date.now() - 86400000,
+      endDate: Date.now(),
+      exchange: 'bybit',
+      mode: 'spot',
+      slippagePercent,
+    };
+
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!ctx.shortPosition) ctx.openShort(1);
+    };
+
+    const session = makePaperSession({ aggregationConfig: config });
+    const engine = new PaperTradingEngine(session);
+
+    await engine.forceTick();
+
+    // Entry price for a short sell should be decreased by slippage
+    const expectedEntryPrice = closePrice * (1 - slippagePercent / 100);
+    const posArg = vi.mocked(paperDb.savePaperPosition).mock.calls[0][0];
+    expect(posArg.entryPrice).toBeCloseTo(expectedEntryPrice, 5);
+  });
+
+  // ==========================================================================
+  // 18. Slippage applied on short exit: buy price increased
+  // ==========================================================================
+
+  it('slippage applied on short exit: buy price increased by slippagePercent', async () => {
+    const slippagePercent = 0.1; // 0.1%
+    const entryPrice = 60_000;
+    const closePrice = 50_000; // candles are at 50_000
+
+    const config: AggregateBacktestConfig = {
+      subStrategies: [
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '4h', params: {}, exchange: 'bybit' },
+      ],
+      allocationMode: 'single_strongest',
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: Date.now() - 86400000,
+      endDate: Date.now(),
+      exchange: 'bybit',
+      mode: 'spot',
+      slippagePercent,
+    };
+
+    const existingPosition: PaperPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'short',
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice,
+      amount: 0.1,
+      entryTime: Date.now() - 86400000,
+      unrealizedPnl: 0,
+      fundingAccumulated: 0,
+    };
+
+    const sessionWithPos = makePaperSession({ aggregationConfig: config, currentCash: 4000, currentEquity: 10000 });
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(sessionWithPos);
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([existingPosition]);
+
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (ctx.shortPosition) ctx.closeShort();
+    };
+
+    const engine = new PaperTradingEngine(sessionWithPos);
+    await engine.start();
+
+    await engine.forceTick();
+
+    // Exit price for a short buy should be increased by slippage
+    const expectedExitPrice = closePrice * (1 + slippagePercent / 100);
+    const closeTradeCalls = vi.mocked(paperDb.savePaperTrade).mock.calls.filter(
+      c => c[0].action === 'close_short',
+    );
+    expect(closeTradeCalls.length).toBeGreaterThan(0);
+    expect(closeTradeCalls[0][0].price).toBeCloseTo(expectedExitPrice, 5);
+  });
+
+  // ==========================================================================
+  // 19. Zero slippage by default: no price adjustment
+  // ==========================================================================
+
+  it('zero slippage by default: entry price equals exactly candle close', async () => {
+    const closePrice = 50_000;
+
+    // No slippagePercent in config
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!ctx.longPosition) ctx.openLong(1);
+    };
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    await engine.forceTick();
+
+    // Without slippage, entry price should match exactly candle.close
+    const posArg = vi.mocked(paperDb.savePaperPosition).mock.calls[0][0];
+    expect(posArg.entryPrice).toBe(closePrice);
+  });
+
+  // ==========================================================================
+  // 20. Duplicate symbol: two strategies on same symbol get independent shadow state
+  // ==========================================================================
+
+  it('duplicate symbol: two strategies on same symbol get independent shadow state', async () => {
+    // Two sub-strategies both on BTC/USDT but different timeframes.
+    // Only the 4h strategy has an existing position in DB.
+    // The 1h adapter must NOT have its shadow state polluted by the 4h position.
+    const config: AggregateBacktestConfig = {
+      subStrategies: [
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '4h', params: {}, exchange: 'bybit' },
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '1h', params: {}, exchange: 'bybit' },
+      ],
+      allocationMode: 'top_n',
+      maxPositions: 2,
+      initialCapital: 20_000,
+      startDate: Date.now() - 86400000,
+      endDate: Date.now(),
+      exchange: 'bybit',
+      mode: 'spot',
+    };
+
+    // Only the 4h adapter has a DB position (subStrategyKey = 'mock-strategy:BTC/USDT:4h')
+    const position4h: PaperPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'long',
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice: 45_000,
+      amount: 0.05,
+      entryTime: Date.now() - 86400000,
+      unrealizedPnl: 0,
+      fundingAccumulated: 0,
+    };
+
+    const session = makePaperSession({
+      aggregationConfig: config,
+      initialCapital: 20_000,
+      currentCash: 17_750,
+      currentEquity: 20_000,
+    });
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(session);
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([position4h]);
+
+    // Strategy: records whether onBar sees a long position.
+    // The 4h adapter should see itself in position (DB position with matching key).
+    // The 1h adapter should see itself as flat (no DB position with its key).
+    let strategyCallCount = 0;
+    const positionStatePerCall: boolean[] = [];
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      strategyCallCount++;
+      positionStatePerCall.push(ctx.longPosition !== null);
+    };
+
+    // Make both 4h and 1h candles fresh
+    const tf4hMs = 4 * 60 * 60 * 1000;
+    const tf1hMs = 1 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latest4hTs = Math.floor(now / tf4hMs) * tf4hMs - tf4hMs;
+    const latest1hTs = Math.floor(now / tf1hMs) * tf1hMs - tf1hMs;
+
+    mockFetchLatestCandles.mockImplementation((_symbol: string, timeframe: string, count: number) => {
+      const tfMs = timeframe === '4h' ? tf4hMs : tf1hMs;
+      const latestTs = timeframe === '4h' ? latest4hTs : latest1hTs;
+      return Promise.resolve(
+        Array.from({ length: count }, (_, i) =>
+          makeCandle(50_000, latestTs - (count - 1 - i) * tfMs)
+        )
+      );
+    });
+
+    const engine = new PaperTradingEngine(session);
+    await engine.start();
+    await engine.forceTick();
+
+    // The DB returns one position with subStrategyKey 'mock-strategy:BTC/USDT:4h'.
+    // The 4h adapter must match it → sees itself in position (ctx.longPosition !== null).
+    // The 1h adapter must NOT match it → sees itself as flat (ctx.longPosition === null).
+    //
+    // Each adapter calls onBar once (only the last bar is processed on first tick).
+    // So we expect exactly 2 calls: one for 4h (in position) and one for 1h (flat).
+    expect(strategyCallCount).toBe(2);
+
+    // Exactly one of the two calls should see a long position (the 4h adapter),
+    // and the other (1h adapter) should see flat.
+    const inPositionCount = positionStatePerCall.filter(Boolean).length;
+    const flatCount = positionStatePerCall.filter(v => !v).length;
+    expect(inPositionCount).toBe(1);
+    expect(flatCount).toBe(1);
+  });
+
+  // ==========================================================================
+  // 21. Duplicate symbol: positions saved with subStrategyKey (single open, correct key)
+  // ==========================================================================
+
+  it('duplicate symbol: opened position is saved with the correct subStrategyKey', async () => {
+    // Two sub-strategies both on BTC/USDT: different timeframes.
+    // The first one (4h) emits a long signal.
+    // The second (1h) also tries to emit but the portfolio already has a long BTC position,
+    // so only the 4h position is opened. The key assertion: the saved position has the
+    // subStrategyKey of the 4h adapter (not 'symbol' as the second argument).
+    const config: AggregateBacktestConfig = {
+      subStrategies: [
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '4h', params: {}, exchange: 'bybit' },
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '1h', params: {}, exchange: 'bybit' },
+      ],
+      allocationMode: 'top_n',
+      maxPositions: 2,
+      initialCapital: 20_000,
+      startDate: Date.now() - 86400000,
+      endDate: Date.now(),
+      exchange: 'bybit',
+      mode: 'spot',
+    };
+
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([]);
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(
+      makePaperSession({ aggregationConfig: config, initialCapital: 20_000, currentCash: 20_000, currentEquity: 20_000 })
+    );
+
+    // Strategy: always emit OPEN_LONG
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!ctx.longPosition && !ctx.shortPosition) ctx.openLong(1);
+    };
+
+    // Make both timeframe candles fresh
+    const tf4hMs = 4 * 60 * 60 * 1000;
+    const tf1hMs = 1 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latest4hTs = Math.floor(now / tf4hMs) * tf4hMs - tf4hMs;
+    const latest1hTs = Math.floor(now / tf1hMs) * tf1hMs - tf1hMs;
+
+    mockFetchLatestCandles.mockImplementation((_symbol: string, timeframe: string, count: number) => {
+      const tfMs = timeframe === '4h' ? tf4hMs : tf1hMs;
+      const latestTs = timeframe === '4h' ? latest4hTs : latest1hTs;
+      return Promise.resolve(
+        Array.from({ length: count }, (_, i) =>
+          makeCandle(50_000, latestTs - (count - 1 - i) * tfMs)
+        )
+      );
+    });
+
+    const session = makePaperSession({
+      aggregationConfig: config,
+      initialCapital: 20_000,
+      currentCash: 20_000,
+      currentEquity: 20_000,
+    });
+    const engine = new PaperTradingEngine(session);
+
+    const result = await engine.forceTick();
+
+    // At least one position should be opened (the portfolio only allows one long per symbol,
+    // so the second adapter's open will fail gracefully).
+    expect(result.tradesOpened).toHaveLength(1);
+
+    // The saved position must include a subStrategyKey (not empty or undefined).
+    // This is the key regression test: before the fix, subStrategyKey was not saved at all.
+    const savedPositions = vi.mocked(paperDb.savePaperPosition).mock.calls.map(c => c[0]);
+    expect(savedPositions).toHaveLength(1);
+    const savedPos = savedPositions[0];
+
+    expect(savedPos.subStrategyKey).toBeDefined();
+    expect(savedPos.subStrategyKey).not.toBe('');
+    // The key must follow the "strategyName:symbol:timeframe" format
+    expect(savedPos.subStrategyKey).toMatch(/^mock-strategy:BTC\/USDT:(4h|1h)$/);
+
+    // The saved symbol is BTC/USDT
+    expect(savedPos.symbol).toBe('BTC/USDT');
+  });
+
+  // ==========================================================================
+  // 22. Shadow entry price matches DB position entry price after state restore
+  // ==========================================================================
+
+  it('shadow entry price matches DB position entry price after state restore', async () => {
+    // The DB position was opened historically at entryPrice=40_000.
+    // Current candles have close=50_000.
+    // After start() restores state via confirmExecutionWithPrice(), the strategy
+    // must see entryPrice=40_000 (the historical DB value), NOT 50_000 (the candle close).
+    const historicalEntryPrice = 40_000;
+    const historicalEntryTime = Date.now() - 2 * 86400000;
+
+    const existingPosition: PaperPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'long',
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice: historicalEntryPrice,
+      amount: 0.1,
+      entryTime: historicalEntryTime,
+      unrealizedPnl: 1000,
+      fundingAccumulated: 0,
+    };
+
+    const sessionWithPosition = makePaperSession({ currentCash: 6_000, currentEquity: 11_000 });
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(sessionWithPosition);
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([existingPosition]);
+
+    // Strategy records what entryPrice it sees for the shadow long position
+    const capturedEntryPrices: number[] = [];
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (ctx.longPosition) {
+        capturedEntryPrices.push(ctx.longPosition.entryPrice);
+      }
+    };
+
+    const engine = new PaperTradingEngine(sessionWithPosition);
+    await engine.start(); // restores state from DB using confirmExecutionWithPrice
+
+    await engine.forceTick(); // triggers onBar with restored shadow state
+
+    // The strategy must have seen the longPosition with the DB entry price, not candle close
+    expect(capturedEntryPrices.length).toBeGreaterThan(0);
+    expect(capturedEntryPrices[0]).toBe(historicalEntryPrice); // 40_000, not 50_000
+  });
+
+  // ==========================================================================
+  // 23. Shadow entry time matches DB position entry time after state restore
+  // ==========================================================================
+
+  it('shadow entry time matches DB position entry time after state restore', async () => {
+    // The DB position was opened at a specific historical timestamp.
+    // After state restore, the strategy must see that exact entryTime,
+    // not some derived or current time.
+    const historicalEntryTime = 1_700_000_000_000; // fixed historical timestamp
+
+    const existingPosition: PaperPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'long',
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice: 40_000,
+      amount: 0.1,
+      entryTime: historicalEntryTime,
+      unrealizedPnl: 0,
+      fundingAccumulated: 0,
+    };
+
+    const sessionWithPosition = makePaperSession({ currentCash: 6_000, currentEquity: 10_000 });
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(sessionWithPosition);
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([existingPosition]);
+
+    // Strategy records the entryTime it sees for the shadow long position
+    const capturedEntryTimes: number[] = [];
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (ctx.longPosition) {
+        capturedEntryTimes.push(ctx.longPosition.entryTime);
+      }
+    };
+
+    const engine = new PaperTradingEngine(sessionWithPosition);
+    await engine.start(); // restores state from DB using confirmExecutionWithPrice
+
+    await engine.forceTick(); // triggers onBar with restored shadow state
+
+    // The strategy must have seen the exact historical entryTime from the DB
+    expect(capturedEntryTimes.length).toBeGreaterThan(0);
+    expect(capturedEntryTimes[0]).toBe(historicalEntryTime);
+  });
+
+  // ==========================================================================
+  // H2. Adapter state persists across ticks: strategy init called once
+  // ==========================================================================
+
+  it('H2: adapter state persists across ticks - loadStrategy called only once for two ticks', async () => {
+    // Strategy tracks how many times init() was called (proxy for how many
+    // times loadStrategy creates a fresh adapter).
+    let initCallCount = 0;
+    const trackingStrategy = {
+      name: 'mock-strategy',
+      description: 'Mock strategy for H2 testing',
+      version: '1.0.0',
+      params: [],
+      init(_ctx: StrategyContext): void {
+        initCallCount++;
+      },
+      onBar(_ctx: StrategyContext): void {
+        // no-op
+      },
+    };
+
+    vi.mocked(strategyLoader.loadStrategy).mockResolvedValue(trackingStrategy);
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // First tick: should load strategy and call init() once
+    await engine.forceTick();
+    expect(initCallCount).toBe(1);
+    const loadCallsAfterTick1 = vi.mocked(strategyLoader.loadStrategy).mock.calls.length;
+    expect(loadCallsAfterTick1).toBe(1);
+
+    // Second tick: should NOT call loadStrategy or init() again (adapter is cached)
+    await engine.forceTick();
+    expect(initCallCount).toBe(1); // still 1 — init not called again
+    const loadCallsAfterTick2 = vi.mocked(strategyLoader.loadStrategy).mock.calls.length;
+    expect(loadCallsAfterTick2).toBe(1); // still 1 — loadStrategy not called again
+  });
+
+  it('H2: adapter state persists - strategy sees updated candle data on second tick', async () => {
+    // Build two different candle sets: first tick at 50_000, second tick at 55_000.
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latestTs = Math.floor(now / tfMs) * tfMs - tfMs;
+
+    // Candles for tick 1: all at price 50_000, latest bar at latestTs
+    const candles1 = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(50_000, latestTs - (199 - i) * tfMs)
+    );
+
+    // Candles for tick 2: all at price 55_000, with a new bar one tfMs later
+    const candles2 = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(55_000, latestTs - (198 - i) * tfMs)
+    );
+    // The last candle is at latestTs + tfMs (one bar newer than tick 1)
+    candles2[199] = makeCandle(55_000, latestTs + tfMs);
+
+    // Alternate which candle set is returned.
+    // With the M5 fix each unique symbol:timeframe is fetched only once per tick,
+    // so tick 1 = call 1 (returns candles1), tick 2 = call 2 (returns candles2).
+    let callCount = 0;
+    mockFetchLatestCandles.mockImplementation(() => {
+      callCount++;
+      // call 1 → tick 1, call 2 → tick 2
+      const tickIdx = callCount <= 1 ? 0 : 1;
+      return Promise.resolve(tickIdx === 0 ? candles1 : candles2);
+    });
+
+    // Strategy captures the close price of the last candle it sees each bar
+    const capturedClosePrices: number[] = [];
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      capturedClosePrices.push(ctx.currentCandle.close);
+    };
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // Tick 1: strategy sees last candle of candles1 (close=50_000)
+    await engine.forceTick();
+
+    // Tick 2: strategy sees the new bar in candles2 (close=55_000)
+    await engine.forceTick();
+
+    // We expect at least 2 onBar calls (one per tick, one per new bar)
+    expect(capturedClosePrices.length).toBeGreaterThanOrEqual(2);
+
+    // Tick 1 should see price around 50_000
+    expect(capturedClosePrices[0]).toBeCloseTo(50_000, 0);
+
+    // Tick 2 should see the updated price (55_000) from candles2
+    const lastPrice = capturedClosePrices[capturedClosePrices.length - 1];
+    expect(lastPrice).toBeCloseTo(55_000, 0);
+  });
+
+  // ==========================================================================
+  // H3. Missed bars during downtime: processes all missed bars on resume
+  // ==========================================================================
+
+  it('H3: missed bars during downtime - processes all new bars since lastProcessedCandleTs', async () => {
+    // Simulate a scenario where 3 bars have been generated since the last tick.
+    // We expect the engine to call onBar 3 times (one per missed bar).
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latestTs = Math.floor(now / tfMs) * tfMs - tfMs;
+
+    // Build 200 candles where the last 3 are "new" (since lastProcessedCandleTs)
+    const candles = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(50_000, latestTs - (199 - i) * tfMs)
+    );
+
+    mockFetchLatestCandles.mockResolvedValue(candles);
+
+    // Track how many times onBar is called
+    let onBarCallCount = 0;
+    mockStrategy.onBar = (_ctx: StrategyContext) => {
+      onBarCallCount++;
+    };
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // Manually set lastProcessedCandleTs to 3 bars ago so the engine treats
+    // candles[-3], candles[-2], candles[-1] as new bars.
+    // Access the private field via type assertion.
+    const lastProcessedTs = candles[196].timestamp; // 3 bars before the last
+    (engine as unknown as Record<string, unknown>)['lastProcessedCandleTs'] = new Map([
+      ['BTC/USDT:4h', lastProcessedTs],
+    ]);
+
+    await engine.forceTick();
+
+    // Should have processed 3 bars (indices 197, 198, 199)
+    expect(onBarCallCount).toBe(3);
+  });
+
+  it('H3: missed bars - signal from a missed bar triggers position open', async () => {
+    // Strategy emits OPEN_LONG only when close > 52_000 (threshold).
+    // Bar layout (all at timestamp intervals):
+    //   bar[197]: close = 50_000 (below threshold → no signal)
+    //   bar[198]: close = 55_000 (above threshold → OPEN_LONG — the "missed" bar)
+    //   bar[199]: close = 50_000 (below threshold → no signal)
+    //
+    // lastProcessedCandleTs = bar[196].timestamp
+    // The engine should process bars 197, 198, 199 and open a position on bar 198.
+
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latestTs = Math.floor(now / tfMs) * tfMs - tfMs;
+
+    // Build 200 candles with the last 3 having specific prices
+    const candles = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(50_000, latestTs - (199 - i) * tfMs)
+    );
+    // Inject the signal bar at index 198 (second-to-last)
+    candles[198] = makeCandle(55_000, latestTs - tfMs); // above threshold
+    // Bar 199 (last) stays at 50_000 (below threshold)
+
+    mockFetchLatestCandles.mockResolvedValue(candles);
+
+    const SIGNAL_THRESHOLD = 52_000;
+    let inPosition = false;
+
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!inPosition && ctx.currentCandle.close > SIGNAL_THRESHOLD) {
+        ctx.openLong(1);
+        inPosition = true;
+      }
+    };
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // Set lastProcessedCandleTs so bars 197-199 are all treated as new
+    const lastProcessedTs = candles[196].timestamp;
+    (engine as unknown as Record<string, unknown>)['lastProcessedCandleTs'] = new Map([
+      ['BTC/USDT:4h', lastProcessedTs],
+    ]);
+
+    const result = await engine.forceTick();
+
+    // The signal on bar 198 (close=55_000) should have opened a long position
+    expect(result.tradesOpened).toHaveLength(1);
+    expect(result.tradesOpened[0].action).toBe('open_long');
+    expect(result.tradesOpened[0].symbol).toBe('BTC/USDT');
+  });
+
+  it('H3: resume does not clear lastProcessedCandleTs', async () => {
+    // After pause+resume, lastProcessedCandleTs should still be populated
+    // so the engine knows which bars are new (instead of treating all as fresh start).
+    const session = makePaperSession({ status: 'running' });
+    const engine = new PaperTradingEngine(session);
+
+    // Manually set lastProcessedCandleTs to simulate state after a tick
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    const lastTs = Math.floor(now / tfMs) * tfMs - 2 * tfMs; // 2 bars ago
+    const tsMap = new Map([['BTC/USDT:4h', lastTs]]);
+    (engine as unknown as Record<string, unknown>)['lastProcessedCandleTs'] = tsMap;
+
+    // Simulate the internal status being running so pause() works
+    (engine as unknown as Record<string, unknown>)['_status'] = 'running';
+
+    await engine.pause();
+
+    // After pause, lastProcessedCandleTs should still have the value
+    const mapAfterPause = (engine as unknown as Record<string, unknown>)['lastProcessedCandleTs'] as Map<string, number>;
+    expect(mapAfterPause.get('BTC/USDT:4h')).toBe(lastTs);
+
+    await engine.resume();
+
+    // After resume, lastProcessedCandleTs must still be intact (not cleared)
+    const mapAfterResume = (engine as unknown as Record<string, unknown>)['lastProcessedCandleTs'] as Map<string, number>;
+    expect(mapAfterResume.get('BTC/USDT:4h')).toBe(lastTs);
+  });
+
+  // ==========================================================================
+  // M2. strategy.onEnd() is called when session stops
+  // ==========================================================================
+
+  it('M2: strategy.onEnd() is called when session stops', async () => {
+    let onEndCallCount = 0;
+
+    const strategyWithOnEnd = {
+      name: 'mock-strategy',
+      description: 'Mock strategy for M2 testing',
+      version: '1.0.0',
+      params: [],
+      onBar(_ctx: StrategyContext): void {
+        // no-op
+      },
+      onEnd(): void {
+        onEndCallCount++;
+      },
+    };
+
+    vi.mocked(strategyLoader.loadStrategy).mockResolvedValue(strategyWithOnEnd);
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // Run a tick so adapters are populated
+    await engine.forceTick();
+    expect(onEndCallCount).toBe(0); // onEnd not called yet
+
+    // Now set status to running so stop() will execute
+    (engine as unknown as Record<string, unknown>)['_status'] = 'running';
+
+    // Stopping the engine should call onEnd on all adapters
+    await engine.stop();
+
+    expect(onEndCallCount).toBe(1);
+  });
+
+  // ==========================================================================
+  // M3. Equity snapshot uses candle timestamp, not Date.now()
+  // ==========================================================================
+
+  it('M3: equity snapshot uses candle timestamp, not Date.now()', async () => {
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    const beforeTick = Date.now();
+    await engine.forceTick();
+    const afterTick = Date.now();
+
+    // savePaperEquitySnapshot should have been called once
+    expect(paperDb.savePaperEquitySnapshot).toHaveBeenCalledOnce();
+    const snapshotArg = vi.mocked(paperDb.savePaperEquitySnapshot).mock.calls[0][0];
+
+    // The snapshot timestamp should match the last candle's timestamp.
+    // freshCandles are built so the last bar is at Math.floor(now/4h)*4h - 4h,
+    // which is significantly in the past (at least 4h ago), NOT close to Date.now().
+    const lastCandle = freshCandles[freshCandles.length - 1];
+    expect(snapshotArg.timestamp).toBe(lastCandle.timestamp);
+
+    // Explicitly verify it's NOT a wall-clock timestamp (it should be at least
+    // one 4h bar (14400000 ms) before the tick ran).
+    expect(snapshotArg.timestamp).toBeLessThan(beforeTick - 14_000_000);
+    expect(snapshotArg.timestamp).toBeLessThan(afterTick - 14_000_000);
+  });
+
+  // ==========================================================================
+  // M4. fundingAccumulated is updated on open positions during tick
+  // ==========================================================================
+
+  it('M4: funding accumulated is updated on open positions during tick', async () => {
+    // Set up futures mode with a funding rate event
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latestTs = Math.floor(now / tfMs) * tfMs - tfMs;
+
+    const candles = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(50_000, latestTs - (199 - i) * tfMs)
+    );
+    mockFetchLatestCandles.mockResolvedValue(candles);
+
+    // Funding rate event at the last candle's timestamp
+    const fundingRate = 0.0001; // 0.01%
+    const mockFundingRates = [
+      { timestamp: latestTs, fundingRate, markPrice: 50_000 },
+    ];
+    mockFetchLatestFundingRates.mockResolvedValue(mockFundingRates);
+
+    // Existing long position
+    const existingPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'long' as const,
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice: 50_000,
+      amount: 0.1,
+      entryTime: latestTs - tfMs * 10,
+      unrealizedPnl: 0,
+      fundingAccumulated: 0,
+    };
+
+    const futuresConfig = {
+      subStrategies: [
+        {
+          strategyName: 'mock-strategy',
+          symbol: 'BTC/USDT',
+          timeframe: '4h' as const,
+          params: {},
+          exchange: 'bybit',
+        },
+      ],
+      allocationMode: 'single_strongest' as const,
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: now - 86400000,
+      endDate: now,
+      exchange: 'bybit',
+      mode: 'futures' as const,
+    };
+
+    const sessionWithPosition = makePaperSession({
+      aggregationConfig: futuresConfig,
+      currentCash: 5_000,
+      currentEquity: 10_000,
+    });
+
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(sessionWithPosition);
+    // Return existing position on first two calls (restoreState + Step 2 getPaperPositions),
+    // then return it again for Step 10 openPositions update
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([existingPosition]);
+
+    // Strategy does nothing (holds position)
+    mockStrategy.onBar = (_ctx: StrategyContext) => { /* no-op */ };
+
+    const engine = new PaperTradingEngine(sessionWithPosition);
+    await engine.start();
+
+    await engine.forceTick();
+
+    // savePaperPosition should have been called for the open position update (Step 10)
+    const savePosCallsInStep10 = vi.mocked(paperDb.savePaperPosition).mock.calls.filter(
+      c => c[0].fundingAccumulated !== 0,
+    );
+
+    // The funding payment = -amount * markPrice * fundingRate = -0.1 * 50000 * 0.0001 = -0.5
+    // So fundingAccumulated should be -0.5 (long pays when rate > 0)
+    expect(savePosCallsInStep10.length).toBeGreaterThan(0);
+    const updatedPos = savePosCallsInStep10[0][0];
+    expect(updatedPos.fundingAccumulated).toBeCloseTo(-0.5, 4);
+  });
+
+  // ==========================================================================
+  // M5. Candles fetched once per symbol:timeframe, not redundantly
+  // ==========================================================================
+
+  it('M5: candles fetched once per symbol:timeframe for two sub-strategies on same symbol', async () => {
+    // Two sub-strategies on same symbol AND same timeframe.
+    // M5 fix: candles should only be fetched once (cached in perSubCandleCache).
+    const config = {
+      subStrategies: [
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '4h' as const, params: {}, exchange: 'bybit' },
+        { strategyName: 'mock-strategy', symbol: 'BTC/USDT', timeframe: '4h' as const, params: {}, exchange: 'bybit' },
+      ],
+      allocationMode: 'top_n' as const,
+      maxPositions: 2,
+      initialCapital: 20_000,
+      startDate: Date.now() - 86400000,
+      endDate: Date.now(),
+      exchange: 'bybit',
+      mode: 'spot' as const,
+    };
+
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(
+      makePaperSession({ aggregationConfig: config, initialCapital: 20_000, currentCash: 20_000, currentEquity: 20_000 })
+    );
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([]);
+
+    const session = makePaperSession({
+      aggregationConfig: config,
+      initialCapital: 20_000,
+      currentCash: 20_000,
+      currentEquity: 20_000,
+    });
+    const engine = new PaperTradingEngine(session);
+
+    mockFetchLatestCandles.mockClear();
+    await engine.forceTick();
+
+    // With M5 fix: Step 1 no longer fetches candles at all.
+    // Step 2 fetches once per unique symbol:timeframe via perSubCandleCache.
+    // Two sub-strategies share BTC/USDT:4h → only 1 fetch total.
+    const fetchCalls = mockFetchLatestCandles.mock.calls;
+    const btcCalls = fetchCalls.filter(c => c[0] === 'BTC/USDT' && c[1] === '4h');
+    expect(btcCalls).toHaveLength(1);
   });
 });
