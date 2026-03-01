@@ -142,6 +142,7 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
   const ddSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
   const sharpeSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const winRateSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const prevCandleCountRef = useRef<number>(0);
 
   // Derived: whether any overlay (FR or metric) is active
   const hasAnyOverlay = showFundingRate || showROI || showDrawdown || showSharpe || showWinRate;
@@ -286,11 +287,27 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
     if (!candleSeriesRef.current || displayCandles.length === 0) return;
 
     const formattedCandles = formatCandles(displayCandles);
-    candleSeriesRef.current.setData(formattedCandles);
+    const prevCount = prevCandleCountRef.current;
+    const isInitialLoad = prevCount === 0;
+    prevCandleCountRef.current = formattedCandles.length;
 
-    // Fit content after data update
-    if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
+    if (isInitialLoad) {
+      // First load — set all data and fit chart to content
+      candleSeriesRef.current.setData(formattedCandles);
+      if (chartRef.current) {
+        chartRef.current.timeScale().fitContent();
+      }
+    } else if (formattedCandles.length > 0) {
+      // Subsequent updates (e.g. real-time WS ticks) — only update the last candle
+      // to avoid resetting zoom/scroll position
+      const last = formattedCandles[formattedCandles.length - 1];
+      if (formattedCandles.length !== prevCount) {
+        // Number of candles changed (new bar appeared or data replaced) — full setData
+        candleSeriesRef.current.setData(formattedCandles);
+      } else {
+        // Same number of candles — just update the last one in-place
+        candleSeriesRef.current.update(last);
+      }
     }
   }, [displayCandles]);
 
@@ -300,6 +317,7 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
     setShowDateRangeSelector(false);
     setChartWindowStart(null);
     setChartWindowEnd(null);
+    prevCandleCountRef.current = 0; // Force fitContent on next data load
   }, [backtestTimeframe, symbol]);
 
   // Auto-show funding rate histogram in futures mode

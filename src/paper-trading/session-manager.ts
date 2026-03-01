@@ -119,34 +119,74 @@ export class SessionManager {
 
   /**
    * Pause a running session (stops ticking, keeps portfolio state in memory).
+   * If the engine is not in memory (e.g. after server restart), just update DB status.
    */
   async pauseSession(sessionId: string): Promise<void> {
     const engine = this.engines.get(sessionId);
     if (!engine) {
-      throw new Error(`No active engine for session ${sessionId}`);
+      // No engine in memory — update DB status directly
+      await paperDb.updatePaperSession(sessionId, { status: 'paused' });
+      return;
     }
     await engine.pause();
   }
 
   /**
    * Resume a paused session.
+   * Recreates the engine from DB if it is not in memory (e.g. after server restart).
    */
   async resumeSession(sessionId: string): Promise<void> {
-    const engine = this.engines.get(sessionId);
+    let engine = this.engines.get(sessionId);
+
     if (!engine) {
-      throw new Error(`No active engine for session ${sessionId}`);
+      // Engine not in memory — recreate from DB (e.g. after server restart while paused)
+      const session = await paperDb.getPaperSession(sessionId);
+      if (!session) {
+        throw new Error(`Session ${sessionId} not found`);
+      }
+
+      engine = new PaperTradingEngine(session);
+      this.engines.set(sessionId, engine);
+
+      // Forward events to SSE listeners and Telegram
+      engine.on('paper-event', (event: PaperTradingEvent) => {
+        const listeners = this.eventListeners.get(sessionId);
+        if (listeners) {
+          for (const listener of listeners) {
+            try {
+              listener(event);
+            } catch (err) {
+              console.error(`[SessionManager] Listener error for session ${sessionId}:`, err);
+            }
+          }
+        }
+        this.handleTelegramNotification(event, session.name);
+      });
+
+      // Schedule daily summary if Telegram configured
+      if (TelegramNotifier.isConfigured()) {
+        this.scheduleDailySummary(sessionId, session.name, engine);
+      }
+
+      // Freshly created engine has _status='stopped', so call start() not resume()
+      await engine.start();
+      return;
     }
+
     await engine.resume();
   }
 
   /**
    * Stop a session: force-closes all positions and marks it stopped.
    * Removes the engine from memory.
+   * If the engine is not in memory (e.g. after server restart), just update DB status.
    */
   async stopSession(sessionId: string): Promise<void> {
     const engine = this.engines.get(sessionId);
     if (!engine) {
-      throw new Error(`No active engine for session ${sessionId}`);
+      // No engine in memory — update DB status directly
+      await paperDb.updatePaperSession(sessionId, { status: 'stopped' });
+      return;
     }
     await engine.stop();
     this.engines.delete(sessionId);

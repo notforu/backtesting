@@ -15,6 +15,7 @@ import {
   usePaperSessionSSE,
 } from '../../hooks/usePaperTrading';
 import { useCandles } from '../../hooks/useBacktest';
+import { usePriceStream } from '../../hooks/usePriceStream';
 import { CreatePaperSessionModal } from '../PaperTradingPanel/CreatePaperSessionModal';
 import { PaperEquityChart } from '../PaperTradingPanel/PaperEquityChart';
 import {
@@ -31,7 +32,7 @@ import { Chart } from '../Chart';
 import { Dashboard } from '../Dashboard';
 import { PaperDrawdownChart } from './PaperDrawdownChart';
 import { mapPaperTrades, computePaperMetrics } from './paperUtils';
-import type { Timeframe, PerformanceMetrics, PaperEquitySnapshot } from '../../types';
+import type { Timeframe, PaperEquitySnapshot } from '../../types';
 
 // ============================================================================
 // Candle range helper — compute a start date providing ~200 candles of context
@@ -59,125 +60,31 @@ function candleStartDate(timeframe: string, referenceTs: number): string {
 // Chart tab type definitions
 // ============================================================================
 
-type AssetChartTab = 'price' | 'equity' | 'drawdown' | 'stats';
-type PortfolioChartTab = 'equity' | 'drawdown' | 'stats';
+type AssetChartTab = 'price' | 'equity' | 'drawdown';
+type PortfolioChartTab = 'equity' | 'drawdown';
 
 // ============================================================================
-// StatsTab — performance statistics grid
+// Equity snapshot resampler — thin data to selected time bucket
 // ============================================================================
 
-function StatCard({
-  label,
-  value,
-  valueClass,
-  subValue,
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-  subValue?: string;
-}) {
-  return (
-    <div className="bg-gray-900 rounded-lg border border-gray-700 px-4 py-4">
-      <p className="text-xs text-gray-500 mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${valueClass ?? 'text-white'}`}>{value}</p>
-      {subValue && <p className="text-xs text-gray-500 mt-1">{subValue}</p>}
-    </div>
-  );
-}
+function resampleSnapshots(snapshots: PaperEquitySnapshot[], resolution: string): PaperEquitySnapshot[] {
+  if (resolution === 'All') return snapshots;
+  const bucketMs = TIMEFRAME_MS[resolution];
+  if (!bucketMs || snapshots.length === 0) return snapshots;
 
-function StatsTab({
-  metrics,
-  isFutures,
-}: {
-  metrics: PerformanceMetrics | null;
-  isFutures: boolean;
-}) {
-  if (!metrics) {
-    return (
-      <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
-        No data yet
-      </div>
-    );
+  const result: PaperEquitySnapshot[] = [];
+  let currentBucket = -1;
+
+  for (const s of snapshots) {
+    const bucket = Math.floor(s.timestamp / bucketMs);
+    if (bucket !== currentBucket) {
+      result.push(s);
+      currentBucket = bucket;
+    } else {
+      result[result.length - 1] = s; // replace with latest in bucket (closing value)
+    }
   }
-
-  const pfDisplay =
-    metrics.profitFactor === Infinity
-      ? 'Perfect'
-      : metrics.profitFactor === 0
-        ? '0.00'
-        : metrics.profitFactor.toFixed(2);
-
-  return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        <StatCard
-          label="Win Rate"
-          value={`${metrics.winRate.toFixed(1)}%`}
-          valueClass={metrics.winRate >= 50 ? 'text-green-400' : 'text-red-400'}
-          subValue={`${metrics.winningTrades}W / ${metrics.losingTrades}L`}
-        />
-        <StatCard
-          label="Profit Factor"
-          value={pfDisplay}
-          valueClass={metrics.profitFactor >= 1 ? 'text-green-400' : 'text-red-400'}
-        />
-        <StatCard
-          label="Total Trades"
-          value={metrics.totalTrades.toString()}
-          subValue="closed trades"
-        />
-        <StatCard
-          label="Expectancy"
-          value={fmtUsd(metrics.expectancy)}
-          valueClass={metrics.expectancy >= 0 ? 'text-green-400' : 'text-red-400'}
-          subValue={`${metrics.expectancyPercent >= 0 ? '+' : ''}${metrics.expectancyPercent.toFixed(2)}% per trade`}
-        />
-        <StatCard
-          label="Avg Win"
-          value={fmtUsd(metrics.avgWin)}
-          valueClass="text-green-400"
-          subValue={`${metrics.avgWinPercent >= 0 ? '+' : ''}${metrics.avgWinPercent.toFixed(2)}%`}
-        />
-        <StatCard
-          label="Avg Loss"
-          value={fmtUsd(metrics.avgLoss)}
-          valueClass="text-red-400"
-          subValue={`${metrics.avgLossPercent.toFixed(2)}%`}
-        />
-        <StatCard
-          label="Best Trade"
-          value={fmtUsd(metrics.largestWin)}
-          valueClass="text-green-400"
-        />
-        <StatCard
-          label="Worst Trade"
-          value={fmtUsd(metrics.largestLoss)}
-          valueClass="text-red-400"
-        />
-        <StatCard
-          label="Total Fees"
-          value={fmtUsd(metrics.totalFees)}
-          valueClass="text-yellow-400"
-        />
-        {isFutures && metrics.totalFundingIncome !== undefined && (
-          <StatCard
-            label="Total Funding Income"
-            value={fmtUsd(metrics.totalFundingIncome)}
-            valueClass={metrics.totalFundingIncome >= 0 ? 'text-green-400' : 'text-red-400'}
-          />
-        )}
-        {isFutures && metrics.tradingPnl !== undefined && (
-          <StatCard
-            label="Trading PnL"
-            value={fmtUsd(metrics.tradingPnl)}
-            valueClass={metrics.tradingPnl >= 0 ? 'text-green-400' : 'text-red-400'}
-            subValue="excl. funding"
-          />
-        )}
-      </div>
-    </div>
-  );
+  return result;
 }
 
 // ============================================================================
@@ -232,6 +139,7 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   // Chart view tabs
   const [assetChartTab, setAssetChartTab] = useState<AssetChartTab>('price');
   const [portfolioChartTab, setPortfolioChartTab] = useState<PortfolioChartTab>('equity');
+  const [equityResolution, setEquityResolution] = useState<string>('All');
 
   const subStrategies = session?.aggregationConfig?.subStrategies ?? [];
   const isMultiAsset = subStrategies.length > 1;
@@ -255,25 +163,54 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
 
   // Compute candle date range — always show at least 200 candles of history.
   // Use earliest trade timestamp as reference when trades exist, otherwise use now.
-  // endDate is tomorrow to ensure the current (forming) candle is included.
+  // endDate is current time rounded to 5 minutes for a stable React Query key
+  // that still triggers the backend to fetch recent candles.
   const now = Date.now();
   const earliestTradeTs = allPaperTrades.length > 0
     ? Math.min(...allPaperTrades.map((t) => t.timestamp))
     : now;
   const referenceTs = Math.min(earliestTradeTs, now);
-  const tomorrowDate = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().split('T')[0];
-  })();
+  const FIVE_MIN = 5 * 60_000;
+  const endRounded = new Date(Math.ceil(now / FIVE_MIN) * FIVE_MIN).toISOString();
   const candleParams = activeAsset && session ? {
     exchange: activeAsset.exchange,
     symbol: activeAsset.symbol,
     timeframe: activeAsset.timeframe as Timeframe,
     startDate: candleStartDate(activeAsset.timeframe, referenceTs),
-    endDate: tomorrowDate,
+    endDate: endRounded,
   } : null;
   const { data: assetCandles } = useCandles(candleParams);
+
+  // Real-time price streaming — connect whenever the price chart tab is visible.
+  // The session does not need to be running; the WS stream shows live market data regardless.
+  const priceStreamParams = useMemo(
+    () =>
+      activeAsset && assetChartTab === 'price'
+        ? { exchange: activeAsset.exchange, symbol: activeAsset.symbol, timeframe: activeAsset.timeframe }
+        : null,
+    // Use stable primitive deps instead of the activeAsset object reference to avoid
+    // spurious reconnects when the parent re-renders and produces a new object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeAsset?.exchange, activeAsset?.symbol, activeAsset?.timeframe, assetChartTab],
+  );
+  const latestStreamCandle = usePriceStream(priceStreamParams);
+
+  // Merge real-time streaming candle into the fetched candle array.
+  // If the streaming candle has the same timestamp as the last candle, it updates it in place.
+  // If the streaming candle is newer, it is appended as a new candle.
+  const chartCandles = useMemo(() => {
+    if (!assetCandles || !latestStreamCandle) return assetCandles;
+    const candles = [...assetCandles];
+    const lastIdx = candles.length - 1;
+    if (lastIdx >= 0 && candles[lastIdx].timestamp === latestStreamCandle.timestamp) {
+      // Update the forming candle in-place
+      candles[lastIdx] = { ...candles[lastIdx], ...latestStreamCandle };
+    } else if (lastIdx >= 0 && latestStreamCandle.timestamp > candles[lastIdx].timestamp) {
+      // New bar — append it
+      candles.push(latestStreamCandle);
+    }
+    return candles;
+  }, [assetCandles, latestStreamCandle]);
 
   // Filter trades for selected asset
   const displayedPaperTrades = activeAsset
@@ -294,6 +231,7 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     setSelectedAssetIndex(-1);
     setAssetChartTab('price');
     setPortfolioChartTab('equity');
+    setEquityResolution('All');
   }, [sessionId]);
 
   // When switching from multi-asset portfolio view to an asset view, default to Price tab
@@ -342,14 +280,12 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     { id: 'price', label: 'Price' },
     { id: 'equity', label: 'Equity' },
     { id: 'drawdown', label: 'Drawdown' },
-    { id: 'stats', label: 'Stats' },
   ];
 
   // Portfolio chart tab definitions
   const portfolioTabs: { id: PortfolioChartTab; label: string }[] = [
     { id: 'equity', label: 'Equity' },
     { id: 'drawdown', label: 'Drawdown' },
-    { id: 'stats', label: 'Stats' },
   ];
 
   // Whether we are in the "per-asset" view or the "portfolio/single" view
@@ -509,16 +445,35 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
               active={assetChartTab}
               onChange={setAssetChartTab}
             />
+            {(assetChartTab === 'equity' || assetChartTab === 'drawdown') && (
+              <div className="flex items-center gap-1 mb-2">
+                <span className="text-xs text-gray-500 mr-1">Resolution:</span>
+                {['All', '1h', '4h', '1d', '1w'].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setEquityResolution(r)}
+                    className={`px-2 py-0.5 rounded text-xs ${
+                      equityResolution === r
+                        ? 'bg-gray-600 text-white'
+                        : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            )}
             {assetChartTab === 'price' && (
-              assetCandles && assetCandles.length > 0 ? (
+              chartCandles && chartCandles.length > 0 ? (
                 <Chart
-                  candles={assetCandles}
+                  candles={chartCandles}
                   trades={displayedBacktestTrades}
                   height={450}
                   isFutures={isFutures}
                   backtestTimeframe={activeAsset!.timeframe as Timeframe}
                   exchange={activeAsset!.exchange}
                   symbol={activeAsset!.symbol}
+                  startDate={session.createdAt}
                 />
               ) : (
                 <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
@@ -527,13 +482,10 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
               )
             )}
             {assetChartTab === 'equity' && (
-              <PaperEquityChart snapshots={snapshots} height={450} />
+              <PaperEquityChart snapshots={resampleSnapshots(snapshots, equityResolution)} height={450} />
             )}
             {assetChartTab === 'drawdown' && (
-              <PaperDrawdownChart snapshots={snapshots} height={450} />
-            )}
-            {assetChartTab === 'stats' && (
-              <StatsTab metrics={metrics} isFutures={isFutures} />
+              <PaperDrawdownChart snapshots={resampleSnapshots(snapshots, equityResolution)} height={450} />
             )}
           </>
         ) : (
@@ -543,14 +495,29 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
               active={portfolioChartTab}
               onChange={setPortfolioChartTab}
             />
+            {(portfolioChartTab === 'equity' || portfolioChartTab === 'drawdown') && (
+              <div className="flex items-center gap-1 mb-2">
+                <span className="text-xs text-gray-500 mr-1">Resolution:</span>
+                {['All', '1h', '4h', '1d', '1w'].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setEquityResolution(r)}
+                    className={`px-2 py-0.5 rounded text-xs ${
+                      equityResolution === r
+                        ? 'bg-gray-600 text-white'
+                        : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            )}
             {portfolioChartTab === 'equity' && (
-              <PaperEquityChart snapshots={snapshots} height={450} />
+              <PaperEquityChart snapshots={resampleSnapshots(snapshots, equityResolution)} height={450} />
             )}
             {portfolioChartTab === 'drawdown' && (
-              <PaperDrawdownChart snapshots={snapshots} height={450} />
-            )}
-            {portfolioChartTab === 'stats' && (
-              <StatsTab metrics={metrics} isFutures={isFutures} />
+              <PaperDrawdownChart snapshots={resampleSnapshots(snapshots, equityResolution)} height={450} />
             )}
           </>
         )}

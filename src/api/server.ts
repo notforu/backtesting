@@ -14,6 +14,7 @@ import { scanRoutes } from './routes/scan.js';
 import { fundingRateRoutes } from './routes/funding-rates.js';
 import { aggregationRoutes } from './routes/aggregations.js';
 import { paperTradingRoutes } from './routes/paper-trading.js';
+import { priceStreamRoutes } from './routes/price-stream.js';
 import { initDb, closeDb } from '../data/db.js';
 import { sessionManager } from '../paper-trading/session-manager.js';
 
@@ -53,6 +54,7 @@ await fastify.register(scanRoutes);
 await fastify.register(fundingRateRoutes);
 await fastify.register(aggregationRoutes);
 await fastify.register(paperTradingRoutes);
+await fastify.register(priceStreamRoutes);
 
 // Graceful shutdown
 const shutdown = async () => {

@@ -43,19 +43,41 @@ export async function candleRoutes(fastify: FastifyInstance) {
       if (!forceRefresh) {
         const cachedRange = await getCandleDateRange(exchange, symbol, timeframe);
 
-        // If we have data covering the requested range, use cache
-        if (
-          cachedRange.start !== null &&
-          cachedRange.end !== null &&
-          cachedRange.start <= start &&
-          cachedRange.end >= end
-        ) {
-          const candles = await getCandles(exchange, symbol, timeframe as Timeframe, start, end);
-          return reply.status(200).send({
-            candles,
-            source: 'cache',
-            count: candles.length,
-          });
+        if (cachedRange.start !== null && cachedRange.end !== null && cachedRange.start <= start) {
+          // Full cache hit: cache covers entire requested range
+          if (cachedRange.end >= end) {
+            const candles = await getCandles(exchange, symbol, timeframe as Timeframe, start, end);
+            return reply.status(200).send({ candles, source: 'cache', count: candles.length });
+          }
+
+          // Partial cache hit: cache covers start but end is slightly behind (within 1 day).
+          // Serve cached data + fetch only the gap from exchange.
+          const cacheGapMs = end - cachedRange.end;
+          const ONE_DAY_MS = 86_400_000;
+          if (cacheGapMs <= ONE_DAY_MS) {
+            const cached = await getCandles(exchange, symbol, timeframe as Timeframe, start, cachedRange.end);
+            // Fetch just the gap from the exchange (cachedRange.end → now)
+            try {
+              const provider = getProvider(exchange);
+              const gapCandles = await provider.fetchCandles(
+                symbol,
+                timeframe as Timeframe,
+                new Date(cachedRange.end),
+                new Date(end)
+              );
+              if (gapCandles.length > 0) {
+                await saveCandles(gapCandles, exchange, symbol, timeframe as Timeframe);
+              }
+              // Merge: append gap candles that are newer than the last cached candle
+              const lastCachedTs = cached.length > 0 ? cached[cached.length - 1].timestamp : 0;
+              const newCandles = gapCandles.filter(c => c.timestamp > lastCachedTs);
+              const merged = [...cached, ...newCandles];
+              return reply.status(200).send({ candles: merged, source: 'cache+gap', count: merged.length });
+            } catch {
+              // Gap fetch failed — serve cached portion anyway
+              return reply.status(200).send({ candles: cached, source: 'cache-partial', count: cached.length });
+            }
+          }
         }
       }
 
