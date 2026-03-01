@@ -29,6 +29,7 @@ import {
   configDisplayName,
 } from '../PaperTradingPanel/PaperTradingPanel';
 import { Chart } from '../Chart';
+import type { SessionEvent } from '../Chart/Chart';
 import { Dashboard } from '../Dashboard';
 import { PaperDrawdownChart } from './PaperDrawdownChart';
 import { mapPaperTrades, computePaperMetrics } from './paperUtils';
@@ -54,6 +55,40 @@ function candleStartDate(timeframe: string, referenceTs: number): string {
   const bufferMs = barMs * 200; // ~200 candles of context before reference point
   const start = new Date(referenceTs - bufferMs);
   return start.toISOString().split('T')[0];
+}
+
+// ============================================================================
+// Session event computation — derive start/pause/resume markers from equity
+// snapshots. Gaps between consecutive snapshots larger than 3x the timeframe
+// interval indicate paused periods.
+// ============================================================================
+
+function computeSessionEvents(
+  snapshots: PaperEquitySnapshot[],
+  timeframeMs: number,
+  sessionCreatedAt: number,
+): SessionEvent[] {
+  const events: SessionEvent[] = [];
+
+  // Always show a "Start" marker at session creation time
+  events.push({ timestamp: sessionCreatedAt, type: 'start' });
+
+  if (snapshots.length === 0) return events;
+
+  // Detect gaps — threshold is 3x the timeframe bar duration
+  const gapThreshold = timeframeMs * 3;
+
+  for (let i = 1; i < snapshots.length; i++) {
+    const gap = snapshots[i].timestamp - snapshots[i - 1].timestamp;
+    if (gap > gapThreshold) {
+      // Mark the end of the last active snapshot as a pause point,
+      // and the current snapshot as a resume point.
+      events.push({ timestamp: snapshots[i - 1].timestamp, type: 'pause' });
+      events.push({ timestamp: snapshots[i].timestamp, type: 'resume' });
+    }
+  }
+
+  return events;
 }
 
 // ============================================================================
@@ -275,6 +310,15 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   // (we don't have per-asset snapshots in paper trading).
   const snapshots: PaperEquitySnapshot[] = equitySnapshots ?? [];
 
+  // Derive session start/pause/resume markers from equity snapshot gaps.
+  // Must be computed after `snapshots` is available (cannot be hoisted above early returns).
+  const sessionEvents = useMemo(() => {
+    if (!activeAsset) return undefined;
+    const tfMs = TIMEFRAME_MS[activeAsset.timeframe] ?? 3_600_000;
+    return computeSessionEvents(snapshots, tfMs, session.createdAt);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshots, snapshots.length, activeAsset?.timeframe, session.createdAt]);
+
   // Asset chart tab definitions
   const assetTabs: { id: AssetChartTab; label: string }[] = [
     { id: 'price', label: 'Price' },
@@ -474,6 +518,7 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
                   exchange={activeAsset!.exchange}
                   symbol={activeAsset!.symbol}
                   startDate={session.createdAt}
+                  sessionEvents={sessionEvents}
                 />
               ) : (
                 <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">

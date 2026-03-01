@@ -23,6 +23,11 @@ import {
 } from 'lightweight-charts';
 import type { Candle, Trade, RollingMetrics } from '../../types';
 
+export interface SessionEvent {
+  timestamp: number;
+  type: 'start' | 'resume' | 'pause' | 'gap_start' | 'gap_end';
+}
+
 interface ChartProps {
   candles: Candle[];
   trades: Trade[];
@@ -35,6 +40,7 @@ interface ChartProps {
   startDate?: number;
   endDate?: number;
   rollingMetrics?: RollingMetrics;
+  sessionEvents?: SessionEvent[];
 }
 
 // Convert timestamp to TradingView time format
@@ -77,7 +83,7 @@ function estimateCandles(start: number, end: number, timeframe: string): number 
   return Math.ceil(diffMs / (tfMs[timeframe] ?? 3600000));
 }
 
-export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, rollingMetrics }: ChartProps) {
+export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, rollingMetrics, sessionEvents }: ChartProps) {
   const [displayTimeframe, setDisplayTimeframe] = useState<string | null>(null);
   const [showFundingRate, setShowFundingRate] = useState(false);
   const [showROI, setShowROI] = useState(false);
@@ -347,11 +353,6 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
   useEffect(() => {
     if (!markersRef.current) return;
 
-    if (trades.length === 0) {
-      markersRef.current.setMarkers([]);
-      return;
-    }
-
     const markers: SeriesMarker<Time>[] = trades.map((trade) => {
       const isOpen = trade.action === 'OPEN_LONG' || trade.action === 'OPEN_SHORT';
       const isLong = trade.action === 'OPEN_LONG' || trade.action === 'CLOSE_LONG';
@@ -379,11 +380,34 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
       }
     });
 
-    // Sort markers by time
+    // Session event markers (start/pause/resume boundaries)
+    if (sessionEvents) {
+      for (const event of sessionEvents) {
+        if (event.type === 'start' || event.type === 'resume' || event.type === 'gap_end') {
+          markers.push({
+            time: toChartTime(event.timestamp),
+            position: 'aboveBar',
+            color: '#22C55E', // green
+            shape: 'square',
+            text: event.type === 'start' ? 'Start' : 'Resume',
+          } as SeriesMarker<Time>);
+        } else if (event.type === 'pause' || event.type === 'gap_start') {
+          markers.push({
+            time: toChartTime(event.timestamp),
+            position: 'aboveBar',
+            color: '#EAB308', // yellow
+            shape: 'square',
+            text: 'Pause',
+          } as SeriesMarker<Time>);
+        }
+      }
+    }
+
+    // Sort all markers by time
     markers.sort((a, b) => (a.time as number) - (b.time as number));
 
     markersRef.current.setMarkers(markers);
-  }, [trades]);
+  }, [trades, sessionEvents]);
 
   // Update chart height
   useEffect(() => {
