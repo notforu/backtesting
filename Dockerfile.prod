@@ -20,8 +20,8 @@ RUN npm run build
 # ============================================================
 FROM node:20-alpine
 
-# Install PM2 globally for process management
-RUN npm install -g pm2
+# Install PM2 globally for process management and tsx for running scripts
+RUN npm install -g pm2 tsx
 
 WORKDIR /app
 
@@ -35,6 +35,10 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/dist/strategies ./dist/strategies
 COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/tsconfig.json ./
+COPY --from=builder /app/best-configurations ./best-configurations
 
 # Copy PM2 config
 COPY ecosystem.config.cjs ./
