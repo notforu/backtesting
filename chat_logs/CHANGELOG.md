@@ -2,6 +2,20 @@
 
 All significant changes to the backtesting platform are documented here. See individual files in `/chat_logs/` for detailed information on each change.
 
+## 2026-03-01: Fix Chart Real-Time Updates When Session Paused
+
+**File**: `/docs/changelogs/2026-03-01-160000-fix-chart-realtime-when-paused.md`
+
+Fixed paper trading price chart not updating in real-time when session is paused/stopped. Stabilized `endRounded` value in PaperTradingPage to prevent React Query cache key changes on WebSocket ticks. Updated Chart component to use TradingView's `update()` method for incremental candle updates instead of `setData()` which was resetting zoom/scroll position.
+
+**Key fixes**:
+- Chart continues real-time updates regardless of session status (running/paused/stopped)
+- WebSocket ticks no longer trigger React Query refetches
+- Chart zoom/scroll position preserved during updates
+- TradingView `update()` method properly handles new bar appends
+
+---
+
 ## 2026-02-26: Paper Trading System Implementation
 
 **File**: `/chat_logs/2026-02-26-160000-paper-trading-system.md`

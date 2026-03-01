@@ -129,6 +129,11 @@ export class PaperTradingEngine extends EventEmitter {
     this.emitEvent({ type: 'status_change', sessionId: this.sessionId, oldStatus, newStatus: 'running' });
     await paperDb.updatePaperSession(this.sessionId, { status: 'running' });
 
+    // Skip bars that occurred during the pause — only process the latest closed bar.
+    // Clear lastProcessedCandleTs so the next tick treats it as a fresh start
+    // (first-tick logic only processes the last bar, not the full backfill).
+    this.lastProcessedCandleTs.clear();
+
     // Run a tick immediately on resume
     this.scheduleTick(0);
   }
