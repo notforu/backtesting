@@ -15,8 +15,14 @@ declare module 'fastify' {
 const PUBLIC_PREFIXES = ['/api/health', '/api/auth/'];
 
 export async function authHook(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-  // Skip auth for public routes
   const url = request.url.split('?')[0];
+
+  // Only protect /api/ routes — skip auth for static files, SPA fallback, etc.
+  if (!url.startsWith('/api/')) {
+    return;
+  }
+
+  // Skip auth for public API routes
   for (const prefix of PUBLIC_PREFIXES) {
     if (url === prefix.replace(/\/$/, '') || url.startsWith(prefix)) {
       return;
