@@ -58,8 +58,11 @@ export function usePriceStream(params: PriceStreamParams | null): PriceStreamCan
     if (!params) return;
 
     const { exchange, symbol, timeframe } = params;
-    const queryString = new URLSearchParams({ exchange, symbol, timeframe }).toString();
-    const url = `/api/paper-trading/price-stream?${queryString}`;
+    const qs = new URLSearchParams({ exchange, symbol, timeframe });
+    // SSE via fetch can't set custom headers — pass JWT as query param
+    const authToken = localStorage.getItem('auth_token');
+    if (authToken) qs.set('token', authToken);
+    const url = `/api/paper-trading/price-stream?${qs.toString()}`;
 
     const controller = new AbortController();
     abortRef.current = controller;
