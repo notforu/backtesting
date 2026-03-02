@@ -180,6 +180,10 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   usePaperSessionSSE(sessionId);
   const { data: eventsData } = usePaperSessionEvents(sessionId);
 
+  // Auth — must be called before any early returns (rules of hooks)
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const currentUserRole = useAuthStore((s) => s.user?.role);
+
   // Asset tabs for multi-asset sessions
   const [selectedAssetIndex, setSelectedAssetIndex] = useState<number>(-1);
 
@@ -352,8 +356,7 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     controls.stop.isPending;
   const isFutures = session.aggregationConfig?.mode === 'futures';
 
-  const currentUserId = useAuthStore((s) => s.user?.id);
-  const isOwner = session.userId === currentUserId || useAuthStore.getState().user?.role === 'admin';
+  const isOwner = session.userId === currentUserId || currentUserRole === 'admin';
 
   const handleDelete = async () => {
     if (!window.confirm(`Delete session "${session.name}"? This cannot be undone.`)) return;
