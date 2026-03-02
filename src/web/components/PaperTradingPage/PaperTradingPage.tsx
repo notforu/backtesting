@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePaperTradingStore } from '../../stores/paperTradingStore';
+import { useAuthStore } from '../../stores/authStore';
 import {
   usePaperSessions,
   usePaperSession,
@@ -351,6 +352,9 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     controls.stop.isPending;
   const isFutures = session.aggregationConfig?.mode === 'futures';
 
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const isOwner = session.userId === currentUserId || useAuthStore.getState().user?.role === 'admin';
+
   const handleDelete = async () => {
     if (!window.confirm(`Delete session "${session.name}"? This cannot be undone.`)) return;
     await deleteMutation.mutateAsync(sessionId);
@@ -384,47 +388,56 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
             {configDisplayName(session)}
           </p>
         </div>
-        <StatusBadge status={status} />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={status} />
+          {!isOwner && (
+            <span className="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-400">
+              View Only
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Control buttons */}
-      <div className="flex flex-wrap items-center gap-2">
-        {(status === 'stopped' || status === 'error') && (
-          <button onClick={() => controls.start.mutate()} disabled={isPending}
-            className="px-4 py-2 text-sm rounded-lg bg-green-700 hover:bg-green-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium transition-colors">
-            Start
+      {/* Control buttons - only shown to session owner */}
+      {isOwner && (
+        <div className="flex flex-wrap items-center gap-2">
+          {(status === 'stopped' || status === 'error') && (
+            <button onClick={() => controls.start.mutate()} disabled={isPending}
+              className="px-4 py-2 text-sm rounded-lg bg-green-700 hover:bg-green-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium transition-colors">
+              Start
+            </button>
+          )}
+          {status === 'running' && (
+            <button onClick={() => controls.pause.mutate()} disabled={isPending}
+              className="px-4 py-2 text-sm rounded-lg bg-yellow-700 hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium transition-colors">
+              Pause
+            </button>
+          )}
+          {status === 'paused' && (
+            <button onClick={() => controls.resume.mutate()} disabled={isPending}
+              className="px-4 py-2 text-sm rounded-lg bg-green-700 hover:bg-green-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium transition-colors">
+              Resume
+            </button>
+          )}
+          {(status === 'running' || status === 'paused') && (
+            <button onClick={() => controls.stop.mutate()} disabled={isPending}
+              className="px-4 py-2 text-sm rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium transition-colors">
+              Stop
+            </button>
+          )}
+          {status === 'running' && (
+            <button onClick={() => controls.tick.mutate()} disabled={controls.tick.isPending}
+              className="px-4 py-2 text-sm rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-gray-300 font-medium transition-colors"
+              title="Force tick (dev)">
+              Tick
+            </button>
+          )}
+          <button onClick={handleDelete} disabled={deleteMutation.isPending}
+            className="ml-auto px-4 py-2 text-sm rounded-lg border border-red-800 hover:bg-red-900/40 disabled:opacity-50 disabled:cursor-not-allowed text-red-400 font-medium transition-colors">
+            Delete
           </button>
-        )}
-        {status === 'running' && (
-          <button onClick={() => controls.pause.mutate()} disabled={isPending}
-            className="px-4 py-2 text-sm rounded-lg bg-yellow-700 hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium transition-colors">
-            Pause
-          </button>
-        )}
-        {status === 'paused' && (
-          <button onClick={() => controls.resume.mutate()} disabled={isPending}
-            className="px-4 py-2 text-sm rounded-lg bg-green-700 hover:bg-green-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium transition-colors">
-            Resume
-          </button>
-        )}
-        {(status === 'running' || status === 'paused') && (
-          <button onClick={() => controls.stop.mutate()} disabled={isPending}
-            className="px-4 py-2 text-sm rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium transition-colors">
-            Stop
-          </button>
-        )}
-        {status === 'running' && (
-          <button onClick={() => controls.tick.mutate()} disabled={controls.tick.isPending}
-            className="px-4 py-2 text-sm rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-gray-300 font-medium transition-colors"
-            title="Force tick (dev)">
-            Tick
-          </button>
-        )}
-        <button onClick={handleDelete} disabled={deleteMutation.isPending}
-          className="ml-auto px-4 py-2 text-sm rounded-lg border border-red-800 hover:bg-red-900/40 disabled:opacity-50 disabled:cursor-not-allowed text-red-400 font-medium transition-colors">
-          Delete
-        </button>
-      </div>
+        </div>
+      )}
 
       {/* Error banner */}
       {session.errorMessage && (
@@ -458,23 +471,41 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
           <h3 className="text-sm font-semibold text-white mb-3">
             Open Positions ({session.positions.length})
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {session.positions.map((pos) => (
-              <div key={pos.id} className="bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className={`text-xs px-2 py-0.5 rounded ${pos.direction === 'long' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                    {pos.direction === 'long' ? 'Long' : 'Short'}
-                  </span>
-                  <span className="text-sm text-white font-medium truncate">{pos.symbol}</span>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-xs text-gray-400">Entry: {fmtUsd(pos.entryPrice)}</p>
-                  <p className={`text-sm font-medium ${pos.unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {fmtUsd(pos.unrealizedPnl)}
-                  </p>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-400 border-b border-gray-700">
+                  <th className="pb-2 pr-3">Direction</th>
+                  <th className="pb-2 pr-3">Symbol</th>
+                  <th className="pb-2 pr-3">Amount</th>
+                  <th className="pb-2 pr-3">Entry Price</th>
+                  <th className="pb-2 pr-3">Entry Time</th>
+                  <th className="pb-2 pr-3">Unrealized P&amp;L</th>
+                  <th className="pb-2">Funding</th>
+                </tr>
+              </thead>
+              <tbody>
+                {session.positions.map((pos) => (
+                  <tr key={pos.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                    <td className="py-2 pr-3">
+                      <span className={`text-xs px-2 py-0.5 rounded ${pos.direction === 'long' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                        {pos.direction === 'long' ? 'Long' : 'Short'}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-white font-medium">{pos.symbol}</td>
+                    <td className="py-2 pr-3 text-gray-300">{pos.amount.toFixed(6)}</td>
+                    <td className="py-2 pr-3 text-gray-300">{fmtUsd(pos.entryPrice)}</td>
+                    <td className="py-2 pr-3 text-gray-400 text-xs">{new Date(pos.entryTime).toLocaleString()}</td>
+                    <td className={`py-2 pr-3 font-medium ${pos.unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {fmtUsd(pos.unrealizedPnl)}
+                    </td>
+                    <td className={`py-2 ${pos.fundingAccumulated >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {fmtUsd(pos.fundingAccumulated)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

@@ -34,6 +34,7 @@ interface PaperSessionRow {
   error_message: string | null;
   created_at: string;
   updated_at: string;
+  user_id: string | null;
 }
 
 interface PaperPositionRow {
@@ -93,6 +94,7 @@ function rowToSession(row: PaperSessionRow): PaperSession {
     errorMessage: row.error_message,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
+    userId: row.user_id ?? undefined,
   };
 }
 
@@ -148,7 +150,7 @@ function rowToSnapshot(row: PaperEquitySnapshotRow): PaperEquitySnapshot {
  * The caller provides a pre-generated id and the aggregation config snapshot.
  */
 export async function createPaperSession(
-  session: Pick<PaperSession, 'id' | 'name' | 'aggregationConfig' | 'aggregationConfigId' | 'initialCapital'>
+  session: Pick<PaperSession, 'id' | 'name' | 'aggregationConfig' | 'aggregationConfigId' | 'initialCapital'> & { userId?: string }
 ): Promise<PaperSession> {
   const p = getPool();
   const now = Date.now();
@@ -158,8 +160,8 @@ export async function createPaperSession(
      (id, name, aggregation_config, aggregation_config_id, status,
       initial_capital, current_equity, current_cash,
       tick_count, last_tick_at, next_tick_at, error_message,
-      created_at, updated_at)
-     VALUES ($1, $2, $3, $4, 'stopped', $5, $5, $5, 0, NULL, NULL, NULL, $6, $6)
+      created_at, updated_at, user_id)
+     VALUES ($1, $2, $3, $4, 'stopped', $5, $5, $5, 0, NULL, NULL, NULL, $6, $6, $7)
      RETURNING *`,
     [
       session.id,
@@ -168,6 +170,7 @@ export async function createPaperSession(
       session.aggregationConfigId ?? null,
       session.initialCapital,
       now,
+      session.userId ?? null,
     ]
   );
 

@@ -22,14 +22,17 @@
     "quant:cache-candles": "tsx scripts/cache-candles.ts",
     "paper:seed": "npx tsx scripts/seed-paper-test.ts",
     "config:export": "tsx scripts/export-configs.ts",
-    "config:import": "tsx scripts/import-configs.ts"
+    "config:import": "tsx scripts/import-configs.ts",
+    "user:create": "tsx scripts/create-user.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
     "@fastify/static": "^9.0.0",
     "@tanstack/react-query": "^5.90.20",
+    "bcryptjs": "^3.0.3",
     "ccxt": "^4.5.34",
     "fastify": "^5.7.1",
+    "jsonwebtoken": "^9.0.3",
     "lightweight-charts": "^5.1.0",
     "pg": "^8.18.0",
     "react": "^19.2.3",
@@ -43,6 +46,8 @@
     "@eslint/js": "^9.39.2",
     "@playwright/test": "^1.58.0",
     "@tailwindcss/postcss": "^4.1.18",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.0.10",
     "@types/pg": "^8.16.0",
     "@types/react": "^19.2.9",

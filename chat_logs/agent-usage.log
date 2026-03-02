@@ -3,6 +3,7 @@
 Track agent invocations to understand token consumption patterns.
 Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-03-01 16:23] fullstack-dev (sonnet) - Create scripts/deploy-hetzner.sh deployment script for Hetzner VDS
+[2026-03-02 12:00] fe-dev (sonnet) - Implement frontend authentication (login page, auth store, API client auth headers) and enhance paper trading position display
 [2026-03-01 12:22] be-dev (sonnet) - Improve API error responses for paper trading routes with structured error codes
 [2026-03-01 00:00] be-dev (sonnet) - Add @fastify/static to serve dist/web/ frontend in production with SPA fallback
 [2026-02-26 16:05] docs-writer (haiku) - Create changelog for paper trading system implementation (115 tests, full engine, UI, API, production Docker stack)
@@ -735,3 +736,11 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-03-02 15:30] be-dev (sonnet) - Paper trading auto-resume + persistent event log backend
 [2026-03-02 15:30] fe-dev (sonnet) - Paper trading event log frontend UI
 [2026-03-02 15:35] docs-writer (haiku) - Changelog for auto-resume + event log
+[2026-03-02 15:35] commit (haiku) - paper trading auto-resume and persistent event log
+[2026-03-02 16:00] be-dev (sonnet) - Implement JWT-based authentication system (migration, auth module, routes, server integration)
+[2026-03-02 09:15] be-dev (sonnet) - Implement JWT auth backend: migration, auth module, routes, server integration, CLI script
+[2026-03-02 09:15] fe-dev (sonnet) - Implement frontend auth: store, login page, API client headers, position display enhancement
+[2026-03-02 16:17] fe-dev (sonnet) - Add owner-only control buttons to paper trading session detail view
+[2026-03-02 16:18] be-dev (sonnet) - Add ownership-based access control to paper trading sessions
+[2026-03-02 16:19] be-dev (sonnet) - Add session ownership checks to paper trading routes
+[2026-03-02 16:19] fe-dev (sonnet) - Hide action buttons for non-owner users

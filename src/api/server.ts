@@ -22,6 +22,8 @@ import { priceStreamRoutes } from './routes/price-stream.js';
 import { configExportRoutes } from './routes/config-export.js';
 import { initDb, closeDb } from '../data/db.js';
 import { sessionManager } from '../paper-trading/session-manager.js';
+import { ensureRootUser, authHook } from '../auth/index.js';
+import { authRoutes } from './routes/auth.js';
 
 const fastify = Fastify({
   logger: {
@@ -37,6 +39,12 @@ await fastify.register(cors, {
 // Initialize database connection (run migrations)
 await initDb();
 
+// Ensure root user has the correct password hash (uses ROOT_PASSWORD env var, default: "admin")
+await ensureRootUser();
+
+// Register global auth hook before routes
+fastify.addHook('onRequest', authHook);
+
 // Restore any paper trading sessions that were running at last shutdown
 await sessionManager.restoreActiveSessions();
 
@@ -50,6 +58,7 @@ fastify.get('/api/health', async () => {
 });
 
 // Register routes
+await fastify.register(authRoutes);
 await fastify.register(backtestRoutes);
 await fastify.register(strategyRoutes);
 await fastify.register(candleRoutes);

@@ -22,6 +22,8 @@ import { runAdhocAggregation } from './api/client';
 import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult, type BacktestSummary, type Timeframe } from './types';
 import { PaperTradingPage } from './components/PaperTradingPage';
 import { usePaperTradingStore } from './stores/paperTradingStore';
+import { useAuthStore } from './stores/authStore';
+import { LoginPage } from './components/LoginPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +54,8 @@ function AppContent() {
   const { setRunning, setResult, setError } = useBacktestStore();
   const { scanResults } = useScannerStore();
   const { activePage, setActivePage } = usePaperTradingStore();
+  const authUser = useAuthStore((s) => s.user);
+  const authLogout = useAuthStore((s) => s.logout);
   const isPairs = currentResult && isPairsResult(currentResult);
   const showScanner = scanResults.length > 0;
   const [showExplorer, setShowExplorer] = useState(false);
@@ -178,46 +182,61 @@ function AppContent() {
             </nav>
           </div>
 
-          {/* Status indicator + actions (only show in backtesting mode) */}
-          {activePage === 'backtesting' && (
-            <div className="flex items-center gap-4 text-sm">
-              {currentResult && (
-                <span className="text-gray-400">
-                  Last run:{' '}
-                  <span className="text-white">
-                    {currentResult.config.strategyName}
-                  </span>{' '}
-                  on{' '}
-                  <span className="text-white">
-                    {isPairs
-                      ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
-                      : (currentResult as BacktestResult).config.symbol}
+          <div className="flex items-center gap-4">
+            {/* Status indicator + actions (only show in backtesting mode) */}
+            {activePage === 'backtesting' && (
+              <div className="flex items-center gap-4 text-sm">
+                {currentResult && (
+                  <span className="text-gray-400">
+                    Last run:{' '}
+                    <span className="text-white">
+                      {currentResult.config.strategyName}
+                    </span>{' '}
+                    on{' '}
+                    <span className="text-white">
+                      {isPairs
+                        ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
+                        : (currentResult as BacktestResult).config.symbol}
+                    </span>
                   </span>
-                </span>
-              )}
-              {currentResult && currentResult.config.params && Object.keys(currentResult.config.params).length > 0 && (
+                )}
+                {currentResult && currentResult.config.params && Object.keys(currentResult.config.params).length > 0 && (
+                  <button
+                    onClick={() => setShowParamsModal(true)}
+                    className="px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Params
+                  </button>
+                )}
                 <button
-                  onClick={() => setShowParamsModal(true)}
+                  onClick={() => setShowExplorer(true)}
                   className="px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors flex items-center gap-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
                   </svg>
-                  Params
+                  Explore Runs
                 </button>
-              )}
+              </div>
+            )}
+
+            {/* User info - always visible */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-400">
+                {authUser?.username}
+              </span>
               <button
-                onClick={() => setShowExplorer(true)}
-                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-600 hover:border-gray-500 rounded-lg transition-colors flex items-center gap-2"
+                onClick={() => authLogout()}
+                className="px-2 py-1 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                </svg>
-                Explore Runs
+                Logout
               </button>
             </div>
-          )}
+          </div>
         </div>
       </header>
 
@@ -713,6 +732,16 @@ function AppContent() {
 }
 
 function App() {
+  const { isAuthenticated, loadFromStorage } = useAuthStore();
+
+  useEffect(() => {
+    loadFromStorage();
+  }, [loadFromStorage]);
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <OptimizerModal />

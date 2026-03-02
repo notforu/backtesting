@@ -22,6 +22,7 @@ export interface PaperSession {
   errorMessage: string | null;
   createdAt: number;
   updatedAt: number;
+  userId?: string;  // owner of the session (optional for backward compat)
 }
 
 export interface PaperPosition {

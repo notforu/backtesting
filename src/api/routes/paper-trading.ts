@@ -55,6 +55,13 @@ const EventsQuerySchema = z.object({
 // ============================================================================
 
 export async function paperTradingRoutes(fastify: FastifyInstance) {
+  /** Returns true if the current user owns the session (or is admin) */
+  function isOwner(request: FastifyRequest, session: { userId?: string }): boolean {
+    if (!request.user) return false;
+    if (request.user.role === 'admin') return true;
+    return request.user.userId === session.userId;
+  }
+
   // --------------------------------------------------------------------------
   // POST /api/paper-trading/sessions — create session
   // --------------------------------------------------------------------------
@@ -187,6 +194,7 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
         aggregationConfig,
         aggregationConfigId,
         initialCapital: parsed.initialCapital,
+        userId: request.user?.userId,
       });
 
       return reply.status(201).send(session);
@@ -270,6 +278,13 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
           });
         }
 
+        if (!isOwner(request, session)) {
+          return reply.status(403).send({
+            error: 'Only the session owner can perform this action',
+            code: 'FORBIDDEN',
+          });
+        }
+
         await sessionManager.deleteSession(request.params.id);
         return reply.status(200).send({ message: `Session "${request.params.id}" deleted` });
       } catch (error) {
@@ -298,6 +313,13 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
             error: `Session "${request.params.id}" not found`,
             code: 'SESSION_NOT_FOUND',
             sessionId: request.params.id,
+          });
+        }
+
+        if (!isOwner(request, session)) {
+          return reply.status(403).send({
+            error: 'Only the session owner can perform this action',
+            code: 'FORBIDDEN',
           });
         }
 
@@ -341,6 +363,13 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
           });
         }
 
+        if (!isOwner(request, session)) {
+          return reply.status(403).send({
+            error: 'Only the session owner can perform this action',
+            code: 'FORBIDDEN',
+          });
+        }
+
         if (session.status !== 'running') {
           return reply.status(409).send({
             error: `Session "${request.params.id}" is not running (current status: ${session.status})`,
@@ -378,6 +407,13 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
             error: `Session "${request.params.id}" not found`,
             code: 'SESSION_NOT_FOUND',
             sessionId: request.params.id,
+          });
+        }
+
+        if (!isOwner(request, session)) {
+          return reply.status(403).send({
+            error: 'Only the session owner can perform this action',
+            code: 'FORBIDDEN',
           });
         }
 
@@ -419,6 +455,13 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
             error: `Session "${request.params.id}" not found`,
             code: 'SESSION_NOT_FOUND',
             sessionId: request.params.id,
+          });
+        }
+
+        if (!isOwner(request, session)) {
+          return reply.status(403).send({
+            error: 'Only the session owner can perform this action',
+            code: 'FORBIDDEN',
           });
         }
 
@@ -608,6 +651,22 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
       '/api/paper-trading/sessions/:id/tick',
       async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
         try {
+          const session = await getPaperSession(request.params.id);
+          if (!session) {
+            return reply.status(404).send({
+              error: `Session "${request.params.id}" not found`,
+              code: 'SESSION_NOT_FOUND',
+              sessionId: request.params.id,
+            });
+          }
+
+          if (!isOwner(request, session)) {
+            return reply.status(403).send({
+              error: 'Only the session owner can perform this action',
+              code: 'FORBIDDEN',
+            });
+          }
+
           const result = await sessionManager.forceTick(request.params.id);
           return reply.status(200).send(result);
         } catch (error) {

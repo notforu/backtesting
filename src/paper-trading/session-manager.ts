@@ -39,6 +39,7 @@ export class SessionManager {
     aggregationConfig: AggregateBacktestConfig;
     aggregationConfigId?: string;
     initialCapital?: number;
+    userId?: string;
   }): Promise<PaperSession> {
     const id = uuidv4();
     // Prefer explicit initialCapital override; fall back to config's value
@@ -50,6 +51,7 @@ export class SessionManager {
       aggregationConfig: params.aggregationConfig,
       aggregationConfigId: params.aggregationConfigId ?? null,
       initialCapital: capital,
+      userId: params.userId,
     });
 
     return session;

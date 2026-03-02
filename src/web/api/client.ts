@@ -64,12 +64,26 @@ async function apiFetch<T>(
     (headers as Record<string, string>)['Content-Type'] = 'application/json';
   }
 
+  // Inject auth token
+  const authToken = localStorage.getItem('auth_token');
+  if (authToken) {
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
+  }
+
   const response = await fetch(url, {
     ...options,
     headers,
   });
 
   if (!response.ok) {
+    // Handle 401 - clear auth and reload
+    if (response.status === 401) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      window.location.reload();
+      throw new ApiClientError('Authentication required', 401);
+    }
+
     let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
     let details: unknown;
 
@@ -799,6 +813,30 @@ export async function healthCheck(): Promise<HealthResponse> {
 }
 
 // ============================================================================
+// Auth Endpoints
+// ============================================================================
+
+export async function login(username: string, password: string): Promise<{ token: string; user: { id: string; username: string; role: string } }> {
+  // Don't use apiFetch here because login shouldn't have auth header check
+  const response = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new ApiClientError((data as { error?: string }).error || 'Login failed', response.status);
+  }
+
+  return response.json();
+}
+
+export async function getCurrentUser(): Promise<{ id: string; username: string; role: string }> {
+  return apiFetch<{ id: string; username: string; role: string }>('/auth/me');
+}
+
+// ============================================================================
 // Paper Trading Endpoints
 // ============================================================================
 
@@ -862,7 +900,8 @@ export function subscribePaperSession(
   onEvent: (event: PaperTradingEvent) => void,
   onError?: (error: Error) => void,
 ): () => void {
-  const url = `${API_BASE}/paper-trading/sessions/${sessionId}/stream`;
+  const authToken = localStorage.getItem('auth_token');
+  const url = `${API_BASE}/paper-trading/sessions/${sessionId}/stream${authToken ? `?token=${authToken}` : ''}`;
   let abortController: AbortController | null = new AbortController();
 
   (async () => {
