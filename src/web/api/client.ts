@@ -31,6 +31,7 @@ import type {
   PaperEquitySnapshot,
   PaperTradingEvent,
   CreatePaperSessionRequest,
+  PaperSessionEventsResponse,
 } from '../types';
 
 const API_BASE = '/api';
@@ -846,6 +847,10 @@ export async function getPaperEquity(id: string): Promise<PaperEquitySnapshot[]>
 
 export async function forcePaperTick(id: string): Promise<unknown> {
   return apiFetch<unknown>(`/paper-trading/sessions/${id}/tick`, { method: 'POST' });
+}
+
+export async function getPaperSessionEvents(id: string, limit = 100, offset = 0): Promise<PaperSessionEventsResponse> {
+  return apiFetch<PaperSessionEventsResponse>(`/paper-trading/sessions/${id}/events?limit=${limit}&offset=${offset}`);
 }
 
 /**

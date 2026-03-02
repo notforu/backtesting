@@ -727,3 +727,11 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-03-01 14:15] docs-writer (haiku) - Create changelog for config import/export feature
 [2026-03-01 16:26] fe-dev (sonnet) - Completed export/import UI implementation (Phase 4)
 [2026-03-01 13:38] docs-writer (haiku) - Changelog for import/export configs + fix prod strategies
+[2026-03-01 16:52] commit (haiku) - configuration import/export and production strategy loading fix
+[2026-03-01 17:13] commit (haiku) - clean up best-configurations and fix build script
+[2026-03-02 00:00] commit (haiku) - Fix missing endDate prop on Chart component in paper trading
+[2026-03-02 04:01] be-dev (sonnet) - Implement paper trading auto-resume on startup and persistent event log
+[2026-03-02 10:15] fe-dev (sonnet) - Add Paper Trading Event Log section to session detail page
+[2026-03-02 15:30] be-dev (sonnet) - Paper trading auto-resume + persistent event log backend
+[2026-03-02 15:30] fe-dev (sonnet) - Paper trading event log frontend UI
+[2026-03-02 15:35] docs-writer (haiku) - Changelog for auto-resume + event log

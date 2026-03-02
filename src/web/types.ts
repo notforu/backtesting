@@ -625,3 +625,19 @@ export interface CreatePaperSessionRequest {
   backtestRunId?: string;
   initialCapital?: number;
 }
+
+export interface PaperSessionEvent {
+  id: number;
+  sessionId: string;
+  type: string;
+  message: string;
+  details: Record<string, unknown> | null;
+  createdAt: number;
+}
+
+export interface PaperSessionEventsResponse {
+  events: PaperSessionEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+}

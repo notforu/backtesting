@@ -91,22 +91,8 @@ export class SessionManager {
       engine = new PaperTradingEngine(session);
       this.engines.set(sessionId, engine);
 
-      // Forward all paper-events to registered SSE listeners and Telegram
-      engine.on('paper-event', (event: PaperTradingEvent) => {
-        const listeners = this.eventListeners.get(sessionId);
-        if (listeners) {
-          for (const listener of listeners) {
-            try {
-              listener(event);
-            } catch (err) {
-              console.error(`[SessionManager] Listener error for session ${sessionId}:`, err);
-            }
-          }
-        }
-
-        // Forward to Telegram (if configured)
-        this.handleTelegramNotification(event, session.name);
-      });
+      // Forward all paper-events to registered SSE listeners, Telegram, and event log
+      this.registerEngineEventHandlers(engine, sessionId, session.name);
     }
 
     await engine.start();
@@ -149,20 +135,8 @@ export class SessionManager {
       engine = new PaperTradingEngine(session);
       this.engines.set(sessionId, engine);
 
-      // Forward events to SSE listeners and Telegram
-      engine.on('paper-event', (event: PaperTradingEvent) => {
-        const listeners = this.eventListeners.get(sessionId);
-        if (listeners) {
-          for (const listener of listeners) {
-            try {
-              listener(event);
-            } catch (err) {
-              console.error(`[SessionManager] Listener error for session ${sessionId}:`, err);
-            }
-          }
-        }
-        this.handleTelegramNotification(event, session.name);
-      });
+      // Forward events to SSE listeners, Telegram, and event log
+      this.registerEngineEventHandlers(engine, sessionId, session.name);
 
       // Schedule daily summary if Telegram configured
       if (TelegramNotifier.isConfigured()) {
@@ -301,19 +275,16 @@ export class SessionManager {
       this.clearDailySummaryTimer(sessionId);
     }
 
-    const promises: Promise<void>[] = [];
     for (const [sessionId, engine] of this.engines) {
-      promises.push(
-        engine.pause().catch(err => {
-          console.error(
-            `[SessionManager] Error pausing engine ${sessionId}:`,
-            err,
-          );
-        }),
-      );
+      try {
+        engine.shutdownCleanup();
+      } catch (err) {
+        console.error(
+          `[SessionManager] Error cleaning up engine ${sessionId}:`,
+          err,
+        );
+      }
     }
-
-    await Promise.all(promises);
     this.engines.clear();
     this.eventListeners.clear();
   }
@@ -335,6 +306,111 @@ export class SessionManager {
   /** Number of sessions currently loaded into memory (running or paused). */
   get activeCount(): number {
     return this.engines.size;
+  }
+
+  // --------------------------------------------------------------------------
+  // Engine event handler wiring (private)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Wire up event forwarding for an engine:
+   * - Forward to SSE listeners
+   * - Forward to Telegram
+   * - Persist to event log DB
+   */
+  private registerEngineEventHandlers(
+    engine: PaperTradingEngine,
+    sessionId: string,
+    sessionName: string,
+  ): void {
+    engine.on('paper-event', (event: PaperTradingEvent) => {
+      // Forward to SSE listeners
+      const listeners = this.eventListeners.get(sessionId);
+      if (listeners) {
+        for (const listener of listeners) {
+          try {
+            listener(event);
+          } catch (err) {
+            console.error(`[SessionManager] Listener error for session ${sessionId}:`, err);
+          }
+        }
+      }
+
+      // Forward to Telegram
+      this.handleTelegramNotification(event, sessionName);
+
+      // Persist to event log
+      this.persistEvent(event, sessionName);
+    });
+  }
+
+  /**
+   * Format and persist a paper trading event to the database.
+   * Fire-and-forget — errors are logged but never thrown.
+   */
+  private persistEvent(event: PaperTradingEvent, sessionName: string): void {
+    // Skip noisy events
+    if (event.type === 'equity_update' || event.type === 'tick_complete') return;
+
+    let type: string = event.type;
+    let message: string;
+    let details: Record<string, unknown> | null = null;
+
+    switch (event.type) {
+      case 'trade_opened': {
+        const t = event.trade;
+        const dir = t.action === 'open_long' ? 'long' : 'short';
+        const sym = t.symbol.replace('/USDT:USDT', '').replace('/USDT', '');
+        message = `Opened ${dir} ${sym} — ${t.amount.toFixed(4)} @ $${t.price.toFixed(2)}`;
+        details = { tradeId: t.id, symbol: t.symbol, action: t.action, price: t.price, amount: t.amount };
+        break;
+      }
+      case 'trade_closed': {
+        const t = event.trade;
+        const dir = t.action === 'close_long' ? 'long' : 'short';
+        const sym = t.symbol.replace('/USDT:USDT', '').replace('/USDT', '');
+        const pnlStr = t.pnl != null ? `$${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}` : 'N/A';
+        const pctStr = t.pnlPercent != null ? `(${t.pnlPercent >= 0 ? '+' : ''}${t.pnlPercent.toFixed(2)}%)` : '';
+        message = `Closed ${dir} ${sym} — PnL: ${pnlStr} ${pctStr}`.trim();
+        details = { tradeId: t.id, symbol: t.symbol, action: t.action, price: t.price, amount: t.amount, pnl: t.pnl, pnlPercent: t.pnlPercent };
+        break;
+      }
+      case 'funding_payment': {
+        const sym = event.symbol.replace('/USDT:USDT', '').replace('/USDT', '');
+        const sign = event.amount >= 0 ? '+' : '';
+        message = `Funding payment: ${sym} ${sign}$${event.amount.toFixed(4)}`;
+        details = { symbol: event.symbol, amount: event.amount, equity: event.equity };
+        break;
+      }
+      case 'error': {
+        message = `Error: ${event.message}`;
+        details = { error: event.message };
+        break;
+      }
+      case 'status_change': {
+        message = `Status: ${event.oldStatus} → ${event.newStatus}`;
+        details = { oldStatus: event.oldStatus, newStatus: event.newStatus };
+        break;
+      }
+      case 'retry': {
+        const nextAt = new Date(event.nextRetryAt).toISOString();
+        message = `Retry ${event.retryCount}: ${event.error} (next at ${nextAt})`;
+        type = 'retry';
+        details = { retryCount: event.retryCount, nextRetryAt: event.nextRetryAt, error: event.error };
+        break;
+      }
+      default:
+        return;
+    }
+
+    paperDb.savePaperSessionEvent({
+      sessionId: event.sessionId,
+      type,
+      message,
+      details,
+    }).catch(err => {
+      console.error(`[SessionManager] Failed to persist event for ${sessionName}:`, err);
+    });
   }
 
   // --------------------------------------------------------------------------

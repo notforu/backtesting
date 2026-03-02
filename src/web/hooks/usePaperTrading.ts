@@ -17,6 +17,7 @@ import {
   getPaperEquity,
   forcePaperTick,
   subscribePaperSession,
+  getPaperSessionEvents,
 } from '../api/client';
 import type { PaperTradingEvent, CreatePaperSessionRequest } from '../types';
 
@@ -25,6 +26,7 @@ const SESSIONS_KEY = ['paper-sessions'] as const;
 const sessionKey = (id: string) => ['paper-session', id] as const;
 const tradesKey = (id: string) => ['paper-trades', id] as const;
 const equityKey = (id: string) => ['paper-equity', id] as const;
+const eventsKey = (id: string) => ['paper-events', id] as const;
 
 export function usePaperSessions() {
   return useQuery({
@@ -64,6 +66,15 @@ export function usePaperEquity(id: string | null) {
     queryKey: equityKey(id ?? ''),
     queryFn: () => getPaperEquity(id!),
     enabled: !!id,
+  });
+}
+
+export function usePaperSessionEvents(id: string | null) {
+  return useQuery({
+    queryKey: eventsKey(id ?? ''),
+    queryFn: () => getPaperSessionEvents(id!, 100, 0),
+    enabled: !!id,
+    refetchInterval: 30000, // Refresh every 30s
   });
 }
 
@@ -140,10 +151,15 @@ export function usePaperSessionSSE(sessionId: string | null) {
           queryClient.invalidateQueries({ queryKey: sessionKey(sessionId) });
           queryClient.invalidateQueries({ queryKey: tradesKey(sessionId) });
           queryClient.invalidateQueries({ queryKey: equityKey(sessionId) });
+          queryClient.invalidateQueries({ queryKey: eventsKey(sessionId) });
           break;
         case 'status_change':
           queryClient.invalidateQueries({ queryKey: sessionKey(sessionId) });
           queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
+          queryClient.invalidateQueries({ queryKey: eventsKey(sessionId) });
+          break;
+        case 'error':
+          queryClient.invalidateQueries({ queryKey: eventsKey(sessionId) });
           break;
         default:
           break;

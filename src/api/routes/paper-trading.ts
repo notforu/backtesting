@@ -12,7 +12,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z, ZodError } from 'zod';
 import { sessionManager } from '../../paper-trading/session-manager.js';
 import { getAggregationConfig, getBacktestRun } from '../../data/db.js';
-import { getPaperSession, listPaperSessions, getPaperPositions, getPaperTrades, getPaperEquitySnapshots } from '../../paper-trading/db.js';
+import { getPaperSession, listPaperSessions, getPaperPositions, getPaperTrades, getPaperEquitySnapshots, getPaperSessionEvents } from '../../paper-trading/db.js';
 import type { AggregateBacktestConfig } from '../../core/signal-types.js';
 
 // ============================================================================
@@ -42,6 +42,11 @@ const CreateSessionSchema = z
 
 const TradesQuerySchema = z.object({
   limit: z.string().transform(Number).pipe(z.number().int().positive()).optional().default(50),
+  offset: z.string().transform(Number).pipe(z.number().int().min(0)).optional().default(0),
+});
+
+const EventsQuerySchema = z.object({
+  limit: z.string().transform(Number).pipe(z.number().int().positive()).optional().default(100),
   offset: z.string().transform(Number).pipe(z.number().int().min(0)).optional().default(0),
 });
 
@@ -469,6 +474,45 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
           return reply.status(400).send({ error: 'Validation error', details: error.issues });
         }
         fastify.log.error({ err: error, msg: 'Error fetching paper trading trades' });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return reply.status(500).send({
+          error: message,
+          code: 'INTERNAL_ERROR',
+          sessionId: request.params.id,
+          timestamp: Date.now(),
+        });
+      }
+    }
+  );
+
+  // --------------------------------------------------------------------------
+  // GET /api/paper-trading/sessions/:id/events?limit=100&offset=0 — session events
+  // --------------------------------------------------------------------------
+  fastify.get(
+    '/api/paper-trading/sessions/:id/events',
+    async (
+      request: FastifyRequest<{ Params: { id: string }; Querystring: Record<string, string> }>,
+      reply: FastifyReply
+    ) => {
+      try {
+        const query = EventsQuerySchema.parse(request.query);
+
+        const session = await getPaperSession(request.params.id);
+        if (!session) {
+          return reply.status(404).send({
+            error: `Session "${request.params.id}" not found`,
+            code: 'SESSION_NOT_FOUND',
+            sessionId: request.params.id,
+          });
+        }
+
+        const { events, total } = await getPaperSessionEvents(request.params.id, query.limit, query.offset);
+        return reply.status(200).send({ events, total, limit: query.limit, offset: query.offset });
+      } catch (error) {
+        if (error instanceof ZodError) {
+          return reply.status(400).send({ error: 'Validation error', details: error.issues });
+        }
+        fastify.log.error({ err: error, msg: 'Error fetching paper session events' });
         const message = error instanceof Error ? error.message : 'Unknown error';
         return reply.status(500).send({
           error: message,

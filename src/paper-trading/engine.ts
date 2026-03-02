@@ -212,6 +212,18 @@ export class PaperTradingEngine extends EventEmitter {
   }
 
   /**
+   * Cleanup for server shutdown — clears timers without touching DB.
+   * Leaves DB status as 'running' so restoreActiveSessions() can restart on next boot.
+   */
+  shutdownCleanup(): void {
+    if (this.tickTimer) {
+      clearTimeout(this.tickTimer);
+      this.tickTimer = null;
+    }
+    this._status = 'stopped'; // local only, no DB write
+  }
+
+  /**
    * Force a single tick immediately. Useful for dev/testing without waiting for
    * the candle close timer. Does not schedule the next tick.
    */

@@ -464,3 +464,81 @@ export async function getPaperEquitySnapshots(
 
   return rows.map(rowToSnapshot);
 }
+
+// ============================================================================
+// Session Event Operations
+// ============================================================================
+
+export interface PaperSessionEventRow {
+  id: number;
+  session_id: string;
+  type: string;
+  message: string;
+  details: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface PaperSessionEvent {
+  id: number;
+  sessionId: string;
+  type: string;
+  message: string;
+  details: Record<string, unknown> | null;
+  createdAt: number;
+}
+
+function rowToEvent(row: PaperSessionEventRow): PaperSessionEvent {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    type: row.type,
+    message: row.message,
+    details: row.details,
+    createdAt: Number(row.created_at),
+  };
+}
+
+/**
+ * Save a paper session event (trade, error, status change, etc.).
+ * Fire-and-forget — callers should not await this.
+ */
+export async function savePaperSessionEvent(event: {
+  sessionId: string;
+  type: string;
+  message: string;
+  details?: Record<string, unknown> | null;
+}): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `INSERT INTO paper_session_events (session_id, type, message, details, created_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [event.sessionId, event.type, event.message, event.details ? JSON.stringify(event.details) : null, Date.now()]
+  );
+}
+
+/**
+ * Get events for a session with pagination (most recent first).
+ */
+export async function getPaperSessionEvents(
+  sessionId: string,
+  limit: number = 100,
+  offset: number = 0,
+): Promise<{ events: PaperSessionEvent[]; total: number }> {
+  const p = getPool();
+
+  const countResult = await p.query<{ count: string }>(
+    'SELECT COUNT(*) FROM paper_session_events WHERE session_id = $1',
+    [sessionId],
+  );
+  const total = Number(countResult.rows[0].count);
+
+  const { rows } = await p.query<PaperSessionEventRow>(
+    `SELECT * FROM paper_session_events
+     WHERE session_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [sessionId, limit, offset],
+  );
+
+  return { events: rows.map(rowToEvent), total };
+}
