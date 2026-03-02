@@ -554,6 +554,7 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
                   exchange={activeAsset!.exchange}
                   symbol={activeAsset!.symbol}
                   startDate={session.createdAt}
+                  endDate={Date.now()}
                   sessionEvents={sessionEvents}
                 />
               ) : (
