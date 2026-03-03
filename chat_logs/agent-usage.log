@@ -46,3 +46,5 @@
 [2026-03-03 20:30] Explore (sonnet) - Find existing engine/portfolio tests (150+ tests found)
 [2026-03-03 20:45] qa (sonnet) - Add 6 capital invariant tests for many-asset no-double-spending scenarios
 [2026-03-03 21:00] qa (sonnet) - Add 12 capital invariant + allocation enforcement tests (all 50 pass)
+[2026-03-03 19:45] commit (haiku) - two logical commits for FR V2 research and capital invariant tests
+[2026-03-03 22:00] be-dev (sonnet) - Convert fr-v2-top-configs-export.json to BacktestConfigExportFile format as fr-v2-import.json

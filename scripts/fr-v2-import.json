@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "exportedAt": "2026-03-03T00:00:00Z",
+  "environment": "dev-research",
+  "configs": [
+    {
+      "type": "aggregation",
+      "name": "V2 LowDD Focus SS",
+      "allocationMode": "single_strongest",
+      "maxPositions": 1,
+      "startDate": "2024-01-01",
+      "endDate": "2026-03-01",
+      "initialCapital": 10000,
+      "exchange": "bybit",
+      "mode": "futures",
+      "subStrategies": [
+        { "strategyName": "funding-rate-spike-v2", "symbol": "LDO/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "DOGE/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ARB/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ICP/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "COMP/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "TRX/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "XLM/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" }
+      ],
+      "originalMetrics": {
+        "sharpeRatio": 2.08,
+        "totalReturnPercent": 291.6,
+        "maxDrawdownPercent": 8.3
+      }
+    },
+    {
+      "type": "aggregation",
+      "name": "UltraLowDD+ICP 5-asset SS",
+      "allocationMode": "single_strongest",
+      "maxPositions": 1,
+      "startDate": "2024-01-01",
+      "endDate": "2026-03-01",
+      "initialCapital": 10000,
+      "exchange": "bybit",
+      "mode": "futures",
+      "subStrategies": [
+        { "strategyName": "funding-rate-spike-v2", "symbol": "LDO/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "DOGE/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ARB/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "TRX/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ICP/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" }
+      ],
+      "originalMetrics": {
+        "sharpeRatio": 1.95,
+        "totalReturnPercent": 199.1,
+        "maxDrawdownPercent": 10.0
+      }
+    },
+    {
+      "type": "aggregation",
+      "name": "LDO+DOGE Duo SS",
+      "allocationMode": "single_strongest",
+      "maxPositions": 1,
+      "startDate": "2024-01-01",
+      "endDate": "2026-03-01",
+      "initialCapital": 10000,
+      "exchange": "bybit",
+      "mode": "futures",
+      "subStrategies": [
+        { "strategyName": "funding-rate-spike-v2", "symbol": "LDO/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "DOGE/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" }
+      ],
+      "originalMetrics": {
+        "sharpeRatio": 1.94,
+        "totalReturnPercent": 141.3,
+        "maxDrawdownPercent": 9.9
+      }
+    },
+    {
+      "type": "aggregation",
+      "name": "UltraLowDD 4-asset TopN2",
+      "allocationMode": "top_n",
+      "maxPositions": 2,
+      "startDate": "2024-01-01",
+      "endDate": "2026-03-01",
+      "initialCapital": 10000,
+      "exchange": "bybit",
+      "mode": "futures",
+      "subStrategies": [
+        { "strategyName": "funding-rate-spike-v2", "symbol": "LDO/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "DOGE/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ARB/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "TRX/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" }
+      ],
+      "originalMetrics": {
+        "sharpeRatio": 1.84,
+        "totalReturnPercent": 152.1,
+        "maxDrawdownPercent": 9.9
+      }
+    },
+    {
+      "type": "aggregation",
+      "name": "LDO+ARB+DOGE Trio SS",
+      "allocationMode": "single_strongest",
+      "maxPositions": 1,
+      "startDate": "2024-01-01",
+      "endDate": "2026-03-01",
+      "initialCapital": 10000,
+      "exchange": "bybit",
+      "mode": "futures",
+      "subStrategies": [
+        { "strategyName": "funding-rate-spike-v2", "symbol": "LDO/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ARB/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "DOGE/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" }
+      ],
+      "originalMetrics": {
+        "sharpeRatio": 1.80,
+        "totalReturnPercent": 148.3,
+        "maxDrawdownPercent": 9.9
+      }
+    },
+    {
+      "type": "aggregation",
+      "name": "UltraLowDD 4-asset SS",
+      "allocationMode": "single_strongest",
+      "maxPositions": 1,
+      "startDate": "2024-01-01",
+      "endDate": "2026-03-01",
+      "initialCapital": 10000,
+      "exchange": "bybit",
+      "mode": "futures",
+      "subStrategies": [
+        { "strategyName": "funding-rate-spike-v2", "symbol": "LDO/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "DOGE/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ARB/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "TRX/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" }
+      ],
+      "originalMetrics": {
+        "sharpeRatio": 1.78,
+        "totalReturnPercent": 139.7,
+        "maxDrawdownPercent": 9.9
+      }
+    },
+    {
+      "type": "aggregation",
+      "name": "LowDD+Disc MixedTF SS",
+      "allocationMode": "single_strongest",
+      "maxPositions": 1,
+      "startDate": "2024-01-01",
+      "endDate": "2026-03-01",
+      "initialCapital": 10000,
+      "exchange": "bybit",
+      "mode": "futures",
+      "subStrategies": [
+        { "strategyName": "funding-rate-spike-v2", "symbol": "LDO/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "DOGE/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ARB/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ICP/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "COMP/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "TRX/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "XLM/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "RPL/USDT:USDT", "timeframe": "1h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ENS/USDT:USDT", "timeframe": "1h", "params": {}, "exchange": "bybit" }
+      ],
+      "originalMetrics": {
+        "sharpeRatio": 1.30,
+        "totalReturnPercent": 804.4,
+        "maxDrawdownPercent": 9.3
+      }
+    },
+    {
+      "type": "aggregation",
+      "name": "LowDD+Disc MixedTF TopN3",
+      "allocationMode": "top_n",
+      "maxPositions": 3,
+      "startDate": "2024-01-01",
+      "endDate": "2026-03-01",
+      "initialCapital": 10000,
+      "exchange": "bybit",
+      "mode": "futures",
+      "subStrategies": [
+        { "strategyName": "funding-rate-spike-v2", "symbol": "LDO/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "DOGE/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ARB/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ICP/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "COMP/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "TRX/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "XLM/USDT:USDT", "timeframe": "4h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "RPL/USDT:USDT", "timeframe": "1h", "params": {}, "exchange": "bybit" },
+        { "strategyName": "funding-rate-spike-v2", "symbol": "ENS/USDT:USDT", "timeframe": "1h", "params": {}, "exchange": "bybit" }
+      ],
+      "originalMetrics": {
+        "sharpeRatio": 1.33,
+        "totalReturnPercent": 809.1,
+        "maxDrawdownPercent": 19.1
+      }
+    }
+  ]
+}

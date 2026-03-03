@@ -304,6 +304,38 @@ After each session, update `/chat_logs/` with:
 - Open questions or blockers
 - Next steps
 
+## Production Server
+
+- **Host**: `5.223.56.226` (Singapore)
+- **SSH**: `ssh claude@5.223.56.226` (key already authorized)
+- **Project dir**: `/root/backtesting/` (docker-compose lives here)
+- **Docker containers**: `backtesting-api-1` (app), `backtesting-nginx-1`, `backtesting-postgres-1`
+- **DB**: `postgresql://backtesting:l6TvgOW6XNqSd1n3Uq5eFJiZ@postgres:5432/backtesting`
+- **Compose**: `/root/backtesting/docker-compose.prod.yml` with `.env.prod`
+- **Data volume**: `/var/lib/docker/volumes/backtesting_apidata/_data` → `/app/data` in container
+
+### Deployment
+
+**To deploy: push to GitHub and wait for the GitHub Action to complete.** You are authorized to push.
+
+```bash
+git push origin main   # Push changes
+# Then wait for GitHub Action to finish (auto-deploys to prod)
+```
+
+Do NOT manually rebuild Docker or run git pull on the server. The GitHub Action handles everything.
+
+### Running scripts on prod
+
+```bash
+# Execute inside the API container:
+ssh claude@5.223.56.226 "docker exec backtesting-api-1 npx tsx scripts/SCRIPT_NAME.ts --args"
+
+# Copy files into the container:
+scp file.json claude@5.223.56.226:/tmp/
+ssh claude@5.223.56.226 "docker cp /tmp/file.json backtesting-api-1:/app/data/"
+```
+
 ## ⚠️ Known Issues & Gotchas
 
 ### Docker Development Issue (CRITICAL)
