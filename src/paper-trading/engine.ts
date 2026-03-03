@@ -98,6 +98,13 @@ export class PaperTradingEngine extends EventEmitter {
     this.fetcher = new LiveDataFetcher();
     this.tickCount = session.tickCount;
     this.lastTickAt = session.lastTickAt;
+
+    // Initialize status from DB so event log shows correct transitions
+    // (e.g. "paused → running" instead of "stopped → running" after server restart)
+    const dbStatus = session.status as typeof this._status;
+    if (dbStatus === 'paused' || dbStatus === 'error') {
+      this._status = dbStatus;
+    }
   }
 
   get status(): string {
