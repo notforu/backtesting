@@ -76,11 +76,14 @@ async function apiFetch<T>(
   });
 
   if (!response.ok) {
-    // Handle 401 - clear auth and reload
+    // Handle 401 - clear auth and reload (only if user was previously authenticated)
     if (response.status === 401) {
+      const wasAuthenticated = !!localStorage.getItem('auth_token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
-      window.location.reload();
+      if (wasAuthenticated) {
+        window.location.reload();
+      }
       throw new ApiClientError('Authentication required', 401);
     }
 

@@ -774,9 +774,11 @@ function App() {
     loadFromStorage();
   }, [loadFromStorage]);
 
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
   return (
     <QueryClientProvider client={queryClient}>
-      <OptimizerModal />
+      {isAuthenticated && <OptimizerModal />}
       <AppContent />
     </QueryClientProvider>
   );
