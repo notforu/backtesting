@@ -97,6 +97,15 @@ const ALL29 = [
   'XRP', 'PENDLE', 'WLD', 'NEAR', 'DOGE', 'WIF', 'OP', 'ATOM', 'INJ',
 ];
 
+// New V2 scan discoveries (Sharpe > 0.5)
+const V2_DISCOVERIES = ['RPL', 'ENS', 'ARB', 'TIA', 'APT', 'COMP', 'JTO', 'BCH'];
+
+// Extended top performers: original V2 Top7 + top 3 discoveries
+const V2_EXTENDED_TOP10 = ['LDO', 'DOGE', 'IMX', 'ICP', 'XLM', 'GRT', 'NEAR', 'RPL', 'ENS', 'ARB'];
+
+// Low-drawdown portfolio (MaxDD < 10% in scan)
+const V2_LOW_DD = ['LDO', 'DOGE', 'ARB', 'ICP', 'COMP', 'TRX', 'XLM'];
+
 // ---------------------------------------------------------------------------
 // Config type
 // ---------------------------------------------------------------------------
@@ -274,6 +283,119 @@ const CONFIGS: ExploreConfig[] = [
     allocationMode: 'top_n',
     maxPositions: 8,
     subStrategies: subs(ALL29, '4h'),
+  },
+
+  // -------------------------------------------------------------------------
+  // 21-26. Tournament: V1 Tops vs V2 Tops vs Hybrid (Experiment 1)
+  // -------------------------------------------------------------------------
+  {
+    name: 'V1 Tops+MANA NoTF 4h SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs(['ADA', 'DOT', 'ATOM', 'ETC', 'MANA'], '4h', { useTrendFilter: false }),
+  },
+  {
+    name: 'V1 Tops+MANA NoTF 1h SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs(['ADA', 'DOT', 'ATOM', 'ETC', 'MANA'], '1h', { useTrendFilter: false }),
+  },
+  {
+    name: 'V1 Tops MixedTF NoTF SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [
+      fr('ADA', '1h', { useTrendFilter: false }),
+      ...subs(['DOT', 'ATOM', 'ETC', 'MANA'], '4h', { useTrendFilter: false }),
+    ],
+  },
+  {
+    name: 'V1+V2 Hybrid MixedTF SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [
+      fr('ADA', '1h', { useTrendFilter: false }),
+      ...subs(['DOT', 'ATOM'], '4h', { useTrendFilter: false }),
+      ...subs(['LDO', 'DOGE', 'IMX'], '4h'),
+    ],
+  },
+  {
+    name: 'Top10 Mixed TF4h SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [
+      ...subs(['ADA', 'DOT', 'ATOM', 'ETC', 'MANA'], '4h', { useTrendFilter: false }),
+      ...subs(['LDO', 'DOGE', 'IMX', 'ICP', 'XLM'], '4h'),
+    ],
+  },
+  {
+    name: 'Top10 Mixed TF4h TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: [
+      ...subs(['ADA', 'DOT', 'ATOM', 'ETC', 'MANA'], '4h', { useTrendFilter: false }),
+      ...subs(['LDO', 'DOGE', 'IMX', 'ICP', 'XLM'], '4h'),
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // 27-32. Expanded Universe with V2 Scan Discoveries (Experiment 2)
+  // -------------------------------------------------------------------------
+  {
+    name: 'V2 Extended Top10 Mixed SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [
+      ...subs(['LDO', 'DOGE', 'IMX', 'ICP', 'XLM', 'GRT', 'NEAR', 'ARB'], '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+  {
+    name: 'V2 Extended Top10 Mixed TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: [
+      ...subs(['LDO', 'DOGE', 'IMX', 'ICP', 'XLM', 'GRT', 'NEAR', 'ARB'], '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+  {
+    name: 'V2 Extended Top10 Mixed TopN5',
+    allocationMode: 'top_n',
+    maxPositions: 5,
+    subStrategies: [
+      ...subs(['LDO', 'DOGE', 'IMX', 'ICP', 'XLM', 'GRT', 'NEAR', 'ARB'], '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+  {
+    name: 'V2 Full16 Best-TF SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [
+      ...subs(['LDO', 'DOGE', 'ARB', 'IMX', 'ICP', 'XLM', 'GRT', 'NEAR', 'COMP', 'BCH', 'TRX', 'APT', 'TIA', 'JTO'], '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+  {
+    name: 'V2 Full16 Best-TF TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: [
+      ...subs(['LDO', 'DOGE', 'ARB', 'IMX', 'ICP', 'XLM', 'GRT', 'NEAR', 'COMP', 'BCH', 'TRX', 'APT', 'TIA', 'JTO'], '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+  {
+    name: 'V2 LowDD Focus SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs(['LDO', 'DOGE', 'ARB', 'ICP', 'COMP', 'TRX', 'XLM'], '4h'),
   },
 ];
 
