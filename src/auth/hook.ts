@@ -14,6 +14,23 @@ declare module 'fastify' {
 
 const PUBLIC_PREFIXES = ['/api/health', '/api/auth/'];
 
+// Routes that allow unauthenticated GET requests (read-only public access).
+// POST, DELETE, PATCH on these routes still require authentication.
+const PUBLIC_GET_PREFIXES = ['/api/paper-trading/', '/api/paper-trading'];
+
+/**
+ * Extract the bearer token from request headers or query params.
+ * Returns undefined if no token is present.
+ */
+function extractToken(request: FastifyRequest): string | undefined {
+  const authHeader = request.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.slice(7);
+  }
+  const queryToken = (request.query as Record<string, string>)?.token;
+  return queryToken || undefined;
+}
+
 export async function authHook(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const url = request.url.split('?')[0];
 
@@ -29,21 +46,27 @@ export async function authHook(request: FastifyRequest, reply: FastifyReply): Pr
     }
   }
 
-  // Extract token from header or query param
-  let token: string | undefined;
-
-  const authHeader = request.headers.authorization;
-  if (authHeader?.startsWith('Bearer ')) {
-    token = authHeader.slice(7);
-  }
-
-  if (!token) {
-    // Fallback: query param (for SSE endpoints)
-    const queryToken = (request.query as Record<string, string>)?.token;
-    if (queryToken) {
-      token = queryToken;
+  // Allow unauthenticated GET requests to public-read routes.
+  // Still try to attach user from token if present (e.g. for ownership checks).
+  if (request.method === 'GET') {
+    for (const prefix of PUBLIC_GET_PREFIXES) {
+      if (url === prefix.replace(/\/$/, '') || url.startsWith(prefix)) {
+        const token = extractToken(request);
+        if (token) {
+          try {
+            const payload = verifyToken(token);
+            request.user = { userId: payload.userId, username: payload.username, role: payload.role };
+          } catch {
+            // Invalid token on public GET — continue without user
+          }
+        }
+        return;
+      }
     }
   }
+
+  // Extract token from header or query param
+  const token = extractToken(request);
 
   if (!token) {
     return reply.status(401).send({ error: 'Authentication required', code: 'AUTH_REQUIRED' });

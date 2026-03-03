@@ -3,6 +3,7 @@
 Track agent invocations to understand token consumption patterns.
 Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-03-01 16:23] fullstack-dev (sonnet) - Create scripts/deploy-hetzner.sh deployment script for Hetzner VDS
+[2026-03-03 00:00] fe-dev (sonnet) - Four paper trading frontend fixes: longer chart period, public view, remove asset tabs, always show trades section
 [2026-03-02 12:00] fe-dev (sonnet) - Implement frontend authentication (login page, auth store, API client auth headers) and enhance paper trading position display
 [2026-03-01 12:22] be-dev (sonnet) - Improve API error responses for paper trading routes with structured error codes
 [2026-03-01 00:00] be-dev (sonnet) - Add @fastify/static to serve dist/web/ frontend in production with SPA fallback
@@ -751,3 +752,4 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-03-02 17:10] be-dev (sonnet) - Fix paper trading session auto-restore on container restart: persist paused status in shutdownAll() and restore both running+paused sessions in restoreActiveSessions()
 [2026-03-02 17:10] be-dev (sonnet) - Fix session restore: shutdownAll persists paused to DB, restoreActiveSessions includes paused sessions
 [2026-03-02 17:10] fullstack-dev (sonnet) - Add persistent Docker logging with rotation to docker-compose.prod.yml
+[2026-03-03 03:03] be-dev (sonnet) - Three paper trading fixes: cache FR to DB, funding income on closed trades, make read endpoints public

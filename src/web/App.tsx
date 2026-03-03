@@ -54,8 +54,10 @@ function AppContent() {
   const { setRunning, setResult, setError } = useBacktestStore();
   const { scanResults } = useScannerStore();
   const { activePage, setActivePage } = usePaperTradingStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authUser = useAuthStore((s) => s.user);
   const authLogout = useAuthStore((s) => s.logout);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const isPairs = currentResult && isPairsResult(currentResult);
   const showScanner = scanResults.length > 0;
   const [showExplorer, setShowExplorer] = useState(false);
@@ -101,6 +103,13 @@ function AppContent() {
       aggregationName: (currentResult as any).aggregationName ?? undefined,
     };
   }, [currentResult, selectedBacktestId, isPairs]);
+
+  // If not authenticated, force paper-trading page (backtesting requires auth)
+  useEffect(() => {
+    if (!isAuthenticated && activePage === 'backtesting') {
+      setActivePage('paper-trading');
+    }
+  }, [isAuthenticated, activePage, setActivePage]);
 
   // Reset selected asset when result changes
   useEffect(() => {
@@ -159,16 +168,18 @@ function AppContent() {
 
             {/* Page navigation */}
             <nav className="flex items-center gap-1">
-              <button
-                onClick={() => setActivePage('backtesting')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  activePage === 'backtesting'
-                    ? 'bg-primary-600 text-white'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                }`}
-              >
-                Backtesting
-              </button>
+              {isAuthenticated && (
+                <button
+                  onClick={() => setActivePage('backtesting')}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                    activePage === 'backtesting'
+                      ? 'bg-primary-600 text-white'
+                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+                >
+                  Backtesting
+                </button>
+              )}
               <button
                 onClick={() => setActivePage('paper-trading')}
                 className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
@@ -224,18 +235,27 @@ function AppContent() {
               </div>
             )}
 
-            {/* User info - always visible */}
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-400">
-                {authUser?.username}
-              </span>
+            {/* User info / login */}
+            {isAuthenticated ? (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-400">
+                  {authUser?.username}
+                </span>
+                <button
+                  onClick={() => authLogout()}
+                  className="px-2 py-1 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded transition-colors"
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={() => authLogout()}
-                className="px-2 py-1 text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded transition-colors"
+                onClick={() => setShowLoginModal(true)}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-500 rounded-lg transition-colors"
               >
-                Logout
+                Login
               </button>
-            </div>
+            )}
           </div>
         </div>
       </header>
@@ -679,6 +699,22 @@ function AppContent() {
         selectedId={selectedBacktestId}
       />
 
+      {/* Login modal — shown when unauthenticated user clicks Login */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
+          <div className="relative">
+            <button
+              onClick={() => setShowLoginModal(false)}
+              className="absolute -top-3 -right-3 w-7 h-7 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-sm font-bold z-10 transition-colors"
+              aria-label="Close login"
+            >
+              ×
+            </button>
+            <LoginPage onSuccess={() => setShowLoginModal(false)} />
+          </div>
+        </div>
+      )}
+
       {/* Run Params Modal — view/edit params for the current loaded run */}
       {showParamsModal && currentRunSummary && (
         <RunParamsModal
@@ -732,15 +768,11 @@ function AppContent() {
 }
 
 function App() {
-  const { isAuthenticated, loadFromStorage } = useAuthStore();
+  const { loadFromStorage } = useAuthStore();
 
   useEffect(() => {
     loadFromStorage();
   }, [loadFromStorage]);
-
-  if (!isAuthenticated) {
-    return <LoginPage />;
-  }
 
   return (
     <QueryClientProvider client={queryClient}>

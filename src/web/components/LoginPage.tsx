@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { login as apiLogin } from '../api/client';
 
-export function LoginPage() {
+export function LoginPage({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -17,6 +17,7 @@ export function LoginPage() {
     try {
       const result = await apiLogin(username, password);
       authLogin(result.token, result.user);
+      onSuccess?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -25,7 +26,7 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+    <div className={onSuccess ? undefined : 'min-h-screen bg-gray-900 flex items-center justify-center'}>
       <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 w-full max-w-sm">
         <div className="flex items-center justify-center gap-3 mb-8">
           <svg

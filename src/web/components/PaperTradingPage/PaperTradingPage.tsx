@@ -38,7 +38,8 @@ import { mapPaperTrades, computePaperMetrics } from './paperUtils';
 import type { Timeframe, PaperEquitySnapshot } from '../../types';
 
 // ============================================================================
-// Candle range helper — compute a start date providing ~200 candles of context
+// Candle range helper — compute a start date providing timeframe-appropriate
+// historical context before a reference point.
 // ============================================================================
 
 const TIMEFRAME_MS: Record<string, number> = {
@@ -52,9 +53,21 @@ const TIMEFRAME_MS: Record<string, number> = {
   '1w': 7 * 86_400_000,
 };
 
+// Number of historical candles to display per timeframe
+const CANDLE_COUNT: Record<string, number> = {
+  '1m': 1000,  // ~17 hours
+  '5m': 2000,  // ~1 week
+  '15m': 2000, // ~3 weeks
+  '1h': 2000,  // ~3 months
+  '4h': 2200,  // ~1 year
+  '1d': 730,   // ~2 years
+  '1w': 200,   // ~4 years
+};
+
 function candleStartDate(timeframe: string, referenceTs: number): string {
   const barMs = TIMEFRAME_MS[timeframe] ?? 3_600_000;
-  const bufferMs = barMs * 200; // ~200 candles of context before reference point
+  const count = CANDLE_COUNT[timeframe] ?? 200;
+  const bufferMs = barMs * count;
   const start = new Date(referenceTs - bufferMs);
   return start.toISOString().split('T')[0];
 }
@@ -106,7 +119,6 @@ function computeSessionEvents(
 // Chart tab type definitions
 // ============================================================================
 
-type AssetChartTab = 'price' | 'equity' | 'drawdown';
 type PortfolioChartTab = 'equity' | 'drawdown';
 
 // ============================================================================
@@ -187,8 +199,7 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   // Asset tabs for multi-asset sessions
   const [selectedAssetIndex, setSelectedAssetIndex] = useState<number>(-1);
 
-  // Chart view tabs
-  const [assetChartTab, setAssetChartTab] = useState<AssetChartTab>('price');
+  // Chart view tabs (asset view always shows price; only portfolio has tab selection)
   const [portfolioChartTab, setPortfolioChartTab] = useState<PortfolioChartTab>('equity');
   const [equityResolution, setEquityResolution] = useState<string>('All');
 
@@ -263,17 +274,17 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   } : null;
   const { data: assetCandles } = useCandles(candleParams);
 
-  // Real-time price streaming — connect whenever the price chart tab is visible.
+  // Real-time price streaming — always active when an asset is shown (price chart is always displayed).
   // The session does not need to be running; the WS stream shows live market data regardless.
   const priceStreamParams = useMemo(
     () =>
-      activeAsset && assetChartTab === 'price'
+      activeAsset
         ? { exchange: activeAsset.exchange, symbol: activeAsset.symbol, timeframe: activeAsset.timeframe }
         : null,
     // Use stable primitive deps instead of the activeAsset object reference to avoid
     // spurious reconnects when the parent re-renders and produces a new object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeAsset?.exchange, activeAsset?.symbol, activeAsset?.timeframe, assetChartTab],
+    [activeAsset?.exchange, activeAsset?.symbol, activeAsset?.timeframe],
   );
   const latestStreamCandle = usePriceStream(priceStreamParams);
 
@@ -311,17 +322,9 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   // Reset asset index on session change; reset chart tabs too
   useEffect(() => {
     setSelectedAssetIndex(-1);
-    setAssetChartTab('price');
     setPortfolioChartTab('equity');
     setEquityResolution('All');
   }, [sessionId]);
-
-  // When switching from multi-asset portfolio view to an asset view, default to Price tab
-  useEffect(() => {
-    if (selectedAsset) {
-      setAssetChartTab('price');
-    }
-  }, [selectedAsset?.symbol]);
 
   // Derive session start/pause/resume markers from equity snapshot gaps.
   // Must be before early returns so hooks are always called in the same order.
@@ -363,13 +366,6 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     await deleteMutation.mutateAsync(sessionId);
     setSelectedSession(null);
   };
-
-  // Asset chart tab definitions
-  const assetTabs: { id: AssetChartTab; label: string }[] = [
-    { id: 'price', label: 'Price' },
-    { id: 'equity', label: 'Equity' },
-    { id: 'drawdown', label: 'Drawdown' },
-  ];
 
   // Portfolio chart tab definitions
   const portfolioTabs: { id: PortfolioChartTab; label: string }[] = [
@@ -555,57 +551,25 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
         </div>
 
         {isAssetView ? (
-          <>
-            <ChartTabBar
-              tabs={assetTabs}
-              active={assetChartTab}
-              onChange={setAssetChartTab}
+          // Asset selected: show price chart only, no tabs
+          chartCandles && chartCandles.length > 0 ? (
+            <Chart
+              candles={chartCandles}
+              trades={displayedBacktestTrades}
+              height={450}
+              isFutures={isFutures}
+              backtestTimeframe={activeAsset!.timeframe as Timeframe}
+              exchange={activeAsset!.exchange}
+              symbol={activeAsset!.symbol}
+              startDate={session.createdAt}
+              endDate={Date.now()}
+              sessionEvents={sessionEvents}
             />
-            {(assetChartTab === 'equity' || assetChartTab === 'drawdown') && (
-              <div className="flex items-center gap-1 mb-2">
-                <span className="text-xs text-gray-500 mr-1">Resolution:</span>
-                {['All', '1h', '4h', '1d', '1w'].map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setEquityResolution(r)}
-                    className={`px-2 py-0.5 rounded text-xs ${
-                      equityResolution === r
-                        ? 'bg-gray-600 text-white'
-                        : 'text-gray-500 hover:text-gray-300'
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-            )}
-            {assetChartTab === 'price' && (
-              chartCandles && chartCandles.length > 0 ? (
-                <Chart
-                  candles={chartCandles}
-                  trades={displayedBacktestTrades}
-                  height={450}
-                  isFutures={isFutures}
-                  backtestTimeframe={activeAsset!.timeframe as Timeframe}
-                  exchange={activeAsset!.exchange}
-                  symbol={activeAsset!.symbol}
-                  startDate={session.createdAt}
-                  endDate={Date.now()}
-                  sessionEvents={sessionEvents}
-                />
-              ) : (
-                <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
-                  Loading candles for {activeAsset!.label}...
-                </div>
-              )
-            )}
-            {assetChartTab === 'equity' && (
-              <PaperEquityChart snapshots={resampleSnapshots(snapshots, equityResolution)} height={450} />
-            )}
-            {assetChartTab === 'drawdown' && (
-              <PaperDrawdownChart snapshots={resampleSnapshots(snapshots, equityResolution)} height={450} />
-            )}
-          </>
+          ) : (
+            <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
+              Loading candles for {activeAsset!.label}...
+            </div>
+          )
         ) : (
           <>
             <ChartTabBar
@@ -666,14 +630,14 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
         </section>
       )}
 
-      {/* Trades table */}
-      {displayedPaperTrades.length > 0 && (
-        <section className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-          <h3 className="text-lg font-semibold text-white mb-4">
-            Trades ({displayedPaperTrades.length}
-            {isMultiAsset && selectedAsset && ` - ${selectedAsset.label}`}
-            {isMultiAsset && !selectedAsset && ' - All Assets'})
-          </h3>
+      {/* Trades table — always visible, even with 0 trades */}
+      <section className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+        <h3 className="text-lg font-semibold text-white mb-4">
+          Trades ({displayedPaperTrades.length}
+          {isMultiAsset && selectedAsset && ` - ${selectedAsset.label}`}
+          {isMultiAsset && !selectedAsset && ' - All Assets'})
+        </h3>
+        {displayedPaperTrades.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -737,8 +701,12 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
               </p>
             )}
           </div>
-        </section>
-      )}
+        ) : (
+          <p className="text-gray-500 text-sm">
+            No trades yet{selectedAsset ? ` for ${selectedAsset.label}` : ''}
+          </p>
+        )}
+      </section>
     </div>
   );
 }

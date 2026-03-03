@@ -27,6 +27,7 @@ import type { Strategy } from '../strategy/base.js';
 import { LiveDataFetcher } from './live-data.js';
 import type { PaperSession, PaperTrade, PaperTradingEvent, TickResult } from './types.js';
 import * as paperDb from './db.js';
+import { saveFundingRates } from '../data/db.js';
 import type { Trade } from '../core/types.js';
 
 const WARMUP_CANDLES = 200; // Historical candles for strategy warmup
@@ -511,6 +512,13 @@ export class PaperTradingEngine extends EventEmitter {
         for (const symbol of uniqueSymbols) {
           const fundingRates = await this.fetcher.fetchLatestFundingRates(symbol, 100);
           frCache.set(symbol, fundingRates);
+
+          // Cache funding rates to DB so the chart can display them (fire-and-forget)
+          if (fundingRates.length > 0) {
+            saveFundingRates(fundingRates, this.config.exchange, symbol).catch(err => {
+              console.warn(`[PaperEngine ${this.sessionId}] Failed to cache funding rates for ${symbol}:`, err);
+            });
+          }
         }
       }
 
@@ -632,12 +640,20 @@ export class PaperTradingEngine extends EventEmitter {
           }
         }
 
+        // Load persisted fundingAccumulated from DB position so that when we close
+        // a position the full cross-tick funding income is recorded in the trade
+        // (not just funding from the current tick alone).
+        const persistedFunding = matchingPositions.reduce(
+          (sum, pos) => sum + (pos.fundingAccumulated ?? 0),
+          0,
+        );
+
         this.adapters.push({
           adapter,
           strategy,
           config: subConfig,
           candles: subCandles,
-          accumulatedFunding: 0,
+          accumulatedFunding: persistedFunding,
           newBarsStartIndex,
         });
       }
