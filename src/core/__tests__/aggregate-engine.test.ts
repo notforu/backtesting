@@ -1531,3 +1531,699 @@ describe('Short position round-trip through engine loop', () => {
     expect(sig2!.direction).toBe('short');
   });
 });
+
+// ============================================================================
+// Suite 10: Capital invariant — no double-spending in many-asset scenarios
+// ============================================================================
+
+describe('Capital invariant: many-asset scenarios (no double-spending)', () => {
+  // Helper: create N "always-long" strategies with distinct names
+  function makeAlwaysLongStrategies(count: number): Strategy[] {
+    return Array.from({ length: count }, (_, i): Strategy => ({
+      name: `always-long-${i}`,
+      description: `Always opens long (strategy ${i})`,
+      version: '1.0.0',
+      params: [],
+      onBar(ctx: StrategyContext): void {
+        if (!ctx.longPosition) ctx.openLong(1);
+      },
+    }));
+  }
+
+  // Helper: build N loop adapters that all share the same timestamp baseline
+  function makeAdapters(
+    strategies: Strategy[],
+    prices: number[],
+    base = 1_000_000,
+    intervalMs = 3_600_000,
+  ): LoopAdapter[] {
+    return strategies.map((strat, i) => {
+      const symbol = `ASSET${i}/USDT`;
+      return buildLoopAdapter(strat, symbol, prices, base, intervalMs);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  it('10 adapters simultaneous signals in single_strongest: only 1 position opens', () => {
+    const initialCapital = 10_000;
+    const strategies = makeAlwaysLongStrategies(10);
+    const loopAdapters = makeAdapters(strategies, [100, 200]); // price=100 at bar 0
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    // Run bar 0: all 10 adapters signal long simultaneously
+    const ts0 = loopAdapters[0].candles[0].timestamp;
+    runEngineStep(ts0, loopAdapters, portfolio, 'single_strongest', 1, 0, allTrades, equityTs, equityVals);
+
+    // Exactly 1 position should be open — single_strongest picks only 1 when
+    // no position is held
+    expect(portfolio.getPositionCount()).toBe(1,
+      'single_strongest must open exactly 1 position even when all 10 adapters signal');
+
+    // The position was allocated 90% of capital
+    // cash remaining must be >= 10% of initial (at least the 10% not allocated)
+    expect(portfolio.cash).toBeGreaterThanOrEqual(initialCapital * 0.09);
+
+    // Capital conservation: cash + position mark-to-market ≈ initialCapital
+    // (fee=0, price unchanged since updatePrice sets to bar-0 close = 100)
+    expect(portfolio.equity).toBeCloseTo(initialCapital, 4,
+      'equity must equal initial capital immediately after entry (fee=0, no price change)');
+
+    // Only 1 OPEN_LONG trade was recorded
+    const openTrades = allTrades.filter(t => t.action === 'OPEN_LONG');
+    expect(openTrades).toHaveLength(1);
+  });
+
+  // ---------------------------------------------------------------------------
+  it('10 adapters simultaneous signals in top_n(3): exactly 3 positions, capital split equally', () => {
+    const initialCapital = 10_000;
+    const strategies = makeAlwaysLongStrategies(10);
+    const loopAdapters = makeAdapters(strategies, [100, 200]);
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    const ts0 = loopAdapters[0].candles[0].timestamp;
+    runEngineStep(ts0, loopAdapters, portfolio, 'top_n', 3, 0, allTrades, equityTs, equityVals);
+
+    // Exactly 3 positions should be open
+    expect(portfolio.getPositionCount()).toBe(3,
+      'top_n(3) must open exactly 3 positions when 10 adapters all signal');
+
+    // Capital allocation: cashSnapshot = initialCapital, each slot gets
+    // (initialCapital * 0.9) / 3 = 3_000
+    const expectedPerPosition = (initialCapital * 0.9) / 3;
+
+    const openTrades = allTrades.filter(t => t.action === 'OPEN_LONG');
+    expect(openTrades).toHaveLength(3,
+      'Exactly 3 OPEN_LONG trade records should exist');
+
+    // Each trade's notional (amount * price) should equal expectedPerPosition
+    for (const trade of openTrades) {
+      expect(trade.amount * trade.price).toBeCloseTo(expectedPerPosition, 4,
+        `Each position notional must be ${expectedPerPosition} (capitalSnapshot * 0.9 / 3)`);
+    }
+
+    // Total allocated across all 3 positions ≈ initialCapital * 0.9
+    const totalAllocated = openTrades.reduce((sum, t) => sum + t.amount * t.price, 0);
+    expect(totalAllocated).toBeCloseTo(initialCapital * 0.9, 4,
+      'Total capital allocated across 3 positions must equal 90% of initial capital');
+
+    // Cash must be positive (not negative — no double-spending)
+    expect(portfolio.cash).toBeGreaterThan(0,
+      'Cash must remain positive after allocating to 3 positions');
+
+    // Cash must be approximately 10% of initial (the un-allocated portion)
+    expect(portfolio.cash).toBeCloseTo(initialCapital * 0.1, 4,
+      'Remaining cash must be ~10% of initial capital');
+  });
+
+  // ---------------------------------------------------------------------------
+  it('sequential trades over many bars: cash + positions = equity at every bar', () => {
+    const initialCapital = 20_000;
+    const BASE = 1_000_000;
+    const INTERVAL = 3_600_000;
+
+    // 5 strategies, each triggered at a different price threshold (staggered entries)
+    // Prices oscillate: enter low, exit high
+    const prices = [60, 65, 70, 75, 80, 85, 140, 130, 120, 110,
+                    60, 65, 70, 75, 80, 85, 140, 130, 120, 110];
+
+    const stratA = createLongOnlyStrategy(80);  // enters when price < 80
+    const stratB = createLongOnlyStrategy(75);  // enters when price < 75
+    const stratC = createLongOnlyStrategy(70);  // enters when price < 70
+    const stratD = createLongOnlyStrategy(65);  // enters when price < 65
+    const stratE = createLongOnlyStrategy(62);  // enters when price < 62
+
+    const laA = buildLoopAdapter(stratA, 'A/USDT', prices, BASE, INTERVAL);
+    const laB = buildLoopAdapter(stratB, 'B/USDT', prices, BASE, INTERVAL);
+    const laC = buildLoopAdapter(stratC, 'C/USDT', prices, BASE, INTERVAL);
+    const laD = buildLoopAdapter(stratD, 'D/USDT', prices, BASE, INTERVAL);
+    const laE = buildLoopAdapter(stratE, 'E/USDT', prices, BASE, INTERVAL);
+
+    const loopAdapters = [laA, laB, laC, laD, laE];
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    const allTimestamps = new Set<number>();
+    for (const la of loopAdapters) {
+      for (const c of la.candles) allTimestamps.add(c.timestamp);
+    }
+    const timeline = Array.from(allTimestamps).sort((a, b) => a - b);
+
+    for (const ts of timeline) {
+      runEngineStep(ts, loopAdapters, portfolio, 'top_n', 5, 0, allTrades, equityTs, equityVals);
+
+      // After every bar, verify the capital invariant:
+      // equity = cash + sum(position mark-to-market values)
+      // The portfolio.equity getter already computes this internally, so we
+      // verify it equals the last recorded equity value
+      const lastRecordedEquity = equityVals[equityVals.length - 1];
+      expect(portfolio.equity).toBeCloseTo(lastRecordedEquity, 4,
+        `After bar at ts=${ts}: portfolio.equity must match recorded equity`);
+
+      // Cash must never go negative
+      expect(portfolio.cash).toBeGreaterThanOrEqual(0,
+        `After bar at ts=${ts}: cash must not go negative`);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  it('complete round-trip on 8 symbols sequentially: final cash matches expected PnL', () => {
+    // 8 adapters enter and exit in sequence so they never overlap.
+    // Each one: enters at bar N (price=100), holds, exits at bar N+2 (price=150).
+    // feeRate=0 for clean arithmetic.
+    const initialCapital = 10_000;
+    const BASE = 1_000_000;
+    const INTERVAL = 3_600_000;
+
+    // Build 8 non-overlapping adapters:
+    // Adapter i enters at bar (i*3) and exits at bar (i*3 + 2)
+    // Price pattern per adapter: [100, 120, 150] — open <110, close >120
+    const adapterCount = 8;
+    const allLoopAdapters: LoopAdapter[] = [];
+
+    for (let i = 0; i < adapterCount; i++) {
+      const startTs = BASE + i * 3 * INTERVAL;
+      const strat = createLongOnlyStrategy(110); // opens when price < 110
+      // prices: [100, 120, 150]
+      // bar 0 (startTs): price=100 → opens (< 110)
+      // bar 1 (startTs+INTERVAL): price=120 → holds (not > 130)
+      // bar 2 (startTs+2*INTERVAL): price=150 → closes (> 110+20=130)
+      const candles = makeCandles([100, 120, 150], startTs, INTERVAL);
+      const adapter = new SignalAdapter(strat, `ASSET${i}/USDT`, '1h');
+      adapter.init(candles);
+      const tsMap = new Map<number, number>();
+      candles.forEach((c, idx) => tsMap.set(c.timestamp, idx));
+      allLoopAdapters.push({
+        adapter,
+        symbol: `ASSET${i}/USDT`,
+        candles,
+        timestampToIndex: tsMap,
+        fundingRates: [],
+        accumulatedFunding: 0,
+      });
+    }
+
+    // Collect all timestamps in sorted order
+    const allTimestamps = new Set<number>();
+    for (const la of allLoopAdapters) {
+      for (const c of la.candles) allTimestamps.add(c.timestamp);
+    }
+    const timeline = Array.from(allTimestamps).sort((a, b) => a - b);
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    for (const ts of timeline) {
+      runEngineStep(ts, allLoopAdapters, portfolio, 'top_n', 1, 0, allTrades, equityTs, equityVals);
+    }
+
+    // All positions should be closed by the end
+    expect(portfolio.getPositionCount()).toBe(0,
+      'All 8 positions must be closed after their respective exit bars');
+
+    // Compute expected final cash:
+    // Each trade: enters 90% of available cash at price=100, exits at price=150
+    // PnL per trade = (150-100)/100 * allocatedCapital = 0.5 * allocatedCapital
+    // Note: since trades are sequential and capital compounds, we track manually
+    const closeTrades = allTrades.filter(t => t.action === 'CLOSE_LONG');
+    expect(closeTrades).toHaveLength(adapterCount,
+      `All ${adapterCount} positions must have a corresponding CLOSE_LONG`);
+
+    // Sum of all PnL from close trades (fee=0)
+    const totalPnl = closeTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+
+    // Final cash = initialCapital + totalPnl (no fees, no positions open)
+    expect(portfolio.cash).toBeCloseTo(initialCapital + totalPnl, 4,
+      'Final cash must equal initialCapital + sum(all trade PnL) with no fees');
+
+    // Equity = cash (no open positions)
+    expect(portfolio.equity).toBeCloseTo(portfolio.cash, 4,
+      'With no open positions, equity must equal cash');
+
+    // No phantom capital: final equity > initial (all trades were profitable: 100→150)
+    expect(portfolio.equity).toBeGreaterThan(initialCapital,
+      'All round-trips were profitable (100→150), so final equity must exceed initial capital');
+  });
+
+  // ---------------------------------------------------------------------------
+  it('capital never goes negative during execution with losing trades', () => {
+    const initialCapital = 5_000;
+    const BASE = 1_000_000;
+    const INTERVAL = 3_600_000;
+
+    // 5 adapters that each open long at price=100 and the price then drops to 50.
+    // They will close at price=50 (loss). Use top_n(5) so all enter simultaneously.
+    // Prices: [100, 80, 50, 40] — open < 110 at bar 0, exit > 130 never happens
+    // so we force close manually at the end. But let's use a low exit threshold
+    // so they DO close voluntarily at a loss.
+    const losingStrategies: Strategy[] = Array.from({ length: 5 }, (_, i): Strategy => ({
+      name: `loser-${i}`,
+      description: `Strategy that opens and closes at a loss`,
+      version: '1.0.0',
+      params: [],
+      onBar(ctx: StrategyContext): void {
+        if (ctx.longPosition) {
+          // Exit when price drops below 45 (a loss compared to entry at ~100)
+          if (ctx.currentCandle.close < 45) ctx.closeLong();
+          return;
+        }
+        // Enter when price < 110
+        if (ctx.currentCandle.close < 110) ctx.openLong(1);
+      },
+    }));
+
+    const prices = [100, 80, 50, 40]; // drops to 40 → triggers close < 45
+    const loopAdapters = losingStrategies.map((strat, i) =>
+      buildLoopAdapter(strat, `LOSER${i}/USDT`, prices, BASE, INTERVAL),
+    );
+
+    const allTimestamps = new Set<number>();
+    for (const la of loopAdapters) {
+      for (const c of la.candles) allTimestamps.add(c.timestamp);
+    }
+    const timeline = Array.from(allTimestamps).sort((a, b) => a - b);
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    for (const ts of timeline) {
+      // top_n(5) so all 5 can enter simultaneously
+      runEngineStep(ts, loopAdapters, portfolio, 'top_n', 5, 0, allTrades, equityTs, equityVals);
+
+      // Cash must never be negative
+      expect(portfolio.cash).toBeGreaterThanOrEqual(0,
+        `Cash went negative at ts=${ts}: ${portfolio.cash}`);
+    }
+
+    // After all losing trades close, positions should be 0
+    // (some may still be open if cash is exhausted; the engine skips them)
+    const finalCash = portfolio.cash;
+    expect(finalCash).toBeGreaterThanOrEqual(0,
+      'Final cash must be non-negative even after losing trades');
+
+    // Equity must also be non-negative
+    expect(portfolio.equity).toBeGreaterThanOrEqual(0,
+      'Equity must not go negative');
+  });
+
+  // ---------------------------------------------------------------------------
+  it('equity curve: no single-bar jump exceeds physically possible maximum', () => {
+    // For a long position of size S at price P, the maximum single-bar equity change
+    // is S * (high - low) of that bar.  Our makeCandles helper sets:
+    //   high = close + 5, low = close - 5
+    // So max_jump_per_position = S * 10.
+    //
+    // With 5 adapters in single_strongest mode, only 1 can be open at once,
+    // so max total jump = position_amount * 10.
+    //
+    // If equity jumps by more than this, capital is being double-counted.
+
+    const initialCapital = 10_000;
+    const BASE = 1_000_000;
+    const INTERVAL = 3_600_000;
+
+    // 5 always-long strategies competing in single_strongest
+    const strategies = makeAlwaysLongStrategies(5);
+    // 30 bars of price data: starts at 100, goes up to ~130, back down, etc.
+    const prices: number[] = [];
+    for (let i = 0; i < 30; i++) {
+      // Gentle sine-wave-like pattern: 100 + 30 * sin(i / 5)
+      prices.push(Math.round(100 + 30 * Math.sin(i / 5)));
+    }
+
+    const loopAdapters = makeAdapters(strategies, prices, BASE, INTERVAL);
+
+    const allTimestamps = new Set<number>();
+    for (const la of loopAdapters) {
+      for (const c of la.candles) allTimestamps.add(c.timestamp);
+    }
+    const timeline = Array.from(allTimestamps).sort((a, b) => a - b);
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    for (const ts of timeline) {
+      const equityBefore = portfolio.equity;
+      runEngineStep(ts, loopAdapters, portfolio, 'single_strongest', 1, 0, allTrades, equityTs, equityVals);
+      const equityAfter = portfolio.equity;
+
+      const jump = Math.abs(equityAfter - equityBefore);
+
+      // The bar's candle for each adapter at this timestamp has high = close + 5, low = close - 5
+      // Maximum possible price move per unit = 10 (high - low spread)
+      // Maximum position size = 90% of initial capital / minimum price
+      // We use a generous bound: no single bar can cause equity to jump by
+      // more than initialCapital (a 100% gain or loss in one bar is impossible
+      // with our price patterns and position sizes).
+      const maxPossibleJump = initialCapital;
+      expect(jump).toBeLessThanOrEqual(maxPossibleJump,
+        `Equity jumped by ${jump} at ts=${ts}, which exceeds the maximum possible ` +
+        `${maxPossibleJump}. This indicates double-counting.`);
+    }
+
+    // More specific: with position_size ≈ (10_000 * 0.9) / 100 = 90 units,
+    // max bar move = 10 price units → max equity change = 90 * 10 = 900.
+    // Filter to bars where a position is held and check the tighter bound.
+    const equityChanges: number[] = [];
+    for (let i = 1; i < equityVals.length; i++) {
+      equityChanges.push(Math.abs(equityVals[i] - equityVals[i - 1]));
+    }
+    for (const change of equityChanges) {
+      // Tighter bound: position (90 units) * max spread (10) = 900
+      // Allow 2x for rounding / fee interactions
+      expect(change).toBeLessThanOrEqual(1_800,
+        `Single-bar equity change of ${change} exceeds 1800 (2× physical maximum). ` +
+        `This likely indicates double-counting in capital allocation.`);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  it('10 simultaneous signals with limited balance: total deployed <= available cash', () => {
+    // 10 adapters all signal at price=1000, initial capital=$5,000
+    // With top_n(5): 5 slots, each gets ($5,000 * 0.9) / 5 = $900
+    const initialCapital = 5_000;
+    const strategies = makeAlwaysLongStrategies(10);
+    const loopAdapters = makeAdapters(strategies, [1_000, 1_200]);
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    const ts0 = loopAdapters[0].candles[0].timestamp;
+    runEngineStep(ts0, loopAdapters, portfolio, 'top_n', 5, 0, allTrades, equityTs, equityVals);
+
+    // Exactly 5 positions should be open (not 10)
+    expect(portfolio.getPositionCount()).toBe(5,
+      'top_n(5) must open exactly 5 positions even when 10 adapters all signal');
+
+    const openTrades = allTrades.filter(t => t.action === 'OPEN_LONG');
+    expect(openTrades).toHaveLength(5, 'Exactly 5 OPEN_LONG records must exist');
+
+    // Total notional deployed ≈ $5,000 * 0.9 = $4,500
+    const totalDeployed = openTrades.reduce((sum, t) => sum + t.amount * t.price, 0);
+    expect(totalDeployed).toBeCloseTo(initialCapital * 0.9, 4,
+      'Total notional deployed must equal 90% of initial capital');
+
+    // Cash remaining ≈ $500 (10% not allocated)
+    expect(portfolio.cash).toBeCloseTo(initialCapital * 0.1, 4,
+      'Remaining cash must be ~10% of initial capital');
+    expect(portfolio.cash).toBeGreaterThan(0,
+      'Cash must be positive (no double-spending)');
+
+    // Equity conservation: cash + positions = initial capital (fee=0, same price)
+    expect(portfolio.equity).toBeCloseTo(initialCapital, 4,
+      'Equity must equal initial capital immediately after entry (fee=0, price unchanged)');
+  });
+
+  // ---------------------------------------------------------------------------
+  it('weighted_multi with 10 signals, maxPositions=4: exactly 4 positions, equal split', () => {
+    // 10 adapters all signal with default weight=1.0
+    // weighted_multi with maxPositions=4 → 4 positions, each gets 25% of 90% of capital
+    const initialCapital = 10_000;
+    const strategies = makeAlwaysLongStrategies(10);
+    const loopAdapters = makeAdapters(strategies, [100, 200]);
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    const ts0 = loopAdapters[0].candles[0].timestamp;
+    runEngineStep(ts0, loopAdapters, portfolio, 'weighted_multi', 4, 0, allTrades, equityTs, equityVals);
+
+    // Exactly 4 positions opened
+    expect(portfolio.getPositionCount()).toBe(4,
+      'weighted_multi with maxPositions=4 must open exactly 4 positions');
+
+    const openTrades = allTrades.filter(t => t.action === 'OPEN_LONG');
+    expect(openTrades).toHaveLength(4, 'Exactly 4 OPEN_LONG records must exist');
+
+    // Equal weights → equal split: each gets ($10,000 * 0.9) / 4 = $2,250
+    const expectedPerPosition = (initialCapital * 0.9) / 4;
+    for (const trade of openTrades) {
+      expect(trade.amount * trade.price).toBeCloseTo(expectedPerPosition, 4,
+        `Each position notional must be ~${expectedPerPosition}`);
+    }
+
+    // Total deployed ≈ $9,000
+    const totalDeployed = openTrades.reduce((sum, t) => sum + t.amount * t.price, 0);
+    expect(totalDeployed).toBeCloseTo(initialCapital * 0.9, 4,
+      'Total deployed must equal 90% of initial capital');
+
+    // Cash must remain positive (no double-spending)
+    expect(portfolio.cash).toBeGreaterThan(0, 'Cash must be positive after 4 positions open');
+    expect(portfolio.cash).toBeCloseTo(initialCapital * 0.1, 4,
+      'Remaining cash must be ~10% of initial capital');
+  });
+
+  // ---------------------------------------------------------------------------
+  it('after top_n(3) fills 3 slots at bar 0, bar 1 cannot open more positions', () => {
+    // Bar 0: 10 signals → top_n(3) opens 3 positions
+    // Bar 1: positions from bar 0 are still held (strategy never exits voluntarily)
+    //        New signals arrive from the 7 adapters not yet in position,
+    //        but all 3 slots are already taken → no new positions
+    const initialCapital = 10_000;
+
+    // Strategies that always want to open long and never close
+    const strategies: Strategy[] = Array.from({ length: 10 }, (_, i): Strategy => ({
+      name: `hold-forever-${i}`,
+      description: `Always long, never closes`,
+      version: '1.0.0',
+      params: [],
+      onBar(ctx: StrategyContext): void {
+        if (!ctx.longPosition) ctx.openLong(1);
+        // Intentionally no close logic — holds forever
+      },
+    }));
+    const loopAdapters = makeAdapters(strategies, [100, 110, 120]);
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    const ts0 = loopAdapters[0].candles[0].timestamp;
+    const ts1 = loopAdapters[0].candles[1].timestamp;
+
+    // Bar 0: 3 positions open
+    runEngineStep(ts0, loopAdapters, portfolio, 'top_n', 3, 0, allTrades, equityTs, equityVals);
+    expect(portfolio.getPositionCount()).toBe(3,
+      'After bar 0: exactly 3 positions must be open');
+
+    const openTradesBar0 = allTrades.filter(t => t.action === 'OPEN_LONG');
+    expect(openTradesBar0).toHaveLength(3, 'Exactly 3 OPEN_LONG trades at bar 0');
+
+    // Bar 1: all 3 slots still taken, no new opens possible
+    const tradeCountBefore = allTrades.length;
+    runEngineStep(ts1, loopAdapters, portfolio, 'top_n', 3, 0, allTrades, equityTs, equityVals);
+
+    const newOpenTrades = allTrades.slice(tradeCountBefore).filter(
+      t => t.action === 'OPEN_LONG' || t.action === 'OPEN_SHORT',
+    );
+    expect(newOpenTrades).toHaveLength(0,
+      'No new positions should open at bar 1 when all 3 slots are taken');
+
+    // Position count must still be exactly 3
+    expect(portfolio.getPositionCount()).toBe(3,
+      'Position count must remain at 3 throughout bar 1');
+  });
+
+  // ---------------------------------------------------------------------------
+  it('single_strongest with 15 adapters over 10 bars: position count NEVER exceeds 1', () => {
+    const initialCapital = 10_000;
+    const numBars = 10;
+
+    // 15 always-long strategies that never close voluntarily
+    const strategies: Strategy[] = Array.from({ length: 15 }, (_, i): Strategy => ({
+      name: `always-open-${i}`,
+      description: `Always opens long, never closes`,
+      version: '1.0.0',
+      params: [],
+      onBar(ctx: StrategyContext): void {
+        if (!ctx.longPosition) ctx.openLong(1);
+      },
+    }));
+
+    const prices = Array.from({ length: numBars }, (_, i) => 100 + i * 5); // 100, 105, ..., 145
+    const loopAdapters = makeAdapters(strategies, prices);
+
+    const allTimestamps = new Set<number>();
+    for (const la of loopAdapters) {
+      for (const c of la.candles) allTimestamps.add(c.timestamp);
+    }
+    const timeline = Array.from(allTimestamps).sort((a, b) => a - b);
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    let maxPositionCount = 0;
+
+    for (const ts of timeline) {
+      runEngineStep(ts, loopAdapters, portfolio, 'single_strongest', 1, 0, allTrades, equityTs, equityVals);
+
+      const posCount = portfolio.getPositionCount();
+      if (posCount > maxPositionCount) maxPositionCount = posCount;
+
+      expect(posCount).toBeLessThanOrEqual(1,
+        `After bar at ts=${ts}: position count is ${posCount}, must never exceed 1 in single_strongest mode`);
+    }
+
+    // Confirm that exactly 1 position was opened (the max was 1)
+    expect(maxPositionCount).toBe(1,
+      'single_strongest must have opened exactly 1 position across all 10 bars (15 adapters all signaling)');
+  });
+
+  // ---------------------------------------------------------------------------
+  it('top_n(3) with 8 adapters over 15 bars: position count NEVER exceeds 3, cash never negative', () => {
+    const initialCapital = 15_000;
+
+    // 8 always-long strategies that exit when price rises above their personal threshold
+    // Stagger thresholds so positions open and close at different times
+    const strategies: Strategy[] = Array.from({ length: 8 }, (_, i): Strategy => ({
+      name: `staggered-${i}`,
+      description: `Opens long, exits when price high enough`,
+      version: '1.0.0',
+      params: [],
+      onBar(ctx: StrategyContext): void {
+        if (ctx.longPosition) {
+          // Exit at different price levels (staggered exits)
+          const exitThreshold = 105 + i * 5; // 105, 110, 115, ..., 140
+          if (ctx.currentCandle.close > exitThreshold) ctx.closeLong();
+          return;
+        }
+        // Enter when price < 110
+        if (ctx.currentCandle.close < 110) ctx.openLong(1);
+      },
+    }));
+
+    // Oscillating prices: dip below 110 to trigger entries, spike above exit thresholds
+    // Pattern: low phase (bar 0-4), spike (bar 5-9), low phase again (bar 10-14)
+    const prices: number[] = [
+      100, 102, 104, 106, 108,  // low phase: triggers entries (all < 110)
+      120, 125, 130, 135, 140,  // high phase: triggers exits (various thresholds)
+      100, 102, 104, 106, 108,  // low phase again: re-entries possible
+    ];
+
+    const loopAdapters = makeAdapters(strategies, prices);
+
+    const allTimestamps = new Set<number>();
+    for (const la of loopAdapters) {
+      for (const c of la.candles) allTimestamps.add(c.timestamp);
+    }
+    const timeline = Array.from(allTimestamps).sort((a, b) => a - b);
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    for (const ts of timeline) {
+      runEngineStep(ts, loopAdapters, portfolio, 'top_n', 3, 0, allTrades, equityTs, equityVals);
+
+      const posCount = portfolio.getPositionCount();
+      expect(posCount).toBeLessThanOrEqual(3,
+        `After bar at ts=${ts}: position count is ${posCount}, must never exceed 3`);
+
+      expect(portfolio.cash).toBeGreaterThanOrEqual(0,
+        `After bar at ts=${ts}: cash went negative (${portfolio.cash})`);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  it('accounting invariant: sum(position notionals at current price) + cash = equity at every bar', () => {
+    // 6 adapters in top_n(6) — all can open simultaneously.
+    // Prices: 10 bars; entries at bar 0 (price=100), exits at bar 8 (price=150+).
+    // After EVERY bar we verify: sum of open position notionals + cash = equity.
+    // This is the definitive double-spending check.
+    const initialCapital = 30_000;
+    const numAdapters = 6;
+
+    // Strategy: opens at low price, closes at high price
+    // Use threshold=110: open when price < 110, close when price > 130
+    const strategies: Strategy[] = Array.from({ length: numAdapters }, (_, i): Strategy => ({
+      name: `invariant-check-${i}`,
+      description: `Opens long below 110, closes above 130`,
+      version: '1.0.0',
+      params: [],
+      onBar(ctx: StrategyContext): void {
+        if (ctx.longPosition) {
+          if (ctx.currentCandle.close > 130) ctx.closeLong();
+          return;
+        }
+        if (ctx.currentCandle.close < 110) ctx.openLong(1);
+      },
+    }));
+
+    // 10 bars: open at bars 0-2 (price<110), hold, close at bar 8+ (price>130)
+    const prices = [100, 100, 100, 110, 115, 120, 125, 130, 135, 140];
+    const loopAdapters = makeAdapters(strategies, prices);
+
+    // Build a helper to compute sum of open position notionals at current price
+    function computePositionNotionalSum(): number {
+      let sum = 0;
+      for (const la of loopAdapters) {
+        // Access internal state to get current price and position amount
+        const state = (portfolio as unknown as { _symbols: Map<string, { currentPrice: number; longPosition: { amount: number } | null }> })._symbols.get(la.symbol);
+        if (state?.longPosition) {
+          sum += state.longPosition.amount * state.currentPrice;
+        }
+      }
+      return sum;
+    }
+
+    const allTimestamps = new Set<number>();
+    for (const la of loopAdapters) {
+      for (const c of la.candles) allTimestamps.add(c.timestamp);
+    }
+    const timeline = Array.from(allTimestamps).sort((a, b) => a - b);
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const allTrades: import('../types.js').Trade[] = [];
+    const equityTs: number[] = [];
+    const equityVals: number[] = [];
+
+    for (const ts of timeline) {
+      runEngineStep(ts, loopAdapters, portfolio, 'top_n', numAdapters, 0, allTrades, equityTs, equityVals);
+
+      const positionNotionalSum = computePositionNotionalSum();
+      const reconstructedEquity = portfolio.cash + positionNotionalSum;
+
+      // The portfolio.equity getter computes this same sum internally.
+      // Verify our manual reconstruction matches it exactly.
+      expect(reconstructedEquity).toBeCloseTo(portfolio.equity, 6,
+        `At ts=${ts}: manual reconstruction (cash=${portfolio.cash.toFixed(2)} + ` +
+        `positions=${positionNotionalSum.toFixed(2)}) = ${reconstructedEquity.toFixed(2)} ` +
+        `must equal portfolio.equity=${portfolio.equity.toFixed(2)}`);
+
+      // Also confirm portfolio.equity itself never exceeds initial capital by
+      // more than what's possible from price appreciation (prices at most 140/100 - 1 = 40%).
+      // Max equity = initialCapital * (140/100) = initialCapital * 1.4
+      expect(portfolio.equity).toBeLessThanOrEqual(initialCapital * 1.5,
+        `Equity ${portfolio.equity} must not exceed 150% of initial capital — ` +
+        `if it does, capital has been double-counted`);
+
+      // Cash must remain non-negative
+      expect(portfolio.cash).toBeGreaterThanOrEqual(0,
+        `Cash must not go negative at ts=${ts}`);
+    }
+  });
+});
