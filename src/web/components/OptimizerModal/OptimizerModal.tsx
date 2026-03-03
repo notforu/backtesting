@@ -10,6 +10,7 @@ import {
   useConfigStore,
   useOptimizationStore,
 } from '../../stores/backtestStore';
+import { useAuthStore } from '../../stores/authStore';
 import {
   useAllOptimizations,
   useRunOptimization,
@@ -29,6 +30,7 @@ const OPTIMIZE_FOR_OPTIONS = [
 ] as const;
 
 export function OptimizerModal() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const {
     isOptimizerModalOpen,
     optimizerModalTab,
@@ -222,16 +224,18 @@ export function OptimizerModal() {
     >
       {/* Tabs */}
       <div className="flex gap-2 mb-2 border-b border-gray-700">
-        <button
-          onClick={() => setOptimizerModalTab('setup')}
-          className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-            optimizerModalTab === 'setup'
-              ? 'text-white border-b-2 border-purple-500'
-              : 'text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          Setup
-        </button>
+        {isAuthenticated && (
+          <button
+            onClick={() => setOptimizerModalTab('setup')}
+            className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+              optimizerModalTab === 'setup'
+                ? 'text-white border-b-2 border-purple-500'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            Setup
+          </button>
+        )}
         <button
           onClick={() => setOptimizerModalTab('history')}
           className={`px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -244,8 +248,8 @@ export function OptimizerModal() {
         </button>
       </div>
 
-      {/* Setup Tab */}
-      {optimizerModalTab === 'setup' && (
+      {/* Setup Tab - only for authenticated users */}
+      {isAuthenticated && optimizerModalTab === 'setup' && (
         <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
           {/* Current Configuration (Read-only) */}
           <div className="bg-gray-700/50 rounded p-2">
@@ -707,12 +711,14 @@ export function OptimizerModal() {
                               >
                                 Apply
                               </button>
-                              <button
-                                onClick={() => handleDeleteOptimization(opt.strategyName, opt.symbol, opt.timeframe)}
-                                className="px-1.5 py-0.5 bg-red-600/80 hover:bg-red-500 text-white text-xs rounded font-medium transition-colors"
-                              >
-                                Delete
-                              </button>
+                              {isAuthenticated && (
+                                <button
+                                  onClick={() => handleDeleteOptimization(opt.strategyName, opt.symbol, opt.timeframe)}
+                                  className="px-1.5 py-0.5 bg-red-600/80 hover:bg-red-500 text-white text-xs rounded font-medium transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

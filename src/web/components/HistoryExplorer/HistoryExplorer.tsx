@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getHistory, getHistoryGroups, exportConfigs, type HistoryParams, type BacktestGroup } from '../../api/client';
 import type { BacktestSummary } from '../../types';
 import { ImportConfigModal } from '../ImportConfigModal/ImportConfigModal';
+import { useAuthStore } from '../../stores/authStore';
 
 // ============================================================================
 // Types
@@ -452,6 +453,7 @@ export function HistoryExplorerContent({
   maxHeight,
   className = '',
 }: HistoryExplorerContentProps) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [filters, setFilters] = useState<FilterState>({
     strategy: '', symbol: '', timeframe: '', mode: '', minSharpe: '',
     runType: fixedRunType ?? 'all',
@@ -714,12 +716,14 @@ export function HistoryExplorerContent({
               </button>
             )}
           </div>
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="px-3 py-1 bg-primary-700 hover:bg-primary-600 text-white rounded text-xs font-medium transition-colors"
-          >
-            Import Configs
-          </button>
+          {isAuthenticated && (
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="px-3 py-1 bg-primary-700 hover:bg-primary-600 text-white rounded text-xs font-medium transition-colors"
+            >
+              Import Configs
+            </button>
+          )}
         </div>
       )}
 

@@ -16,7 +16,16 @@ const PUBLIC_PREFIXES = ['/api/health', '/api/auth/'];
 
 // Routes that allow unauthenticated GET requests (read-only public access).
 // POST, DELETE, PATCH on these routes still require authentication.
-const PUBLIC_GET_PREFIXES = ['/api/paper-trading/', '/api/paper-trading', '/api/candles', '/api/funding-rates'];
+const PUBLIC_GET_PREFIXES = [
+  '/api/paper-trading/',
+  '/api/paper-trading',
+  '/api/candles',
+  '/api/funding-rates',
+  '/api/backtest',
+  '/api/strategies',
+  '/api/aggregations',
+  '/api/optimize',
+];
 
 /**
  * Extract the bearer token from request headers or query params.

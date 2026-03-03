@@ -6,9 +6,11 @@
 import { useScannerStore } from '../../stores/scannerStore';
 import { useConfigStore } from '../../stores/backtestStore';
 import { useRunBacktest } from '../../hooks/useBacktest';
+import { useAuthStore } from '../../stores/authStore';
 import type { ScanResultRow } from '../../types';
 
 export function ScannerResults() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { scanResults, isScanning, scanProgress, scanSummary, scanError } = useScannerStore();
   const { setSymbol } = useConfigStore();
   const runBacktestMutation = useRunBacktest();
@@ -23,6 +25,7 @@ export function ScannerResults() {
 
   const handleRowClick = (result: ScanResultRow) => {
     if (result.status === 'error') return;
+    if (!isAuthenticated) return;
     // Set the symbol in config store and run a full backtest
     setSymbol(result.symbol);
     const config = configStore.getConfig();
@@ -46,7 +49,7 @@ export function ScannerResults() {
             </span>
           )}
         </h2>
-        {!isScanning && scanResults.length > 0 && (
+        {isAuthenticated && !isScanning && scanResults.length > 0 && (
           <button
             onClick={() => useScannerStore.getState().clearResults()}
             className="text-xs text-gray-400 hover:text-white transition-colors"
@@ -106,7 +109,7 @@ export function ScannerResults() {
                     onClick={() => handleRowClick(result)}
                     className={`
                       border-b border-gray-700/50 transition-colors
-                      ${isError ? 'opacity-50 cursor-default' : 'hover:bg-gray-700/30 cursor-pointer'}
+                      ${isError || !isAuthenticated ? 'opacity-50 cursor-default' : 'hover:bg-gray-700/30 cursor-pointer'}
                     `}
                   >
                     <td className="py-2 pr-4 text-gray-500">{index + 1}</td>

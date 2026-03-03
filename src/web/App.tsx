@@ -104,13 +104,6 @@ function AppContent() {
     };
   }, [currentResult, selectedBacktestId, isPairs]);
 
-  // If not authenticated, force paper-trading page (backtesting requires auth)
-  useEffect(() => {
-    if (!isAuthenticated && activePage === 'backtesting') {
-      setActivePage('paper-trading');
-    }
-  }, [isAuthenticated, activePage, setActivePage]);
-
   // Reset selected asset when result changes
   useEffect(() => {
     setSelectedAssetIndex(-1);
@@ -168,18 +161,16 @@ function AppContent() {
 
             {/* Page navigation */}
             <nav className="flex items-center gap-1">
-              {isAuthenticated && (
-                <button
-                  onClick={() => setActivePage('backtesting')}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                    activePage === 'backtesting'
-                      ? 'bg-primary-600 text-white'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                  }`}
-                >
-                  Backtesting
-                </button>
-              )}
+              <button
+                onClick={() => setActivePage('backtesting')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  activePage === 'backtesting'
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                }`}
+              >
+                Backtesting
+              </button>
               <button
                 onClick={() => setActivePage('paper-trading')}
                 className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
@@ -774,11 +765,9 @@ function App() {
     loadFromStorage();
   }, [loadFromStorage]);
 
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-
   return (
     <QueryClientProvider client={queryClient}>
-      {isAuthenticated && <OptimizerModal />}
+      <OptimizerModal />
       <AppContent />
     </QueryClientProvider>
   );

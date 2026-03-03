@@ -10,6 +10,7 @@
 
 import { useState, useEffect } from 'react';
 import type { BacktestSummary, SubStrategyConfig, AllocationMode, Timeframe } from '../../types';
+import { useAuthStore } from '../../stores/authStore';
 
 // ============================================================================
 // Types
@@ -254,6 +255,7 @@ function AggregationEditor({
   onClose: () => void;
   isRunning?: boolean;
 }) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const parsed = parseAggParams(params);
   const [topLevel, setTopLevel] = useState<AggTopLevel>(parsed.topLevel);
   const [subStrategies, setSubStrategies] = useState<SubStrategyConfig[]>(parsed.subStrategies);
@@ -395,15 +397,17 @@ function AggregationEditor({
           onClick={onClose}
           className="px-3 py-1.5 text-sm text-gray-400 hover:text-white bg-gray-700 hover:bg-gray-600 rounded transition-colors"
         >
-          Cancel
+          Close
         </button>
-        <button
-          onClick={handleRerun}
-          disabled={isRunning || subStrategies.length === 0}
-          className="px-4 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isRunning ? 'Running...' : 'Load & Run'}
-        </button>
+        {isAuthenticated && (
+          <button
+            onClick={handleRerun}
+            disabled={isRunning || subStrategies.length === 0}
+            className="px-4 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isRunning ? 'Running...' : 'Load & Run'}
+          </button>
+        )}
       </div>
     </>
   );
@@ -424,6 +428,7 @@ function StrategyEditor({
   onClose: () => void;
   isRunning?: boolean;
 }) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [editedParams, setEditedParams] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -518,15 +523,17 @@ function StrategyEditor({
           onClick={onClose}
           className="px-3 py-1.5 text-sm text-gray-400 hover:text-white bg-gray-700 hover:bg-gray-600 rounded transition-colors"
         >
-          Cancel
+          Close
         </button>
-        <button
-          onClick={handleRerun}
-          disabled={isRunning}
-          className="px-4 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isRunning ? 'Running...' : 'Load & Run'}
-        </button>
+        {isAuthenticated && (
+          <button
+            onClick={handleRerun}
+            disabled={isRunning}
+            className="px-4 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isRunning ? 'Running...' : 'Load & Run'}
+          </button>
+        )}
       </div>
     </>
   );
