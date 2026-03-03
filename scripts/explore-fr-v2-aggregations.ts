@@ -106,6 +106,18 @@ const V2_EXTENDED_TOP10 = ['LDO', 'DOGE', 'IMX', 'ICP', 'XLM', 'GRT', 'NEAR', 'R
 // Low-drawdown portfolio (MaxDD < 10% in scan)
 const V2_LOW_DD = ['LDO', 'DOGE', 'ARB', 'ICP', 'COMP', 'TRX', 'XLM'];
 
+// Ultra-low drawdown (MaxDD < 5% individually)
+const ULTRA_LOW_DD = ['LDO', 'DOGE', 'ARB', 'TRX'];
+
+// High Sharpe core (individual Sharpe > 1.0)
+const HIGH_SHARPE = ['LDO', 'DOGE', 'ARB']; // 4h only, all > 1.0 Sharpe
+
+// Funding income focus (highest funding earners)
+const FUNDING_FOCUS = ['TIA', 'COMP', 'RPL', 'JTO'];
+
+// Top 12 profitable V2 assets at best timeframe
+const WIDE12 = ['LDO', 'DOGE', 'ARB', 'IMX', 'ICP', 'XLM', 'GRT', 'TIA', 'APT', 'NEAR', 'COMP', 'BCH'];
+
 // ---------------------------------------------------------------------------
 // Config type
 // ---------------------------------------------------------------------------
@@ -118,7 +130,7 @@ interface ExploreConfig {
 }
 
 // ---------------------------------------------------------------------------
-// All configs to explore (20 total)
+// All configs to explore (47 total)
 // ---------------------------------------------------------------------------
 
 const CONFIGS: ExploreConfig[] = [
@@ -396,6 +408,170 @@ const CONFIGS: ExploreConfig[] = [
     allocationMode: 'single_strongest',
     maxPositions: 1,
     subStrategies: subs(['LDO', 'DOGE', 'ARB', 'ICP', 'COMP', 'TRX', 'XLM'], '4h'),
+  },
+
+  // -------------------------------------------------------------------------
+  // 33-47. New Experiments (Ultra-LowDD, HighSharpe, FundingFocus, Wide)
+  // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // 33-35. Ultra-Low DD Portfolio (individual MaxDD < 5%)
+  // -------------------------------------------------------------------------
+  {
+    name: 'UltraLowDD 4-asset SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs(ULTRA_LOW_DD, '4h'),
+  },
+  {
+    name: 'UltraLowDD 4-asset TopN2',
+    allocationMode: 'top_n',
+    maxPositions: 2,
+    subStrategies: subs(ULTRA_LOW_DD, '4h'),
+  },
+  {
+    name: 'UltraLowDD+ICP 5-asset SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs([...ULTRA_LOW_DD, 'ICP'], '4h'),
+  },
+
+  // -------------------------------------------------------------------------
+  // 36-38. High Sharpe Core + RPL/ENS (mixed TF)
+  // -------------------------------------------------------------------------
+  {
+    name: 'HighSharpe5 MixedTF SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [
+      ...subs(HIGH_SHARPE, '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+  {
+    name: 'HighSharpe5 MixedTF TopN2',
+    allocationMode: 'top_n',
+    maxPositions: 2,
+    subStrategies: [
+      ...subs(HIGH_SHARPE, '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+  {
+    name: 'HighSharpe5 MixedTF TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: [
+      ...subs(HIGH_SHARPE, '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // 39-40. LowDD + RPL/ENS Mixed (expanded LowDD with discoveries)
+  // -------------------------------------------------------------------------
+  {
+    name: 'LowDD+Disc MixedTF SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [
+      ...subs(V2_LOW_DD, '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+  {
+    name: 'LowDD+Disc MixedTF TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: [
+      ...subs(V2_LOW_DD, '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // 41-42. Funding Income Focus
+  // -------------------------------------------------------------------------
+  {
+    name: 'FundingFocus MixedTF SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [
+      fr('TIA', '4h'),
+      fr('COMP', '4h'),
+      fr('JTO', '4h'),
+      fr('LDO', '4h'),
+      fr('RPL', '1h'),
+      fr('PYTH', '1h'),
+    ],
+  },
+  {
+    name: 'FundingFocus MixedTF TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: [
+      fr('TIA', '4h'),
+      fr('COMP', '4h'),
+      fr('JTO', '4h'),
+      fr('LDO', '4h'),
+      fr('RPL', '1h'),
+      fr('PYTH', '1h'),
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // 43-44. Compact Elite (2-3 assets)
+  // -------------------------------------------------------------------------
+  {
+    name: 'LDO+DOGE Duo SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [fr('LDO', '4h'), fr('DOGE', '4h')],
+  },
+  {
+    name: 'LDO+ARB+DOGE Trio SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [fr('LDO', '4h'), fr('ARB', '4h'), fr('DOGE', '4h')],
+  },
+
+  // -------------------------------------------------------------------------
+  // 45-47. Wide Diversified (12 assets at best TF)
+  // -------------------------------------------------------------------------
+  {
+    name: 'Wide12 MixedTF SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [
+      ...subs(WIDE12, '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+  {
+    name: 'Wide12 MixedTF TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: [
+      ...subs(WIDE12, '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
+  },
+  {
+    name: 'Wide12 MixedTF Weighted5',
+    allocationMode: 'weighted_multi',
+    maxPositions: 5,
+    subStrategies: [
+      ...subs(WIDE12, '4h'),
+      fr('RPL', '1h'),
+      fr('ENS', '1h'),
+    ],
   },
 ];
 

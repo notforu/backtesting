@@ -1,3 +1,4 @@
+[2026-03-03 16:05] qa (sonnet) - Add capital invariant tests 7-12 to aggregate-engine.test.ts Suite 10
 [2026-03-03 03:57] fe-dev (sonnet) - Backtesting view-only mode for unauthenticated users
 [2026-03-03 03:57] Explore (sonnet) - Map backtesting UI action buttons for view-only
 [2026-03-03 03:57] docs-writer (haiku) - Create changelog for public backtesting view-only access
@@ -32,3 +33,16 @@
 [2026-03-03 19:00] runner (bash) - Walk-forward test on 7 V2 LowDD Focus symbols (sequential)
 [2026-03-03 19:00] docs-writer (haiku) - Create changelog for V2 LowDD Focus walk-forward validation results
 [2026-03-03 19:00] docs-writer (haiku) - Create changelog for V2 LowDD Focus walk-forward results
+[2026-03-03 20:00] commit (haiku) - FR V2 optimization: two commits for public backtest view and V2 LowDD Focus experiments with WF validation
+[2026-03-03 19:00] commit (haiku) - Commit FR V2 optimization experiments and walk-forward results
+[2026-03-03 14:40] be-dev (sonnet) - Add 15 new aggregation configs (indexes 33-47) to explore-fr-v2-aggregations.ts
+[2026-03-03 19:30] docs-writer (haiku) - Create comprehensive FR V2 research document
+[2026-03-03 19:30] be-dev (sonnet) - Add 15 new aggregation configs (33-47) for asset combo exploration
+[2026-03-03 19:30] runner (bash) - Run aggregation tournament on 15 new configs (33-47)
+[2026-03-03 20:30] be-dev (sonnet) - Create fr-v2-top-configs-export.json with top 8 aggregation configs for prod deployment review
+[2026-03-03 20:00] be-dev (sonnet) - Export top 8 aggregation configs to fr-v2-top-configs-export.json
+[2026-03-03 16:01] qa (sonnet) - Add capital invariant / no double-spending test suite to aggregate-engine.test.ts
+[2026-03-03 20:30] architect (opus) - Audit aggregate engine for double-spending (no bugs found, compounding frequency explanation)
+[2026-03-03 20:30] Explore (sonnet) - Find existing engine/portfolio tests (150+ tests found)
+[2026-03-03 20:45] qa (sonnet) - Add 6 capital invariant tests for many-asset no-double-spending scenarios
+[2026-03-03 21:00] qa (sonnet) - Add 12 capital invariant + allocation enforcement tests (all 50 pass)
