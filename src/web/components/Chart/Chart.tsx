@@ -124,12 +124,17 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
 
   const { data: resolutionCandles, isLoading: isLoadingResolution } = useResolutionCandles(resolutionParams);
 
-  // Fetch funding rates when in futures mode
-  const fundingRateParams = isFutures && exchange && symbol && startDate && endDate ? {
+  // Fetch funding rates when in futures mode — use actual candle range, not just startDate/endDate.
+  // For paper trading, startDate/endDate only covers the session period, but the chart displays
+  // ~200 bars of historical candles before the session start. Using the candle timestamps ensures
+  // the funding rate query covers the full displayed range.
+  const frStartTs = candles.length > 0 ? candles[0].timestamp : startDate;
+  const frEndTs = candles.length > 0 ? candles[candles.length - 1].timestamp : endDate;
+  const fundingRateParams = isFutures && exchange && symbol && frStartTs && frEndTs ? {
     exchange,
     symbol,
-    start: startDate,
-    end: endDate,
+    start: frStartTs,
+    end: frEndTs,
   } : null;
   const { data: fundingRates } = useFundingRates(fundingRateParams);
 

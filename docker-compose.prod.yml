@@ -13,6 +13,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   api:
     build:
@@ -35,6 +40,11 @@ services:
     volumes:
       # Persist logs and backups across container restarts
       - apidata:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "10"
 
   nginx:
     image: nginx:alpine
@@ -49,6 +59,11 @@ services:
       # We extract them from the api image at runtime via a named volume populated
       # in the api service entrypoint. Simpler alternative: proxy everything through
       # the api service (chosen here — see nginx.conf).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   pgdata:

@@ -232,23 +232,26 @@ export class SessionManager {
   // --------------------------------------------------------------------------
 
   /**
-   * Called at server startup: find all sessions that were 'running' at last
-   * shutdown and restart their engines.
+   * Called at server startup: find all sessions that were 'running' or 'paused'
+   * at last shutdown and restore their engines.
    */
   async restoreActiveSessions(): Promise<void> {
     const sessions = await paperDb.listPaperSessions();
-    const runningSessions = sessions.filter(s => s.status === 'running');
-
-    console.log(
-      `[SessionManager] Found ${runningSessions.length} running session(s) to restore`,
+    const restorableSessions = sessions.filter(
+      s => s.status === 'running' || s.status === 'paused',
     );
 
-    for (const session of runningSessions) {
+    console.log(
+      `[SessionManager] Found ${restorableSessions.length} active session(s) to restore`,
+    );
+
+    for (const session of restorableSessions) {
       try {
         console.log(
-          `[SessionManager] Restoring session: ${session.name} (${session.id})`,
+          `[SessionManager] Restoring session: ${session.name} (${session.id}) [was ${session.status}]`,
         );
-        await this.startSession(session.id);
+        // resumeSession handles creating engine from DB and starting it
+        await this.resumeSession(session.id);
       } catch (error) {
         console.error(
           `[SessionManager] Failed to restore session ${session.id}:`,
@@ -277,8 +280,12 @@ export class SessionManager {
       this.clearDailySummaryTimer(sessionId);
     }
 
+    // Persist "paused" status to DB for all active engines so they can be restored on restart
     for (const [sessionId, engine] of this.engines) {
       try {
+        if (engine.status === 'running' || engine.status === 'paused') {
+          await paperDb.updatePaperSession(sessionId, { status: 'paused' });
+        }
         engine.shutdownCleanup();
       } catch (err) {
         console.error(

@@ -744,3 +744,10 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-03-02 16:18] be-dev (sonnet) - Add ownership-based access control to paper trading sessions
 [2026-03-02 16:19] be-dev (sonnet) - Add session ownership checks to paper trading routes
 [2026-03-02 16:19] fe-dev (sonnet) - Hide action buttons for non-owner users
+[2026-03-02 16:45] fe-dev (sonnet) - Fix empty funding rate chart in paper trading by using candle range instead of session date range
+[2026-03-02 16:50] fe-dev (sonnet) - Fix empty funding rate chart: derive FR query range from candle timestamps instead of session dates
+[2026-03-02 16:50] docs-writer (haiku) - Create changelog for funding rate chart fix
+[2026-03-02 00:00] fullstack-dev (sonnet) - Add persistent log rotation to docker-compose.prod.yml for api, nginx, and postgres services
+[2026-03-02 17:10] be-dev (sonnet) - Fix paper trading session auto-restore on container restart: persist paused status in shutdownAll() and restore both running+paused sessions in restoreActiveSessions()
+[2026-03-02 17:10] be-dev (sonnet) - Fix session restore: shutdownAll persists paused to DB, restoreActiveSessions includes paused sessions
+[2026-03-02 17:10] fullstack-dev (sonnet) - Add persistent Docker logging with rotation to docker-compose.prod.yml
