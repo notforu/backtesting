@@ -17,7 +17,7 @@ interface PaperTradingStore {
 export const usePaperTradingStore = create<PaperTradingStore>((set) => ({
   selectedSessionId: null,
   isCreateModalOpen: false,
-  activePage: 'backtesting',
+  activePage: 'paper-trading',
 
   setSelectedSession: (id) => set({ selectedSessionId: id }),
   setCreateModalOpen: (open) => set({ isCreateModalOpen: open }),

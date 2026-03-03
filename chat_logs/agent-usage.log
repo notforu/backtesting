@@ -753,3 +753,18 @@ Format: [TIMESTAMP] AGENT (MODEL) - TASK_SUMMARY
 [2026-03-02 17:10] be-dev (sonnet) - Fix session restore: shutdownAll persists paused to DB, restoreActiveSessions includes paused sessions
 [2026-03-02 17:10] fullstack-dev (sonnet) - Add persistent Docker logging with rotation to docker-compose.prod.yml
 [2026-03-03 03:03] be-dev (sonnet) - Three paper trading fixes: cache FR to DB, funding income on closed trades, make read endpoints public
+[2026-03-03 03:30] main (opus) - Fix public view candles/FR 401 + prod verification
+[2026-03-03 03:48] be-dev (sonnet) - Add backtest/strategies/aggregations/optimize GET prefixes to PUBLIC_GET_PREFIXES in auth hook
+[2026-03-03 03:48] fe-dev (sonnet) - Make Backtesting tab accessible to unauthenticated users in view-only mode
+[2026-03-03 03:57] be-dev (sonnet) - Add backtesting GET endpoints to public prefixes
+[2026-03-03 03:57] fe-dev (sonnet) - Backtesting view-only mode for unauthenticated users
+[2026-03-03 03:57] Explore (sonnet) - Map backtesting UI action buttons for view-only
+[2026-03-03 03:57] docs-writer (haiku) - Create changelog for public backtesting view-only access
+[2026-03-03 05:48] fe-dev (sonnet) - change default activePage from backtesting to paper-trading in paperTradingStore
+[2026-03-03 05:55] fe-dev (sonnet) - auto-select first session in PaperTradingPage when no session is selected
+[2026-03-03 06:10] fe-dev (sonnet) - Create useUrlSync hook for bidirectional URL <-> Zustand state sync
+[2026-03-03 06:20] fe-dev (sonnet) - Integrate useUrlSync into App.tsx with auto-load from URL effect
+[2026-03-03 04:20] fe-dev (sonnet) - Create useUrlSync hook for URL ↔ Zustand sync
+[2026-03-03 04:20] fe-dev (sonnet) - Change default activePage to paper-trading
+[2026-03-03 04:20] fe-dev (sonnet) - Add auto-select first session on PaperTradingPage
+[2026-03-03 04:22] fe-dev (sonnet) - Wire useUrlSync into App.tsx with backtest auto-load

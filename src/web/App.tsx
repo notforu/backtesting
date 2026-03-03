@@ -24,6 +24,7 @@ import { PaperTradingPage } from './components/PaperTradingPage';
 import { usePaperTradingStore } from './stores/paperTradingStore';
 import { useAuthStore } from './stores/authStore';
 import { LoginPage } from './components/LoginPage';
+import { useUrlSync } from './hooks/useUrlSync';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -47,6 +48,7 @@ function isPairsResult(result: unknown): result is PairsBacktestResult {
 
 
 function AppContent() {
+  useUrlSync();
   const { currentResult, selectedBacktestId } = useBacktestStore();
   const { applyHistoryParams } = useConfigStore();
   const { loadBacktest } = useLoadBacktest();
@@ -133,6 +135,15 @@ function AppContent() {
       applyHistoryParams(result);
     }
   };
+
+  // Auto-load backtest when selectedBacktestId is set from URL (e.g. direct link)
+  useEffect(() => {
+    if (selectedBacktestId && !currentResult) {
+      handleSelectRun(selectedBacktestId);
+    }
+    // Only run when selectedBacktestId changes (not when currentResult changes)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBacktestId]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col">

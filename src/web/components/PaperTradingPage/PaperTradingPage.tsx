@@ -772,6 +772,13 @@ export function PaperTradingPage() {
     usePaperTradingStore();
   const { data: sessions, isLoading, error } = usePaperSessions();
 
+  // Auto-select first session when none is selected
+  useEffect(() => {
+    if (!selectedSessionId && !isLoading && sessions && sessions.length > 0) {
+      setSelectedSession(sessions[0].id);
+    }
+  }, [selectedSessionId, isLoading, sessions, setSelectedSession]);
+
   return (
     <div className="flex-1 flex overflow-hidden">
       {/* Left sidebar — session list */}
