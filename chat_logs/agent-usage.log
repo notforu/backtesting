@@ -1,74 +1,30 @@
+[2026-03-06 13:45] docs-writer (haiku) - Create comprehensive HF scalping research final report at /docs/research/2026-03-06-hf-scalping-research-results.md
+[2026-03-06 13:00] docs-writer (haiku) - Changelog for FR regime momentum research conclusion
+[2026-03-06 11:30] be-dev (sonnet) - Fix FR regime momentum: absolute threshold (v2.0), remove percentile-based detection, fix position sizing
+[2026-03-06 11:00] be-dev (sonnet) - Fix FR regime momentum: remove _regimeTraded, add cooldown, fix --exchange=bybit issue
+[2026-03-06 10:00] main (opus) - HF scalping status review, 5m data caching, grid search fr-regime-momentum on LDO/DOGE/RPL
+[2026-03-06 06:30] main (opus) - FR Gradient Momentum cross-validation (5 symbols) and walk-forward testing
+[2026-03-05 23:30] architect (opus) - HF scalping strategy selection, testing plan, resource-efficient implementation design
+[2026-03-05 22:00] quant-lead (opus) - Research and design 5 FR regime-conditioned scalping strategies (5m/15m) learning from failed 1m attempts
 [2026-03-05 18:00] main (opus) - Paper trading verification: cached fresh data + ran aggregate backtests to compare with prod trades
 [2026-03-04 19:50] be-dev (sonnet) - Optimize fr-settlement-scalper.ts: windowed indicators O(n²)→O(n), running FR index O(n)→O(1)
 [2026-03-04 19:15] be-dev (sonnet) - Optimize volatility-breakout-scalper windowed indicator calculations
 [2026-03-04 18:30] be-dev (sonnet) - Build scalping symbol selector script (select-scalping-symbols.ts)
 [2026-03-04 18:30] be-dev (sonnet) - Add saveCandlesBulk to db.ts + update cache-candles.ts
-[2026-03-04 18:30] be-dev (sonnet) - Implement FR Settlement Window Scalper strategy
-[2026-03-04 18:30] be-dev (sonnet) - Implement Volatility Breakout Scalper strategy
-[2026-03-03 16:05] qa (sonnet) - Add capital invariant tests 7-12 to aggregate-engine.test.ts Suite 10
-[2026-03-03 03:57] fe-dev (sonnet) - Backtesting view-only mode for unauthenticated users
-[2026-03-03 03:57] Explore (sonnet) - Map backtesting UI action buttons for view-only
-[2026-03-03 03:57] docs-writer (haiku) - Create changelog for public backtesting view-only access
-[2026-03-03 05:48] fe-dev (sonnet) - change default activePage from backtesting to paper-trading in paperTradingStore
-[2026-03-03 05:55] fe-dev (sonnet) - auto-select first session in PaperTradingPage when no session is selected
-[2026-03-03 06:10] fe-dev (sonnet) - Create useUrlSync hook for bidirectional URL <-> Zustand state sync
-[2026-03-03 06:20] fe-dev (sonnet) - Integrate useUrlSync into App.tsx with auto-load from URL effect
-[2026-03-03 04:20] fe-dev (sonnet) - Create useUrlSync hook for URL ↔ Zustand sync
-[2026-03-03 04:20] fe-dev (sonnet) - Change default activePage to paper-trading
-[2026-03-03 04:20] fe-dev (sonnet) - Add auto-select first session on PaperTradingPage
-[2026-03-03 04:22] fe-dev (sonnet) - Wire useUrlSync into App.tsx with backtest auto-load
-[2026-03-03 04:22] commit (haiku) - URL routing and paper trading default page
-[2026-03-03 14:00] quant-lead (opus) - FR-v2 optimization research: 5 experiments for Sharpe >1.5 with expanded universe, cross-sectional FR, OI filter, decorrelated baskets
-[2026-03-03 14:00] architect (opus) - Analyze strategy improvement directions for FR spike v2
-[2026-03-03 14:00] quant-lead (opus) - Research new configurations and experiments for FR spike
-[2026-03-03 14:00] Explore (sonnet) - Explore available Bybit symbols and v2 parameters
-[2026-03-03 14:30] be-dev (sonnet) - Add 6 new tournament configs (21-26) to explore-fr-v2-aggregations.ts
-[2026-03-03 14:45] be-dev (sonnet) - Create scan-fr-v2.ts as fork of fr-spike-batch-scan.ts using funding-rate-spike-v2 strategy with DB saving via saveBacktestRun
-[2026-03-03 16:00] be-dev (sonnet) - Add 6 new aggregation tournament configs to explore-fr-v2-aggregations.ts
-[2026-03-03 16:00] be-dev (sonnet) - Create scan-fr-v2.ts (V2 batch scan script forked from v1)
-[2026-03-03 16:00] runner (bash) - Discover available Bybit symbols via list-bybit-symbols.ts
-[2026-03-03 16:30] runner (bash) - Run aggregation tournament (6 new configs, skip=20)
-[2026-03-03 16:30] runner (bash) - Cache funding rates for 13 new symbols (all returned 0 - not supported)
-[2026-03-03 16:30] runner (bash) - Cache PEPE candles (not found on Bybit)
-[2026-03-03 16:45] runner (bash) - Run V2 batch scan on full 74-symbol universe
-[2026-03-03 17:00] be-dev (sonnet) - Add configs 27-32 (V2 scan discoveries, extended top10, full16, low-DD) to explore-fr-v2-aggregations.ts
-[2026-03-03 18:00] runner (bash) - V2 batch scan on 74 symbols complete (148 runs)
-[2026-03-03 18:15] be-dev (sonnet) - Add 6 expanded universe aggregation configs (27-32)
-[2026-03-03 18:00] docs-writer (haiku) - Create changelog for FR Spike V2 optimization experiments
-[2026-03-03 18:30] runner (bash) - Run expanded universe aggregation tournament (6 configs, skip=26)
-[2026-03-03 18:45] docs-writer (haiku) - Create changelog for FR V2 optimization experiments
-[2026-03-03 19:00] runner (bash) - Walk-forward test on 7 V2 LowDD Focus symbols (sequential)
-[2026-03-03 19:00] docs-writer (haiku) - Create changelog for V2 LowDD Focus walk-forward validation results
-[2026-03-03 19:00] docs-writer (haiku) - Create changelog for V2 LowDD Focus walk-forward results
-[2026-03-03 20:00] commit (haiku) - FR V2 optimization: two commits for public backtest view and V2 LowDD Focus experiments with WF validation
-[2026-03-03 19:00] commit (haiku) - Commit FR V2 optimization experiments and walk-forward results
-[2026-03-03 14:40] be-dev (sonnet) - Add 15 new aggregation configs (indexes 33-47) to explore-fr-v2-aggregations.ts
-[2026-03-03 19:30] docs-writer (haiku) - Create comprehensive FR V2 research document
-[2026-03-03 19:30] be-dev (sonnet) - Add 15 new aggregation configs (33-47) for asset combo exploration
-[2026-03-03 19:30] runner (bash) - Run aggregation tournament on 15 new configs (33-47)
-[2026-03-03 20:30] be-dev (sonnet) - Create fr-v2-top-configs-export.json with top 8 aggregation configs for prod deployment review
-[2026-03-03 20:00] be-dev (sonnet) - Export top 8 aggregation configs to fr-v2-top-configs-export.json
-[2026-03-03 16:01] qa (sonnet) - Add capital invariant / no double-spending test suite to aggregate-engine.test.ts
-[2026-03-03 20:30] architect (opus) - Audit aggregate engine for double-spending (no bugs found, compounding frequency explanation)
-[2026-03-03 20:30] Explore (sonnet) - Find existing engine/portfolio tests (150+ tests found)
-[2026-03-03 20:45] qa (sonnet) - Add 6 capital invariant tests for many-asset no-double-spending scenarios
-[2026-03-03 21:00] qa (sonnet) - Add 12 capital invariant + allocation enforcement tests (all 50 pass)
-[2026-03-03 19:45] commit (haiku) - two logical commits for FR V2 research and capital invariant tests
-[2026-03-03 20:30] be-dev (sonnet) - Convert fr-v2-top-configs-export.json to BacktestConfigExportFile import format
-[2026-03-03 20:45] runner (bash) - Cache candles (1h+4h) for 9 symbols on prod (195K candles)
-[2026-03-03 20:45] runner (bash) - Cache funding rates for 9 symbols on prod (21K rates)
-[2026-03-03 21:00] runner (bash) - Import 8 FR V2 aggregation configs to prod (all succeeded)
-[2026-03-03 22:00] be-dev (sonnet) - Convert fr-v2-top-configs-export.json to BacktestConfigExportFile format as fr-v2-import.json
-[2026-03-04 18:00] quant-lead (opus) - Research 7 HF scalping strategy concepts for crypto futures (1m TF, leveraged)
-[2026-03-04 18:00] Explore (sonnet) - Explore leverage and futures support in engine
-[2026-03-04 18:00] Explore (sonnet) - Explore Bybit timeframe capabilities and data limits
-[2026-03-04 18:10] quant-lead (opus) - Brainstorm 7 creative HF scalping strategies with academic research
-[2026-03-04 18:10] architect (opus) - Design tick data infrastructure and 1m scalping architecture
-[2026-03-04 18:30] Explore (sonnet) - Explore cached data, symbol lists, FR results for HF scalping selection
-[2026-03-04 19:00] be-dev (sonnet) - Add saveCandlesBulk() to db.ts and update cache-candles.ts to use it for large batches
-[2026-03-04 19:15] be-dev (sonnet) - Create scripts/select-scalping-symbols.ts — data-driven symbol selector for HF scalping strategies
-[2026-03-04 19:30] be-dev (sonnet) - Create strategies/volatility-breakout-scalper.ts — BB squeeze detection with ATR exits
-[2026-03-04 19:45] be-dev (sonnet) - Create strategies/fr-settlement-scalper.ts — HF scalper fading forced flow before funding settlements
-[2026-03-04 19:50] docs-writer (haiku) - Create changelog for HF scalping infrastructure: symbol selection, DB bulk insert, FR Settlement + Vol Breakout scalpers
-[2026-03-05 02:30] docs-writer (haiku) - Create changelog for optimizer performance optimizations
-[2026-03-05 02:10] be-dev (sonnet) - Implement 5 performance optimizations for grid search & walk-forward (early termination, preloaded candles, sequential processing, optimize-timeframe CLI flags)
+[2026-03-05 14:30] be-dev (sonnet) - Implement FR Regime Momentum Rider strategy (fr-regime-momentum.ts)
+[2026-03-05 05:39] be-dev (sonnet) - Implement fr-gradient-momentum strategy trading FR rate-of-change acceleration signals
+[2026-03-05 07:26] runner (haiku) - Gather production database: configs, backtest results, aggregations
+[2026-03-05 14:10] be-dev (sonnet) - Create restore-aggregation-configs.ts script with V2 prod paper trading configs and V1 configs
+[2026-03-05 07:44] be-dev (sonnet) - add --symbols=ALL support to cache-funding-rates.ts
+[2026-03-05 20:00] be-dev (sonnet) - Create restore-aggregation-configs.ts script with V1+V2 configs
+[2026-03-05 20:02] be-dev (sonnet) - Add --symbols=ALL support to cache-funding-rates.ts
+[2026-03-05 20:00] Explore (sonnet) - Research FR strategy docs for config recovery
+[2026-03-05 20:00] Explore (sonnet) - Explore caching scripts and data infrastructure
+[2026-03-05 19:58] runner (haiku) - Attempt prod server DB access (SSH failed - no key)
+[2026-03-05 09:30] be-dev (sonnet) - Add postinstall script to package.json for technicalindicators lib symlink workaround
+[2026-03-06 06:45] commit (haiku) - recovery fixes and new FR regime scalping strategies
+[2026-03-05 12:30] be-dev (sonnet) - Add postinstall script for technicalindicators ESM fix
+[2026-03-05 12:30] commit (sonnet) - Commit recovery fixes and new strategies
+[2026-03-05 09:42] be-dev (sonnet) - Fix fr-regime-momentum strategy _regimeTraded flag causing 0 trades
+[2026-03-05 09:49] be-dev (sonnet) - Debug and fix fr-regime-momentum 0 trades issue; discovered exchange defaulting to binance vs bybit cache
+[2026-03-05 10:55] be-dev (sonnet) - Fix FR regime detection in fr-regime-momentum.ts: replace percentile-based with absolute threshold, fix position sizing bug

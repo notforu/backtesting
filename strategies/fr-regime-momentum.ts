@@ -4,20 +4,19 @@
  * Architecture: 4h FR REGIME → 5m ENTRY → 5m EXIT
  *
  * Uses funding rate data (arriving every 8h) as a regime filter.
- * When FR is at an extreme percentile (e.g., top/bottom 15%), the
- * subsequent mean-reversion creates a multi-hour directional move.
+ * When FR exceeds an absolute threshold (e.g., |FR| > 0.0003 = 0.03%),
+ * the subsequent mean-reversion creates a multi-hour directional move.
  * We use 5m EMA crossovers to time entries within that regime window,
  * giving better entries than the 4h FR V2 strategy (tighter stops, higher R:R).
  *
- * FR Regime Detection:
- *   - Collect last `frLookbackPeriods` × 8h of funding rates
- *   - Calculate absolute-value percentile rank of current FR
- *   - Regime ACTIVE when |FR| is above frPercentileThreshold percentile
+ * FR Regime Detection (absolute threshold, not percentile-based):
+ *   - Regime ACTIVE when |currentFR| > frAbsThreshold
+ *   - On Bybit, 0.0001 is the default cap (not extreme); 0.0003+ is genuinely extreme
  *   - Direction: FR > 0 → SHORT regime (longs paying, ripe for reversal)
  *                FR < 0 → LONG regime (shorts paying, ripe for squeeze)
  *
  * Entry:
- *   1. FR regime active
+ *   1. FR regime active (|FR| > frAbsThreshold)
  *   2. EMA(fast) crosses EMA(slow) in regime direction
  *   3. Price above SMA(trendSMAPeriod) for longs / below for shorts
  *   4. No existing position
@@ -26,7 +25,7 @@
  *   1. ATR stop-loss (slAtrMultiplier × ATR at entry)
  *   2. ATR take-profit (tpAtrMultiplier × ATR at entry)
  *   3. Time exit (timeExitBars bars)
- *   4. Regime exit (FR drops below frExitPercentile absolute percentile)
+ *   4. Regime exit (|FR| drops below frAbsThreshold × frExitRatio)
  *
  * Requires futures mode: --mode=futures
  * Requires funding rate data: run scripts/cache-funding-rates.ts first
@@ -54,10 +53,13 @@ interface StrategyState {
    * O(1) amortised lookup instead of scanning the full array every bar.
    */
   _lastFRIndex: number;
-  /** Whether we already traded this FR regime activation (prevents re-entry spam) */
-  _regimeTraded: boolean;
-  /** Whether regime was active on the previous bar (for edge detection) */
-  _prevRegimeActive: boolean;
+  /**
+   * Bar index after which re-entry is allowed. Set to currentIndex + cooldownBars
+   * after a position closes.
+   */
+  _cooldownUntil: number;
+  /** Whether this is the very first entry attempt (for debug logging) */
+  _firstEntryLogged: boolean;
 }
 
 // ============================================================================
@@ -102,19 +104,6 @@ function calculateATR(
   return [...padding, ...result];
 }
 
-/**
- * Calculate the percentile rank of `value` within `arr` (0–100).
- * e.g. percentileRank(arr, x) = 95 means 95% of values in arr are <= x.
- */
-function percentileRank(arr: number[], value: number): number {
-  if (arr.length === 0) return 50;
-  let countBelow = 0;
-  for (const v of arr) {
-    if (v <= value) countBelow++;
-  }
-  return (countBelow / arr.length) * 100;
-}
-
 // ============================================================================
 // Strategy Definition
 // ============================================================================
@@ -122,39 +111,30 @@ function percentileRank(arr: number[], value: number): number {
 const strategy: Strategy = {
   name: 'fr-regime-momentum',
   description:
-    'Uses 4h funding rate extremes as a regime filter and 5m EMA crossovers for entry timing. ' +
-    'When FR is in the top/bottom percentile of recent history, momentum entries on 5m achieve ' +
+    'Uses 4h funding rate absolute threshold as a regime filter and 5m EMA crossovers for entry timing. ' +
+    'When |FR| exceeds frAbsThreshold (e.g., 0.0003 = 0.03%), momentum entries on 5m achieve ' +
     'tighter stops and better R:R than the 4h FR V2 strategy. Exits via ATR stop/TP, time limit, ' +
-    'or FR normalization. Requires futures mode with cached funding rates.',
-  version: '1.0.0',
+    'or FR normalization below frAbsThreshold * frExitRatio. Requires futures mode with cached funding rates.',
+  version: '2.0.0',
 
   params: [
     {
-      name: 'frLookbackPeriods',
+      name: 'frAbsThreshold',
       type: 'number',
-      default: 90,
-      min: 30,
-      max: 180,
-      step: 30,
-      description: 'FR lookback periods (×8h, e.g. 90 = ~30 days of FR observations)',
+      default: 0.0003,
+      min: 0.0001,
+      max: 0.001,
+      step: 0.0001,
+      description: 'Absolute FR value threshold for regime activation (e.g., 0.0003 = 0.03%)',
     },
     {
-      name: 'frPercentileThreshold',
+      name: 'frExitRatio',
       type: 'number',
-      default: 85,
-      min: 75,
-      max: 95,
-      step: 5,
-      description: 'Absolute FR percentile required to activate regime (e.g. 85 = top/bottom 15%)',
-    },
-    {
-      name: 'frExitPercentile',
-      type: 'number',
-      default: 70,
-      min: 50,
-      max: 80,
-      step: 10,
-      description: 'Absolute FR percentile below which regime is considered gone (regime exit)',
+      default: 0.5,
+      min: 0.3,
+      max: 0.8,
+      step: 0.1,
+      description: 'Exit when FR drops below frAbsThreshold * this ratio (e.g., 0.5 = half the entry threshold)',
     },
     {
       name: 'fastEmaPeriod',
@@ -220,6 +200,15 @@ const strategy: Strategy = {
       description: 'Maximum bars to hold a position before forced time exit (e.g. 36 = 3h on 5m)',
     },
     {
+      name: 'cooldownBars',
+      type: 'number',
+      default: 6,
+      min: 0,
+      max: 48,
+      step: 6,
+      description: 'Bars to wait after closing a position before re-entry is allowed (e.g. 6 = 30min on 5m)',
+    },
+    {
       name: 'positionSizePct',
       type: 'number',
       default: 95,
@@ -246,9 +235,9 @@ const strategy: Strategy = {
     self._direction = null;
     self._atrAtEntry = 0;
     self._lastFRIndex = 0;
-    self._regimeTraded = false;
-    self._prevRegimeActive = false;
-    context.log('Initialized fr-regime-momentum');
+    self._cooldownUntil = -1;
+    self._firstEntryLogged = false;
+    context.log('Initialized fr-regime-momentum v2 (absolute FR threshold)');
   },
 
   onBar(context: StrategyContext): void {
@@ -268,9 +257,8 @@ const strategy: Strategy = {
     // =========================================================================
     // 1. Extract parameters
     // =========================================================================
-    const frLookbackPeriods = params.frLookbackPeriods as number;
-    const frPercentileThreshold = params.frPercentileThreshold as number;
-    const frExitPercentile = params.frExitPercentile as number;
+    const frAbsThreshold = params.frAbsThreshold as number;
+    const frExitRatio = params.frExitRatio as number;
     const fastEmaPeriod = params.fastEmaPeriod as number;
     const slowEmaPeriod = params.slowEmaPeriod as number;
     const trendSmaPeriod = params.trendSmaPeriod as number;
@@ -278,6 +266,7 @@ const strategy: Strategy = {
     const tpAtrMultiplier = params.tpAtrMultiplier as number;
     const slAtrMultiplier = params.slAtrMultiplier as number;
     const timeExitBars = params.timeExitBars as number;
+    const cooldownBars = params.cooldownBars as number;
     const positionSizePct = params.positionSizePct as number;
     const leverage = params.leverage as number;
 
@@ -303,35 +292,23 @@ const strategy: Strategy = {
     }
 
     // =========================================================================
-    // 5. FR Regime Detection
+    // 5. FR Regime Detection (absolute threshold)
     // =========================================================================
-    // Collect the last frLookbackPeriods funding rate observations up to now
     const frEndIdx = self._lastFRIndex;
-    const frStartIdx = Math.max(0, frEndIdx - frLookbackPeriods + 1);
-    const lookbackFRs = fundingRates.slice(frStartIdx, frEndIdx + 1);
-
-    if (lookbackFRs.length < 10) return; // Need minimum FR history
-
     const currentFR = fundingRates[frEndIdx].fundingRate;
-
-    // Use absolute values to determine how extreme the current FR is
-    const absFRValues = lookbackFRs.map(fr => Math.abs(fr.fundingRate));
     const absCurrentFR = Math.abs(currentFR);
-    const absPercentile = percentileRank(absFRValues, absCurrentFR);
 
-    const regimeActive = absPercentile >= frPercentileThreshold;
+    // Regime is active when |FR| exceeds the absolute threshold
+    const regimeActive = absCurrentFR > frAbsThreshold;
     const regimeDirection: 'long' | 'short' | null = regimeActive
       ? currentFR > 0
         ? 'short'  // Longs paying → contrarian short (FR will revert down)
         : 'long'   // Shorts paying → contrarian long (FR will revert up)
       : null;
 
-    // Reset _regimeTraded when regime deactivates (FR normalizes)
-    // This ensures we only enter ONCE per regime activation
-    if (!regimeActive && self._prevRegimeActive) {
-      self._regimeTraded = false;
-    }
-    self._prevRegimeActive = regimeActive;
+    // Exit threshold: FR dropped below frAbsThreshold * frExitRatio
+    const frExitThreshold = frAbsThreshold * frExitRatio;
+    const frRegimeGone = absCurrentFR < frExitThreshold;
 
     // =========================================================================
     // 6. Windowed indicator calculations (O(n×window) not O(n²))
@@ -386,6 +363,7 @@ const strategy: Strategy = {
       if (currentCandle.low <= stopPrice) {
         context.closeLong();
         self._direction = null;
+        self._cooldownUntil = currentIndex + cooldownBars;
         return;
       }
 
@@ -394,6 +372,7 @@ const strategy: Strategy = {
       if (currentCandle.high >= tpPrice) {
         context.closeLong();
         self._direction = null;
+        self._cooldownUntil = currentIndex + cooldownBars;
         return;
       }
 
@@ -401,13 +380,15 @@ const strategy: Strategy = {
       if (self._entryBar >= 0 && currentIndex - self._entryBar >= timeExitBars) {
         context.closeLong();
         self._direction = null;
+        self._cooldownUntil = currentIndex + cooldownBars;
         return;
       }
 
-      // d. Regime exit: FR no longer extreme enough — the edge has dissolved
-      if (absPercentile < frExitPercentile) {
+      // d. Regime exit: FR dropped below exit threshold — the edge has dissolved
+      if (frRegimeGone) {
         context.closeLong();
         self._direction = null;
+        self._cooldownUntil = currentIndex + cooldownBars;
         return;
       }
 
@@ -422,6 +403,7 @@ const strategy: Strategy = {
       if (currentCandle.high >= stopPrice) {
         context.closeShort();
         self._direction = null;
+        self._cooldownUntil = currentIndex + cooldownBars;
         return;
       }
 
@@ -430,6 +412,7 @@ const strategy: Strategy = {
       if (currentCandle.low <= tpPrice) {
         context.closeShort();
         self._direction = null;
+        self._cooldownUntil = currentIndex + cooldownBars;
         return;
       }
 
@@ -437,13 +420,15 @@ const strategy: Strategy = {
       if (self._entryBar >= 0 && currentIndex - self._entryBar >= timeExitBars) {
         context.closeShort();
         self._direction = null;
+        self._cooldownUntil = currentIndex + cooldownBars;
         return;
       }
 
       // d. Regime exit
-      if (absPercentile < frExitPercentile) {
+      if (frRegimeGone) {
         context.closeShort();
         self._direction = null;
+        self._cooldownUntil = currentIndex + cooldownBars;
         return;
       }
 
@@ -454,9 +439,11 @@ const strategy: Strategy = {
     // 8. ENTRY PIPELINE (no existing position)
     // =========================================================================
 
-    // Gate 1: Regime must be active AND we haven't already traded this activation
+    // Gate 1: Regime must be active (|FR| > frAbsThreshold)
     if (!regimeActive || regimeDirection === null) return;
-    if (self._regimeTraded) return;
+
+    // Gate 1b: Cooldown — must wait N bars after last close before re-entry
+    if (currentIndex <= self._cooldownUntil) return;
 
     // Gate 2: EMA crossover in the regime direction
     //   Long regime → fast crosses ABOVE slow (bullish crossover)
@@ -480,9 +467,22 @@ const strategy: Strategy = {
     // =========================================================================
     // 9. Position sizing and entry execution
     // =========================================================================
+    // Note: leverage param is passed through to engine config externally.
+    // Strategy sizes based on available equity only (no internal multiplication).
     const positionValue = (equity * positionSizePct) / 100;
-    const positionSize = (positionValue * leverage) / price;
+    const positionSize = positionValue / price;
+    void leverage; // leverage is passed to engine via CLI --leverage flag
     if (positionSize <= 0) return;
+
+    // Debug: log first entry attempt to confirm signals are reaching execution
+    if (!self._firstEntryLogged) {
+      context.log(
+        `[DEBUG] First entry: bar=${currentIndex} dir=${regimeDirection} ` +
+        `price=${price.toFixed(4)} atr=${currentATR.toFixed(6)} ` +
+        `frAbs=${absCurrentFR.toFixed(6)} threshold=${frAbsThreshold.toFixed(6)}`
+      );
+      self._firstEntryLogged = true;
+    }
 
     if (regimeDirection === 'long') {
       context.openLong(positionSize);
@@ -490,14 +490,12 @@ const strategy: Strategy = {
       self._entryBar = currentIndex;
       self._entryPrice = price;
       self._atrAtEntry = currentATR;
-      self._regimeTraded = true;
     } else {
       context.openShort(positionSize);
       self._direction = 'short';
       self._entryBar = currentIndex;
       self._entryPrice = price;
       self._atrAtEntry = currentATR;
-      self._regimeTraded = true;
     }
   },
 
