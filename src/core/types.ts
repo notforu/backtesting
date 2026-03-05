@@ -163,6 +163,26 @@ export interface FundingRate {
 }
 
 // ============================================================================
+// Open Interest (Futures)
+// ============================================================================
+
+export interface OpenInterestRecord {
+  timestamp: number;           // Unix ms
+  openInterestAmount: number;  // Open interest in base currency units
+}
+
+// ============================================================================
+// Long/Short Ratio (Futures)
+// ============================================================================
+
+export interface LongShortRatioRecord {
+  timestamp: number;      // Unix ms
+  longRatio: number;      // e.g. 0.6 = 60% long positions
+  shortRatio: number;     // e.g. 0.4 = 40% short positions
+  longShortRatio: number; // longRatio / shortRatio, e.g. 1.5
+}
+
+// ============================================================================
 // Backtest Configuration
 // ============================================================================
 

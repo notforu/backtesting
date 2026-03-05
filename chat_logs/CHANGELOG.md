@@ -2,6 +2,21 @@
 
 All significant changes to the backtesting platform are documented here. See individual files in `/chat_logs/` for detailed information on each change.
 
+## 2026-03-05: HF Scalping Investigation — Comprehensive Results & No Viable Edge Found
+
+**File**: `/docs/changelogs/2026-03-05-193000-hf-scalping-research.md`
+
+Extensive investigation into high-frequency scalping strategies (1m, 5m, 15m timeframes) concluded with **no viable edge found**. Implemented 3 new scalping strategies (FR Epoch Scalper, BB-RSI Scalper, OI-Delta Regime Scalper) with full backtest infrastructure. Key finding: **fee-to-move ratio makes 1m scalping mathematically impossible with 0.06% taker fees**. Only marginal viability on 5m/15m for specific symbols (OI-Delta on SOL/ARB showed +3-4%), and overfitting confirmed (BB-RSI +17% on DOGE alone, losses on all others). Best proven edge remains FR V2 on 4h timeframe.
+
+**Key results**:
+- FR Epoch Scalper (1m): -26% worst case, FR edge too weak at 1m
+- BB-RSI Scalper (1m): -97% (fee death), impossible fees-to-move ratio
+- BB-RSI Scalper (5m): +17.52% on DOGE (overfits), -4% to -11% on BTC/ETH/SOL/ARB
+- OI-Delta Regime Scalper (15m): +3-4% on SOL/ARB (real edge), fails on DOGE
+- Walk-forward FR V2: 6 symbols in progress, IOST passed with 26.6% degradation
+
+---
+
 ## 2026-03-01: Fix Chart Real-Time Updates When Session Paused
 
 **File**: `/docs/changelogs/2026-03-01-160000-fix-chart-realtime-when-paused.md`

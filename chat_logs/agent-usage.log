@@ -1,30 +1,16 @@
+[2026-03-05 19:30] docs-writer (haiku) - Create comprehensive HF scalping investigation changelog with all backtest results, fee-to-move analysis, and strategic conclusions
+[2026-03-05 22:00] quant-lead (opus) - Design 3 OI/liquidation/CVD scalping strategies with leverage on 15m: OI-Delta Regime Scalper, CVD Divergence Scalper, OI Liquidation Cascade Bounce
+[2026-03-05 20:00] quant-lead (opus) - Comprehensive research directions assessment: all viable strategies ranked, FR arb front-running idea analyzed and rejected
 [2026-03-06 13:45] docs-writer (haiku) - Create comprehensive HF scalping research final report at /docs/research/2026-03-06-hf-scalping-research-results.md
 [2026-03-06 13:00] docs-writer (haiku) - Changelog for FR regime momentum research conclusion
 [2026-03-06 11:30] be-dev (sonnet) - Fix FR regime momentum: absolute threshold (v2.0), remove percentile-based detection, fix position sizing
-[2026-03-06 11:00] be-dev (sonnet) - Fix FR regime momentum: remove _regimeTraded, add cooldown, fix --exchange=bybit issue
-[2026-03-06 10:00] main (opus) - HF scalping status review, 5m data caching, grid search fr-regime-momentum on LDO/DOGE/RPL
-[2026-03-06 06:30] main (opus) - FR Gradient Momentum cross-validation (5 symbols) and walk-forward testing
-[2026-03-05 23:30] architect (opus) - HF scalping strategy selection, testing plan, resource-efficient implementation design
-[2026-03-05 22:00] quant-lead (opus) - Research and design 5 FR regime-conditioned scalping strategies (5m/15m) learning from failed 1m attempts
-[2026-03-05 18:00] main (opus) - Paper trading verification: cached fresh data + ran aggregate backtests to compare with prod trades
-[2026-03-04 19:50] be-dev (sonnet) - Optimize fr-settlement-scalper.ts: windowed indicators O(n²)→O(n), running FR index O(n)→O(1)
-[2026-03-04 19:15] be-dev (sonnet) - Optimize volatility-breakout-scalper windowed indicator calculations
-[2026-03-04 18:30] be-dev (sonnet) - Build scalping symbol selector script (select-scalping-symbols.ts)
-[2026-03-04 18:30] be-dev (sonnet) - Add saveCandlesBulk to db.ts + update cache-candles.ts
-[2026-03-05 14:30] be-dev (sonnet) - Implement FR Regime Momentum Rider strategy (fr-regime-momentum.ts)
-[2026-03-05 05:39] be-dev (sonnet) - Implement fr-gradient-momentum strategy trading FR rate-of-change acceleration signals
-[2026-03-05 07:26] runner (haiku) - Gather production database: configs, backtest results, aggregations
-[2026-03-05 14:10] be-dev (sonnet) - Create restore-aggregation-configs.ts script with V2 prod paper trading configs and V1 configs
-[2026-03-05 07:44] be-dev (sonnet) - add --symbols=ALL support to cache-funding-rates.ts
-[2026-03-05 20:00] be-dev (sonnet) - Create restore-aggregation-configs.ts script with V1+V2 configs
-[2026-03-05 20:02] be-dev (sonnet) - Add --symbols=ALL support to cache-funding-rates.ts
-[2026-03-05 20:00] Explore (sonnet) - Research FR strategy docs for config recovery
-[2026-03-05 20:00] Explore (sonnet) - Explore caching scripts and data infrastructure
-[2026-03-05 19:58] runner (haiku) - Attempt prod server DB access (SSH failed - no key)
-[2026-03-05 09:30] be-dev (sonnet) - Add postinstall script to package.json for technicalindicators lib symlink workaround
-[2026-03-06 06:45] commit (haiku) - recovery fixes and new FR regime scalping strategies
-[2026-03-05 12:30] be-dev (sonnet) - Add postinstall script for technicalindicators ESM fix
-[2026-03-05 12:30] commit (sonnet) - Commit recovery fixes and new strategies
-[2026-03-05 09:42] be-dev (sonnet) - Fix fr-regime-momentum strategy _regimeTraded flag causing 0 trades
-[2026-03-05 09:49] be-dev (sonnet) - Debug and fix fr-regime-momentum 0 trades issue; discovered exchange defaulting to binance vs bybit cache
-[2026-03-05 10:55] be-dev (sonnet) - Fix FR regime detection in fr-regime-momentum.ts: replace percentile-based with absolute threshold, fix position sizing bug
+[2026-03-05 16:57] be-dev (sonnet) - Add Mar 2026 scan discovery aggregation configs 48-60 to explore-fr-v2-aggregations.ts
+[2026-03-05 21:45] be-dev (sonnet) - Add direct Bybit REST API OI fetcher with pagination for historical data
+[2026-03-05 18:17] be-dev (sonnet) - Add fetchOpenInterestHistoryDirect method to BybitProvider using Bybit V5 REST API with cursor pagination
+[2026-03-05 22:00] be-dev (sonnet) - Implement OI-Delta Regime Scalper strategy
+[2026-03-05 22:30] be-dev (sonnet) - Implement OI-Delta Regime Scalper strategy
+[2026-03-05 22:35] be-dev (sonnet) - Strategy oi-delta-regime-scalper implementation complete and validated
+[2026-03-05 18:31] be-dev (sonnet) - Create fr-epoch-scalper strategy with pre/post settlement window logic, EMA+ATR, epoch trade tracking
+[2026-03-05 18:41] be-dev (sonnet) - Create bb-rsi-scalper.ts mean-reversion strategy
+[2026-03-05 18:30] be-dev (sonnet) - Create FR Epoch Scalper 1m strategy
+[2026-03-05 18:41] be-dev (sonnet) - Create BB-RSI Scalper 1m strategy

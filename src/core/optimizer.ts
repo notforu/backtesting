@@ -214,6 +214,7 @@ export async function runOptimization(
     preloadedCandles, // Reuse same candles for every combination
     preloadedFundingRates: mode === 'futures' ? preloadedFundingRates : undefined,
     earlyStopEquityFraction: 0.3, // Stop if equity drops 70% (clearly bad param set)
+    preloadedStrategy: strategy, // Reuse already-loaded strategy to skip import() overhead
   };
 
   // Process combinations sequentially to control memory usage

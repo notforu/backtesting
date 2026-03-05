@@ -17,6 +17,8 @@ import type {
   TradeAction,
   FundingRate,
   RollingMetrics,
+  OpenInterestRecord,
+  LongShortRatioRecord,
 } from '../core/types.js';
 
 const { Pool } = pg;
@@ -1544,6 +1546,208 @@ export async function getFundingRateDateRange(
   const { rows } = await p.query<{ min_ts: string | null; max_ts: string | null }>(
     `SELECT MIN(timestamp) as min_ts, MAX(timestamp) as max_ts
      FROM funding_rates
+     WHERE exchange = $1 AND symbol = $2`,
+    [exchange, symbol]
+  );
+
+  const row = rows[0];
+  return {
+    start: row?.min_ts != null ? Number(row.min_ts) : null,
+    end: row?.max_ts != null ? Number(row.max_ts) : null,
+  };
+}
+
+// ============================================================================
+// Open Interest Operations
+// ============================================================================
+
+interface OpenInterestRow {
+  timestamp: string | number;
+  open_interest_amount: number;
+}
+
+/**
+ * Save open interest records to the database.
+ * Uses ON CONFLICT DO UPDATE to handle duplicates.
+ * Returns the number of rows inserted/updated.
+ */
+export async function saveOpenInterest(
+  records: OpenInterestRecord[],
+  exchange: string,
+  symbol: string
+): Promise<number> {
+  if (records.length === 0) {
+    return 0;
+  }
+
+  const p = getPool();
+  const client = await p.connect();
+  let count = 0;
+
+  try {
+    await client.query('BEGIN');
+
+    for (const r of records) {
+      const result = await client.query(
+        `INSERT INTO open_interest (exchange, symbol, timestamp, open_interest_amount)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (exchange, symbol, timestamp)
+         DO UPDATE SET open_interest_amount = $4`,
+        [exchange, symbol, r.timestamp, r.openInterestAmount]
+      );
+      count += result.rowCount ?? 0;
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return count;
+}
+
+/**
+ * Get open interest records from the database for a given exchange/symbol/date range.
+ * Returns records in ascending timestamp order.
+ */
+export async function getOpenInterest(
+  exchange: string,
+  symbol: string,
+  startTs: number,
+  endTs: number
+): Promise<OpenInterestRecord[]> {
+  const p = getPool();
+  const { rows } = await p.query<OpenInterestRow>(
+    `SELECT timestamp, open_interest_amount
+     FROM open_interest
+     WHERE exchange = $1 AND symbol = $2 AND timestamp >= $3 AND timestamp <= $4
+     ORDER BY timestamp ASC`,
+    [exchange, symbol, startTs, endTs]
+  );
+
+  return rows.map((row) => ({
+    timestamp: Number(row.timestamp),
+    openInterestAmount: row.open_interest_amount,
+  }));
+}
+
+/**
+ * Get the cached date range for open interest of an exchange/symbol pair.
+ */
+export async function getOpenInterestDateRange(
+  exchange: string,
+  symbol: string
+): Promise<{ start: number | null; end: number | null }> {
+  const p = getPool();
+  const { rows } = await p.query<{ min_ts: string | null; max_ts: string | null }>(
+    `SELECT MIN(timestamp) as min_ts, MAX(timestamp) as max_ts
+     FROM open_interest
+     WHERE exchange = $1 AND symbol = $2`,
+    [exchange, symbol]
+  );
+
+  const row = rows[0];
+  return {
+    start: row?.min_ts != null ? Number(row.min_ts) : null,
+    end: row?.max_ts != null ? Number(row.max_ts) : null,
+  };
+}
+
+// ============================================================================
+// Long/Short Ratio Operations
+// ============================================================================
+
+interface LongShortRatioRow {
+  timestamp: string | number;
+  long_ratio: number;
+  short_ratio: number;
+  long_short_ratio: number;
+}
+
+/**
+ * Save long/short ratio records to the database.
+ * Uses ON CONFLICT DO UPDATE to handle duplicates.
+ * Returns the number of rows inserted/updated.
+ */
+export async function saveLongShortRatio(
+  records: LongShortRatioRecord[],
+  exchange: string,
+  symbol: string
+): Promise<number> {
+  if (records.length === 0) {
+    return 0;
+  }
+
+  const p = getPool();
+  const client = await p.connect();
+  let count = 0;
+
+  try {
+    await client.query('BEGIN');
+
+    for (const r of records) {
+      const result = await client.query(
+        `INSERT INTO long_short_ratio (exchange, symbol, timestamp, long_ratio, short_ratio, long_short_ratio)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (exchange, symbol, timestamp)
+         DO UPDATE SET long_ratio = $4, short_ratio = $5, long_short_ratio = $6`,
+        [exchange, symbol, r.timestamp, r.longRatio, r.shortRatio, r.longShortRatio]
+      );
+      count += result.rowCount ?? 0;
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return count;
+}
+
+/**
+ * Get long/short ratio records from the database for a given exchange/symbol/date range.
+ * Returns records in ascending timestamp order.
+ */
+export async function getLongShortRatio(
+  exchange: string,
+  symbol: string,
+  startTs: number,
+  endTs: number
+): Promise<LongShortRatioRecord[]> {
+  const p = getPool();
+  const { rows } = await p.query<LongShortRatioRow>(
+    `SELECT timestamp, long_ratio, short_ratio, long_short_ratio
+     FROM long_short_ratio
+     WHERE exchange = $1 AND symbol = $2 AND timestamp >= $3 AND timestamp <= $4
+     ORDER BY timestamp ASC`,
+    [exchange, symbol, startTs, endTs]
+  );
+
+  return rows.map((row) => ({
+    timestamp: Number(row.timestamp),
+    longRatio: row.long_ratio,
+    shortRatio: row.short_ratio,
+    longShortRatio: row.long_short_ratio,
+  }));
+}
+
+/**
+ * Get the cached date range for long/short ratio of an exchange/symbol pair.
+ */
+export async function getLongShortRatioDateRange(
+  exchange: string,
+  symbol: string
+): Promise<{ start: number | null; end: number | null }> {
+  const p = getPool();
+  const { rows } = await p.query<{ min_ts: string | null; max_ts: string | null }>(
+    `SELECT MIN(timestamp) as min_ts, MAX(timestamp) as max_ts
+     FROM long_short_ratio
      WHERE exchange = $1 AND symbol = $2`,
     [exchange, symbol]
   );

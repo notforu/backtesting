@@ -4,7 +4,7 @@
  */
 
 import ccxt, { type Exchange } from 'ccxt';
-import type { Candle, Timeframe, FundingRate } from '../../core/types.js';
+import type { Candle, Timeframe, FundingRate, OpenInterestRecord, LongShortRatioRecord } from '../../core/types.js';
 import { timeframeToMs, timeframeToCCXT } from '../../core/types.js';
 import { type DataProvider, RateLimiter, type RateLimitConfig } from './base.js';
 
@@ -281,6 +281,323 @@ export class BybitProvider implements DataProvider {
       if (rate.timestamp !== lastTs) {
         unique.push(rate);
         lastTs = rate.timestamp;
+      }
+    }
+    return unique;
+  }
+
+  /**
+   * Fetch open interest history for a perpetual futures symbol.
+   * Supports timeframes: '5m', '15m', '1h', '4h', '1d'.
+   * Paginates automatically over the requested date range.
+   *
+   * @param symbol - Trading pair (e.g., 'BTC/USDT:USDT')
+   * @param timeframe - Data granularity ('5m' | '15m' | '1h' | '4h' | '1d')
+   * @param start - Start date for the range
+   * @param end - End date for the range
+   * @returns Array of open interest records sorted by timestamp ascending
+   */
+  async fetchOpenInterestHistory(
+    symbol: string,
+    timeframe: string,
+    start: Date,
+    end: Date
+  ): Promise<OpenInterestRecord[]> {
+    const allRecords: OpenInterestRecord[] = [];
+    let since = start.getTime();
+    const until = end.getTime();
+
+    // Map timeframe string to milliseconds for pagination advancement
+    const timeframeMs: Record<string, number> = {
+      '5m': 5 * 60 * 1000,
+      '15m': 15 * 60 * 1000,
+      '1h': 60 * 60 * 1000,
+      '4h': 4 * 60 * 60 * 1000,
+      '1d': 24 * 60 * 60 * 1000,
+    };
+    const stepMs = timeframeMs[timeframe] ?? 60 * 60 * 1000;
+
+    while (since < until) {
+      await this.rateLimiter.throttle();
+
+      try {
+        const data = await this.client.fetchOpenInterestHistory(symbol, timeframe, since, 200);
+
+        if (!data || data.length === 0) break;
+
+        for (const item of data) {
+          const dataAny = item as unknown as Record<string, unknown>;
+          const ts = typeof item.timestamp === 'number' ? item.timestamp : Number(dataAny['timestamp']);
+          if (ts > until) break;
+
+          const oiAmount =
+            typeof item.openInterestAmount === 'number'
+              ? item.openInterestAmount
+              : Number(dataAny['openInterestAmount'] ?? dataAny['openInterest'] ?? 0);
+
+          allRecords.push({
+            timestamp: ts,
+            openInterestAmount: oiAmount,
+          });
+        }
+
+        const lastTs = data[data.length - 1];
+        const lastTimestamp =
+          typeof lastTs.timestamp === 'number'
+            ? lastTs.timestamp
+            : Number((lastTs as unknown as Record<string, unknown>)['timestamp']);
+
+        if (data.length < 200 || !lastTimestamp) break;
+        since = lastTimestamp + stepMs;
+      } catch (error) {
+        if (error instanceof ccxt.RateLimitExceeded) {
+          await new Promise((r) => setTimeout(r, 60000));
+          continue;
+        }
+        if (error instanceof ccxt.NetworkError) {
+          await new Promise((r) => setTimeout(r, 5000));
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    allRecords.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Remove duplicates
+    const unique: OpenInterestRecord[] = [];
+    let lastTs = -1;
+    for (const rec of allRecords) {
+      if (rec.timestamp !== lastTs) {
+        unique.push(rec);
+        lastTs = rec.timestamp;
+      }
+    }
+    return unique;
+  }
+
+  /**
+   * Fetch long/short ratio history for a perpetual futures symbol.
+   * LSR is only available at 1h granularity on Bybit.
+   * Paginates automatically over the requested date range.
+   *
+   * @param symbol - Trading pair (e.g., 'BTC/USDT:USDT')
+   * @param start - Start date for the range
+   * @param end - End date for the range
+   * @returns Array of long/short ratio records sorted by timestamp ascending
+   */
+  async fetchLongShortRatioHistory(
+    symbol: string,
+    start: Date,
+    end: Date
+  ): Promise<LongShortRatioRecord[]> {
+    const allRecords: LongShortRatioRecord[] = [];
+    let since = start.getTime();
+    const until = end.getTime();
+    const stepMs = 60 * 60 * 1000; // 1h in ms
+
+    while (since < until) {
+      await this.rateLimiter.throttle();
+
+      try {
+        const data = await this.client.fetchLongShortRatioHistory(symbol, '1h', since, 200);
+
+        if (!data || data.length === 0) break;
+
+        for (const item of data) {
+          const dataAny = item as unknown as Record<string, unknown>;
+          const ts = typeof item.timestamp === 'number' ? item.timestamp : Number(dataAny['timestamp']);
+          if (ts > until) break;
+
+          const longShortRatioVal =
+            typeof item.longShortRatio === 'number'
+              ? item.longShortRatio
+              : Number(dataAny['longShortRatio'] ?? 1);
+
+          // longRatio and shortRatio may be present directly, or derive from longShortRatio
+          const longRatio =
+            typeof dataAny['longRatio'] === 'number'
+              ? (dataAny['longRatio'] as number)
+              : typeof dataAny['longAccount'] === 'number'
+              ? (dataAny['longAccount'] as number)
+              : longShortRatioVal / (1 + longShortRatioVal);
+
+          const shortRatio =
+            typeof dataAny['shortRatio'] === 'number'
+              ? (dataAny['shortRatio'] as number)
+              : typeof dataAny['shortAccount'] === 'number'
+              ? (dataAny['shortAccount'] as number)
+              : 1 / (1 + longShortRatioVal);
+
+          allRecords.push({
+            timestamp: ts,
+            longRatio,
+            shortRatio,
+            longShortRatio: longShortRatioVal,
+          });
+        }
+
+        const lastTs = data[data.length - 1];
+        const lastTimestamp =
+          typeof lastTs.timestamp === 'number'
+            ? lastTs.timestamp
+            : Number((lastTs as unknown as Record<string, unknown>)['timestamp']);
+
+        if (data.length < 200 || !lastTimestamp) break;
+        since = lastTimestamp + stepMs;
+      } catch (error) {
+        if (error instanceof ccxt.RateLimitExceeded) {
+          await new Promise((r) => setTimeout(r, 60000));
+          continue;
+        }
+        if (error instanceof ccxt.NetworkError) {
+          await new Promise((r) => setTimeout(r, 5000));
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    allRecords.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Remove duplicates
+    const unique: LongShortRatioRecord[] = [];
+    let lastTs = -1;
+    for (const rec of allRecords) {
+      if (rec.timestamp !== lastTs) {
+        unique.push(rec);
+        lastTs = rec.timestamp;
+      }
+    }
+    return unique;
+  }
+
+  /**
+   * Map our timeframe strings to Bybit V5 API intervalTime values
+   */
+  private toBybitOiInterval(timeframe: string): string {
+    const map: Record<string, string> = {
+      '5m': '5min',
+      '15m': '15min',
+      '30m': '30min',
+      '1h': '1h',
+      '4h': '4h',
+      '1d': '1d',
+    };
+    const interval = map[timeframe];
+    if (!interval) {
+      throw new Error(
+        `Unsupported timeframe for Bybit OI: "${timeframe}". Supported: ${Object.keys(map).join(', ')}`
+      );
+    }
+    return interval;
+  }
+
+  /**
+   * Convert a CCXT-style symbol to the Bybit REST API symbol format.
+   * e.g. 'BTC/USDT:USDT' -> 'BTCUSDT'
+   */
+  private toBybitSymbol(symbol: string): string {
+    // Strip the settlement part (':USDT') first, then the slash
+    return symbol.replace(/:.*$/, '').replace('/', '');
+  }
+
+  /**
+   * Fetch open interest history directly from the Bybit V5 REST API.
+   *
+   * Unlike `fetchOpenInterestHistory` (CCXT wrapper), this method correctly
+   * honours `startTime`/`endTime` and handles cursor-based pagination so that
+   * arbitrarily long date ranges can be fetched in a single call.
+   *
+   * The Bybit API returns data in REVERSE chronological order; after collecting
+   * all pages the array is reversed so the result is ascending by timestamp.
+   *
+   * @param symbol    - Trading pair in CCXT format (e.g. 'BTC/USDT:USDT')
+   * @param timeframe - Granularity: '5m' | '15m' | '30m' | '1h' | '4h' | '1d'
+   * @param start     - Range start (inclusive)
+   * @param end       - Range end   (inclusive)
+   * @returns Array of open interest records sorted by timestamp ascending
+   */
+  async fetchOpenInterestHistoryDirect(
+    symbol: string,
+    timeframe: string,
+    start: Date,
+    end: Date
+  ): Promise<OpenInterestRecord[]> {
+    const bybitSymbol = this.toBybitSymbol(symbol);
+    const intervalTime = this.toBybitOiInterval(timeframe);
+    const startTime = start.getTime();
+    const endTime = end.getTime();
+
+    const allRecords: OpenInterestRecord[] = [];
+    let cursor: string | undefined;
+
+    do {
+      await this.rateLimiter.throttle();
+
+      // Build query string
+      const params = new URLSearchParams({
+        category: 'linear',
+        symbol: bybitSymbol,
+        intervalTime,
+        startTime: String(startTime),
+        endTime: String(endTime),
+        limit: '200',
+      });
+      if (cursor) {
+        params.set('cursor', cursor);
+      }
+
+      const url = `https://api.bybit.com/v5/market/open-interest?${params.toString()}`;
+
+      // Native fetch (Node 20+)
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(
+          `Bybit OI API HTTP error: ${response.status} ${response.statusText} for ${url}`
+        );
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const json = (await response.json()) as any;
+
+      if (json.retCode !== 0) {
+        throw new Error(
+          `Bybit OI API error: retCode=${json.retCode} retMsg="${json.retMsg}" symbol=${bybitSymbol}`
+        );
+      }
+
+      const list: Array<{ openInterest: string; timestamp: string }> =
+        json.result?.list ?? [];
+
+      for (const item of list) {
+        const ts = Number(item.timestamp);
+        const oi = parseFloat(item.openInterest);
+        if (!isNaN(ts) && !isNaN(oi)) {
+          allRecords.push({ timestamp: ts, openInterestAmount: oi });
+        }
+      }
+
+      // Advance cursor (empty string means no more pages)
+      cursor = (json.result?.nextPageCursor as string | undefined) || undefined;
+      if (cursor === '') cursor = undefined;
+
+      // If we got fewer than 200 records there are no more pages
+      if (list.length < 200) {
+        cursor = undefined;
+      }
+    } while (cursor !== undefined);
+
+    // API returns newest-first; reverse to get ascending order
+    allRecords.reverse();
+
+    // Remove duplicates (defensive)
+    const unique: OpenInterestRecord[] = [];
+    let lastTs = -1;
+    for (const rec of allRecords) {
+      if (rec.timestamp !== lastTs) {
+        unique.push(rec);
+        lastTs = rec.timestamp;
       }
     }
     return unique;

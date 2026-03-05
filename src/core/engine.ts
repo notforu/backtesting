@@ -61,13 +61,18 @@ function forwardFillCandles(candles: Candle[], timeframe: Timeframe): Candle[] {
 }
 
 /**
- * Memory-efficient view into candle array without copying
+ * Memory-efficient view into candle array without copying.
+ * Mutable endIndex allows reuse across bars without re-allocation.
  */
 class CandleViewImpl implements CandleView {
+  endIndex: number;
+
   constructor(
     private readonly candles: Candle[],
-    private readonly endIndex: number
-  ) {}
+    endIndex: number
+  ) {
+    this.endIndex = endIndex;
+  }
 
   get length(): number {
     return this.endIndex + 1;
@@ -172,6 +177,12 @@ export interface EngineConfig {
    * Allows optimizer to load funding rates once and reuse across all combinations
    */
   preloadedFundingRates?: FundingRate[];
+
+  /**
+   * Pre-loaded strategy instance to skip dynamic import overhead
+   * Allows optimizer to load the strategy once and reuse across all combinations
+   */
+  preloadedStrategy?: import('../strategy/base.js').Strategy;
 }
 
 /**
@@ -186,6 +197,26 @@ const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   saveResults: true,
   enableLogging: true,
 };
+
+/**
+ * Binary search for nearest funding rate to a given timestamp.
+ * Assumes rates are sorted ascending by timestamp.
+ */
+function findNearestFundingRate(rates: FundingRate[], timestamp: number): FundingRate | undefined {
+  if (rates.length === 0) return undefined;
+  let lo = 0;
+  let hi = rates.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (rates[mid].timestamp < timestamp) lo = mid + 1;
+    else hi = mid;
+  }
+  // Check lo and lo-1 for nearest
+  if (lo > 0 && Math.abs(rates[lo - 1].timestamp - timestamp) < Math.abs(rates[lo].timestamp - timestamp)) {
+    return rates[lo - 1];
+  }
+  return rates[lo];
+}
 
 /**
  * Run a backtest with the given configuration
@@ -228,9 +259,9 @@ export async function runBacktest(
 
   log(`Starting backtest: ${validatedConfig.strategyName}`, Date.now());
 
-  // 1. Load strategy
+  // 1. Load strategy (use pre-loaded instance if provided to avoid import() overhead)
   log(`Loading strategy: ${validatedConfig.strategyName}`, Date.now());
-  const strategy = await loadStrategy(validatedConfig.strategyName);
+  const strategy = options.preloadedStrategy ?? await loadStrategy(validatedConfig.strategyName);
 
   // Validate and apply strategy parameters
   const params = validateStrategyParams(strategy, validatedConfig.params);
@@ -338,82 +369,95 @@ export async function runBacktest(
   // Action queue for the strategy
   let pendingActions: PendingAction[] = [];
 
-  // 5. Create strategy context factory
-  const createContext = (currentIndex: number): StrategyContext => {
-    const currentCandle = candles[currentIndex];
+  // 5. Create a single reusable context object (updated each bar to avoid per-bar allocation)
+  const reusableCandleView = new CandleViewImpl(candles, 0);
+
+  const ctx: StrategyContext = {
+    // Market data - candleView is memory efficient
+    get candles(): Candle[] {
+      // Only allocate array if explicitly accessed (legacy strategies)
+      return candles.slice(0, ctx.currentIndex + 1);
+    },
+    candleView: reusableCandleView,
+    currentIndex: 0,
+    currentCandle: candles[0],
+    params,
+
+    // Portfolio state (read-only) — updated each bar
+    portfolio: portfolio.getState(),
+    balance: 0,
+    equity: 0,
+    longPosition: null,
+    shortPosition: null,
+
+    // Funding rate data (futures mode)
+    fundingRates: fundingRateMap ? allFundingRates : undefined,
+    currentFundingRate: undefined,
+
+    // Trading actions
+    openLong(amount: number): void {
+      if (amount > 0) {
+        pendingActions.push({ action: 'OPEN_LONG', amount });
+      }
+    },
+
+    closeLong(amount?: number): void {
+      pendingActions.push({ action: 'CLOSE_LONG', amount: amount ?? 'all' });
+    },
+
+    openShort(amount: number): void {
+      if (amount > 0) {
+        pendingActions.push({ action: 'OPEN_SHORT', amount });
+      }
+    },
+
+    closeShort(amount?: number): void {
+      pendingActions.push({ action: 'CLOSE_SHORT', amount: amount ?? 'all' });
+    },
+
+    // Legacy actions (deprecated but supported for backwards compatibility)
+    buy(amount: number): void {
+      if (amount > 0) {
+        pendingActions.push({ action: 'OPEN_LONG', amount });
+      }
+    },
+
+    sell(amount: number): void {
+      // Legacy sell closes long position
+      if (amount > 0) {
+        pendingActions.push({ action: 'CLOSE_LONG', amount });
+      }
+    },
+
+    // Utilities
+    log(message: string): void {
+      log(`[Strategy] ${message}`, ctx.currentCandle.timestamp);
+    },
+  };
+
+  /**
+   * Update the reusable context in-place for the given bar index.
+   * Avoids per-bar object allocation (1.5M+ allocations for large optimizer runs).
+   */
+  const updateContext = (currentIndex: number): void => {
     const portfolioState = portfolio.getState();
-
-    // Create context with lazy candles array getter
-    const context: StrategyContext = {
-      // Market data - candleView is memory efficient
-      get candles(): Candle[] {
-        // Only allocate array if explicitly accessed (legacy strategies)
-        return candles.slice(0, currentIndex + 1);
-      },
-      candleView: new CandleViewImpl(candles, currentIndex),
-      currentIndex,
-      currentCandle,
-      params,
-
-      // Portfolio state (read-only)
-      portfolio: portfolioState,
-      balance: portfolioState.balance,
-      equity: portfolioState.equity,
-      longPosition: portfolioState.longPosition,
-      shortPosition: portfolioState.shortPosition,
-
-      // Funding rate data (futures mode)
-      fundingRates: fundingRateMap ? allFundingRates : undefined,
-      currentFundingRate: fundingRateMap ? (fundingRateMap.get(candles[currentIndex].timestamp) ?? null) : undefined,
-
-      // Trading actions
-      openLong(amount: number): void {
-        if (amount > 0) {
-          pendingActions.push({ action: 'OPEN_LONG', amount });
-        }
-      },
-
-      closeLong(amount?: number): void {
-        pendingActions.push({ action: 'CLOSE_LONG', amount: amount ?? 'all' });
-      },
-
-      openShort(amount: number): void {
-        if (amount > 0) {
-          pendingActions.push({ action: 'OPEN_SHORT', amount });
-        }
-      },
-
-      closeShort(amount?: number): void {
-        pendingActions.push({ action: 'CLOSE_SHORT', amount: amount ?? 'all' });
-      },
-
-      // Legacy actions (deprecated but supported for backwards compatibility)
-      buy(amount: number): void {
-        if (amount > 0) {
-          pendingActions.push({ action: 'OPEN_LONG', amount });
-        }
-      },
-
-      sell(amount: number): void {
-        // Legacy sell closes long position
-        if (amount > 0) {
-          pendingActions.push({ action: 'CLOSE_LONG', amount });
-        }
-      },
-
-      // Utilities
-      log(message: string): void {
-        log(`[Strategy] ${message}`, currentCandle.timestamp);
-      },
-    };
-
-    return context;
+    ctx.currentIndex = currentIndex;
+    ctx.currentCandle = candles[currentIndex];
+    reusableCandleView.endIndex = currentIndex;
+    ctx.portfolio = portfolioState;
+    ctx.balance = portfolioState.balance;
+    ctx.equity = portfolioState.equity;
+    ctx.longPosition = portfolioState.longPosition;
+    ctx.shortPosition = portfolioState.shortPosition;
+    if (fundingRateMap) {
+      ctx.currentFundingRate = fundingRateMap.get(candles[currentIndex].timestamp) ?? null;
+    }
   };
 
   // 6. Call strategy init
   if (strategy.init) {
-    const initContext = createContext(0);
-    strategy.init(initContext);
+    updateContext(0);
+    strategy.init(ctx);
   }
 
   // 7. Main backtest loop
@@ -467,9 +511,9 @@ export async function runBacktest(
     // Reset pending actions for this bar
     pendingActions = [];
 
-    // Create context and call strategy
-    const context = createContext(i);
-    strategy.onBar(context);
+    // Update reusable context and call strategy
+    updateContext(i);
+    strategy.onBar(ctx);
 
     // Process strategy actions
     for (const pendingAction of pendingActions) {
@@ -497,10 +541,8 @@ export async function runBacktest(
     // Attach nearest funding rate to each new trade (futures mode only)
     if (allFundingRates.length > 0) {
       for (const trade of newTrades) {
-        const nearest = allFundingRates.reduce((prev, curr) =>
-          Math.abs(curr.timestamp - trade.timestamp) < Math.abs(prev.timestamp - trade.timestamp) ? curr : prev
-        );
-        trade.fundingRate = nearest.fundingRate;
+        const nearest = findNearestFundingRate(allFundingRates, trade.timestamp);
+        if (nearest) trade.fundingRate = nearest.fundingRate;
       }
     }
 
@@ -517,7 +559,7 @@ export async function runBacktest(
     // Call onOrderFilled for each filled order
     if (strategy.onOrderFilled) {
       for (const order of processedOrders.filter((o) => o.status === 'filled')) {
-        strategy.onOrderFilled(context, order);
+        strategy.onOrderFilled(ctx, order);
       }
     }
 
@@ -546,8 +588,8 @@ export async function runBacktest(
   // 8. Call strategy onEnd
   if (strategy.onEnd) {
     pendingActions = [];
-    const endContext = createContext(totalBars - 1);
-    strategy.onEnd(endContext);
+    updateContext(totalBars - 1);
+    strategy.onEnd(ctx);
 
     // Process any final actions
     for (const pendingAction of pendingActions) {
@@ -576,10 +618,8 @@ export async function runBacktest(
     // Attach nearest funding rate to each final trade (futures mode only)
     if (allFundingRates.length > 0) {
       for (const trade of finalTrades) {
-        const nearest = allFundingRates.reduce((prev, curr) =>
-          Math.abs(curr.timestamp - trade.timestamp) < Math.abs(prev.timestamp - trade.timestamp) ? curr : prev
-        );
-        trade.fundingRate = nearest.fundingRate;
+        const nearest = findNearestFundingRate(allFundingRates, trade.timestamp);
+        if (nearest) trade.fundingRate = nearest.fundingRate;
       }
     }
 
