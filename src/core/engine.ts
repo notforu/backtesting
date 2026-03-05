@@ -154,6 +154,24 @@ export interface EngineConfig {
    * Progress callback for long-running backtests
    */
   onProgress?: (progress: { current: number; total: number; percent: number }) => void;
+
+  /**
+   * Stop backtest early if equity drops below this fraction of initial capital (e.g., 0.3 = -70%)
+   * Useful for optimizer to skip clearly bad parameter sets quickly
+   */
+  earlyStopEquityFraction?: number;
+
+  /**
+   * Pre-loaded candles to use instead of fetching from DB
+   * Allows optimizer to load candles once and reuse across all combinations
+   */
+  preloadedCandles?: Candle[];
+
+  /**
+   * Pre-loaded funding rates for futures mode
+   * Allows optimizer to load funding rates once and reuse across all combinations
+   */
+  preloadedFundingRates?: FundingRate[];
 }
 
 /**
@@ -218,15 +236,21 @@ export async function runBacktest(
   const params = validateStrategyParams(strategy, validatedConfig.params);
   log(`Strategy params: ${JSON.stringify(params)}`, Date.now());
 
-  // 2. Fetch or load candles
-  log(`Fetching candles for ${validatedConfig.symbol}`, Date.now());
-  const candles = await fetchOrLoadCandles(
-    validatedConfig.exchange,
-    validatedConfig.symbol,
-    validatedConfig.timeframe,
-    validatedConfig.startDate,
-    validatedConfig.endDate
-  );
+  // 2. Fetch or load candles (use pre-loaded if provided)
+  let candles: Candle[];
+  if (options.preloadedCandles) {
+    log(`Using ${options.preloadedCandles.length} pre-loaded candles`, Date.now());
+    candles = options.preloadedCandles;
+  } else {
+    log(`Fetching candles for ${validatedConfig.symbol}`, Date.now());
+    candles = await fetchOrLoadCandles(
+      validatedConfig.exchange,
+      validatedConfig.symbol,
+      validatedConfig.timeframe,
+      validatedConfig.startDate,
+      validatedConfig.endDate
+    );
+  }
 
   if (candles.length === 0) {
     throw new Error(
@@ -236,7 +260,7 @@ export async function runBacktest(
 
   log(`Loaded ${candles.length} candles`, Date.now());
 
-  // Load funding rates for futures mode
+  // Load funding rates for futures mode (use pre-loaded if provided)
   let fundingRateMap: Map<number, FundingRate> | null = null;
   let allFundingRates: FundingRate[] = [];
   let totalFundingIncome = 0;
@@ -245,14 +269,19 @@ export async function runBacktest(
   const fundingByPositionId = new Map<string, number>();
 
   if (validatedConfig.mode === 'futures') {
-    log(`Loading funding rates for ${validatedConfig.symbol}`, Date.now());
-    allFundingRates = await getFundingRates(
-      validatedConfig.exchange,
-      validatedConfig.symbol,
-      validatedConfig.startDate,
-      validatedConfig.endDate
-    );
-    log(`Loaded ${allFundingRates.length} funding rates`, Date.now());
+    if (options.preloadedFundingRates) {
+      log(`Using ${options.preloadedFundingRates.length} pre-loaded funding rates`, Date.now());
+      allFundingRates = options.preloadedFundingRates;
+    } else {
+      log(`Loading funding rates for ${validatedConfig.symbol}`, Date.now());
+      allFundingRates = await getFundingRates(
+        validatedConfig.exchange,
+        validatedConfig.symbol,
+        validatedConfig.startDate,
+        validatedConfig.endDate
+      );
+      log(`Loaded ${allFundingRates.length} funding rates`, Date.now());
+    }
 
     // Build map for O(1) lookup by timestamp
     fundingRateMap = new Map();
@@ -495,6 +524,14 @@ export async function runBacktest(
     // Record equity point
     equityTimestamps.push(candle.timestamp);
     equityValues.push(portfolio.equity);
+
+    // Early termination check (every 100 bars to reduce overhead)
+    if (i % 100 === 0 && options.earlyStopEquityFraction !== undefined) {
+      if (portfolio.equity < validatedConfig.initialCapital * options.earlyStopEquityFraction) {
+        log(`Early termination: equity ${portfolio.equity.toFixed(2)} dropped below ${(options.earlyStopEquityFraction * 100).toFixed(0)}% of initial capital`, candle.timestamp);
+        break;
+      }
+    }
 
     // Report progress
     if (options.onProgress && i % 100 === 0) {

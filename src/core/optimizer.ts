@@ -4,11 +4,11 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import type { Timeframe, PerformanceMetrics, PairsBacktestConfig } from './types.js';
+import type { Timeframe, PerformanceMetrics, PairsBacktestConfig, Candle, FundingRate } from './types.js';
 import { runBacktest, type EngineConfig } from './engine.js';
 import { runPairsBacktest } from './pairs-engine.js';
 import { loadStrategy } from '../strategy/loader.js';
-import { saveOptimizedParams, saveCandles, getCandleDateRange } from '../data/db.js';
+import { saveOptimizedParams, saveCandles, getCandleDateRange, getCandles, getFundingRates } from '../data/db.js';
 import { getProvider } from '../data/providers/index.js';
 
 // ============================================================================
@@ -41,6 +41,12 @@ export interface OptimizationConfig {
   // Additional options
   saveAllRuns?: boolean; // Save every backtest run to history
   mode?: 'spot' | 'futures'; // Trading mode
+
+  /**
+   * Run optimization on a coarser timeframe for speed (e.g., '5m' instead of '1m')
+   * The test/validation phase still uses the original timeframe for accuracy
+   */
+  optimizeTimeframe?: Timeframe;
 }
 
 /**
@@ -96,11 +102,17 @@ export async function runOptimization(
     paramRanges,
     optimizeFor,
     maxCombinations = 500,
-    batchSize = 4,
     minTrades = 10,
     saveAllRuns = false,
     mode,
+    optimizeTimeframe,
   } = config;
+
+  // Use a coarser timeframe for speed if specified
+  const effectiveTimeframe = optimizeTimeframe || timeframe;
+  if (optimizeTimeframe) {
+    console.log(`Using coarser timeframe ${optimizeTimeframe} for optimization (original: ${timeframe})`);
+  }
 
   // Load strategy to get parameter definitions
   const strategy = await loadStrategy(strategyName);
@@ -127,39 +139,52 @@ export async function runOptimization(
   console.log('Pre-fetching candle data...');
   const provider = getProvider(exchange);
 
-  // Fetch candles for symbol A (with PM-aware cache check)
+  // Fetch candles for symbol A (with PM-aware cache check, using effectiveTimeframe)
   const isPM = ['polymarket', 'manifold'].includes(exchange);
-  const cachedRange = await getCandleDateRange(exchange, symbol, timeframe);
+  const cachedRange = await getCandleDateRange(exchange, symbol, effectiveTimeframe);
   const needsFetchA = !cachedRange.start || !cachedRange.end ||
     (!isPM && (cachedRange.start > startDate || cachedRange.end < endDate)) ||
     (isPM && cachedRange.end < Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   if (needsFetchA) {
-    const candles = await provider.fetchCandles(symbol, timeframe, new Date(startDate), new Date(endDate));
-    if (candles.length > 0) {
-      await saveCandles(candles, exchange, symbol, timeframe);
-      console.log(`Cached ${candles.length} candles for ${symbol}`);
+    const fetchedCandles = await provider.fetchCandles(symbol, effectiveTimeframe, new Date(startDate), new Date(endDate));
+    if (fetchedCandles.length > 0) {
+      await saveCandles(fetchedCandles, exchange, symbol, effectiveTimeframe);
+      console.log(`Cached ${fetchedCandles.length} candles for ${symbol} (${effectiveTimeframe})`);
     }
   } else {
-    console.log(`Using existing cached candles for ${symbol}`);
+    console.log(`Using existing cached candles for ${symbol} (${effectiveTimeframe})`);
   }
+
+  // Load candles into memory once for all combinations
+  console.log('Loading candles into memory for reuse...');
+  const preloadedCandles: Candle[] = await getCandles(exchange, symbol, effectiveTimeframe, startDate, endDate);
+  console.log(`Pre-loaded ${preloadedCandles.length} candles (${effectiveTimeframe})`);
 
   // If pairs strategy, also fetch candles for symbol B
   if (isPairsStrategy && config.symbolB) {
-    const cachedRangeB = await getCandleDateRange(exchange, config.symbolB, timeframe);
+    const cachedRangeB = await getCandleDateRange(exchange, config.symbolB, effectiveTimeframe);
     const needsFetchB = !cachedRangeB.start || !cachedRangeB.end ||
       (!isPM && (cachedRangeB.start > startDate || cachedRangeB.end < endDate)) ||
       (isPM && cachedRangeB.end < Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     if (needsFetchB) {
-      const candlesB = await provider.fetchCandles(config.symbolB, timeframe, new Date(startDate), new Date(endDate));
+      const candlesB = await provider.fetchCandles(config.symbolB, effectiveTimeframe, new Date(startDate), new Date(endDate));
       if (candlesB.length > 0) {
-        await saveCandles(candlesB, exchange, config.symbolB, timeframe);
-        console.log(`Cached ${candlesB.length} candles for ${config.symbolB}`);
+        await saveCandles(candlesB, exchange, config.symbolB, effectiveTimeframe);
+        console.log(`Cached ${candlesB.length} candles for ${config.symbolB} (${effectiveTimeframe})`);
       }
     } else {
-      console.log(`Using existing cached candles for ${config.symbolB}`);
+      console.log(`Using existing cached candles for ${config.symbolB} (${effectiveTimeframe})`);
     }
+  }
+
+  // Pre-load funding rates once for futures mode
+  let preloadedFundingRates: FundingRate[] = [];
+  if (mode === 'futures') {
+    console.log('Pre-loading funding rates...');
+    preloadedFundingRates = await getFundingRates(exchange, symbol, startDate, endDate);
+    console.log(`Pre-loaded ${preloadedFundingRates.length} funding rates`);
   }
 
   // Pre-fetch trading fees once (cache for all backtest runs)
@@ -176,7 +201,7 @@ export async function runOptimization(
   let bestResult: { params: Record<string, unknown>; metrics: PerformanceMetrics } | null = null;
   let bestMetricValue = -Infinity;
 
-  // Engine config for backtests (no logging, use cached fee rate)
+  // Engine config for backtests (no logging, use cached fee rate, preloaded data)
   const engineConfig: EngineConfig = {
     saveResults: saveAllRuns, // Save every run when requested
     enableLogging: false,
@@ -186,86 +211,79 @@ export async function runOptimization(
       commissionPercent: 0, // No commission (fees handled via feeRate)
       feeRate: cachedFeeRate, // Pre-fetched fee rate
     },
+    preloadedCandles, // Reuse same candles for every combination
+    preloadedFundingRates: mode === 'futures' ? preloadedFundingRates : undefined,
+    earlyStopEquityFraction: 0.3, // Stop if equity drops 70% (clearly bad param set)
   };
 
-  // Process combinations in batches
+  // Process combinations sequentially to control memory usage
   let testedCount = 0;
 
-  for (let i = 0; i < combinations.length; i += batchSize) {
-    const batch = combinations.slice(i, i + batchSize);
+  for (let i = 0; i < combinations.length; i++) {
+    const params = combinations[i];
 
-    // Run batch in parallel
-    const batchPromises = batch.map(async (params) => {
-      try {
-        if (isPairsStrategy) {
-          // Pairs strategy - use pairs backtest
-          const pairsConfig: PairsBacktestConfig = {
+    try {
+      let runResult: { params: Record<string, unknown>; metrics: PerformanceMetrics } | null = null;
+
+      if (isPairsStrategy) {
+        // Pairs strategy - use pairs backtest
+        const pairsConfig: PairsBacktestConfig = {
+          id: uuidv4(),
+          strategyName,
+          params,
+          symbolA: symbol,
+          symbolB: config.symbolB!,
+          timeframe: effectiveTimeframe,
+          startDate,
+          endDate,
+          initialCapital,
+          exchange,
+          leverage: config.leverage ?? 1,
+        };
+        const result = await runPairsBacktest(pairsConfig, engineConfig);
+        runResult = { params, metrics: result.metrics };
+      } else {
+        // Single symbol strategy - use regular backtest
+        const result = await runBacktest(
+          {
             id: uuidv4(),
             strategyName,
             params,
-            symbolA: symbol,
-            symbolB: config.symbolB!,
-            timeframe,
+            symbol,
+            timeframe: effectiveTimeframe,
             startDate,
             endDate,
             initialCapital,
             exchange,
-            leverage: config.leverage ?? 1,
-          };
-          const result = await runPairsBacktest(pairsConfig, engineConfig);
-          return { params, metrics: result.metrics };
-        } else {
-          // Single symbol strategy - use regular backtest
-          const result = await runBacktest(
-            {
-              id: uuidv4(),
-              strategyName,
-              params,
-              symbol,
-              timeframe,
-              startDate,
-              endDate,
-              initialCapital,
-              exchange,
-              mode,
-            },
-            engineConfig
-          );
-          return { params, metrics: result.metrics };
-        }
-      } catch (error) {
-        // Log error but continue with other combinations
-        console.warn(`Failed to test params ${JSON.stringify(params)}:`, error);
-        return null;
+            mode,
+          },
+          engineConfig
+        );
+        runResult = { params, metrics: result.metrics };
       }
-    });
-
-    const batchResults = await Promise.all(batchPromises);
-
-    // Process results
-    for (const result of batchResults) {
-      if (!result) continue;
 
       testedCount++;
 
       // Skip results with insufficient trades
-      if (result.metrics.totalTrades < minTrades) {
-        console.warn(`Skipping params - only ${result.metrics.totalTrades} trades (min: ${minTrades})`);
-        continue;
-      }
-
-      // Check if this is the best result so far
-      let metricValue: number;
-      if (optimizeFor === 'composite') {
-        metricValue = calculateCompositeScore(result.metrics);
+      if (runResult.metrics.totalTrades < minTrades) {
+        console.warn(`Skipping params - only ${runResult.metrics.totalTrades} trades (min: ${minTrades})`);
       } else {
-        metricValue = result.metrics[optimizeFor];
-      }
+        // Check if this is the best result so far
+        let metricValue: number;
+        if (optimizeFor === 'composite') {
+          metricValue = calculateCompositeScore(runResult.metrics);
+        } else {
+          metricValue = runResult.metrics[optimizeFor];
+        }
 
-      if (metricValue > bestMetricValue) {
-        bestMetricValue = metricValue;
-        bestResult = result;
+        if (metricValue > bestMetricValue) {
+          bestMetricValue = metricValue;
+          bestResult = runResult;
+        }
       }
+    } catch (error) {
+      // Log error but continue with other combinations
+      console.warn(`Failed to test params ${JSON.stringify(params)}:`, error);
     }
 
     // Report progress
@@ -280,8 +298,11 @@ export async function runOptimization(
       });
     }
 
-    // Allow GC between batches to prevent memory buildup
-    await new Promise(resolve => setImmediate(resolve));
+    // Yield to event loop and allow GC between runs
+    if (i % 10 === 0) {
+      await new Promise(resolve => setImmediate(resolve));
+      if (global.gc) global.gc();
+    }
   }
 
   if (!bestResult) {

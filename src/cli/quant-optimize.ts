@@ -14,6 +14,7 @@
  *   --min-trades=NUM          Minimum trades required (default: 10)
  *   --symbol-b=SYMBOL         Second symbol for pairs trading (optional)
  *   --leverage=NUM            Leverage for pairs trading (default: 1)
+ *   --optimize-timeframe=TF   Coarser timeframe for speed (e.g., 5m when main TF is 1m)
  *
  * Outputs JSON to stdout:
  * - Success: {"success":true,"bestParams":{...},"bestMetrics":{...},"totalCombinations":500,"testedCombinations":423}
@@ -116,6 +117,7 @@ async function main(): Promise<void> {
   const minTrades = args['min-trades'] ? parseInt(args['min-trades'], 10) : 10;
   const symbolB = args['symbol-b'];
   const leverage = args.leverage ? Number(args.leverage) : 1;
+  const optimizeTimeframe = args['optimize-timeframe'] as Timeframe | undefined;
 
   // Create optimization configuration
   const config: OptimizationConfig = {
@@ -131,6 +133,8 @@ async function main(): Promise<void> {
     minTrades,
     symbolB,
     leverage,
+    mode: args.mode === 'futures' ? 'futures' : undefined,
+    optimizeTimeframe,
   };
 
   console.error(`Running optimization: ${config.strategyName} on ${config.symbol}`);

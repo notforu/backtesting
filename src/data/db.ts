@@ -186,6 +186,63 @@ export async function saveCandles(
 }
 
 /**
+ * Bulk insert candles for high-performance caching.
+ * Uses multi-row INSERT with batches of 1000 for ~5x speedup over single-row inserts.
+ * ON CONFLICT DO NOTHING (skips duplicates).
+ */
+export async function saveCandlesBulk(
+  candles: Candle[],
+  exchange: string,
+  symbol: string,
+  timeframe: Timeframe
+): Promise<number> {
+  if (candles.length === 0) return 0;
+
+  const p = getPool();
+  const client = await p.connect();
+  const BATCH_SIZE = 1000;
+  let totalInserted = 0;
+
+  try {
+    await client.query('BEGIN');
+
+    for (let i = 0; i < candles.length; i += BATCH_SIZE) {
+      const batch = candles.slice(i, i + BATCH_SIZE);
+
+      // Build multi-row VALUES clause: ($1,$2,$3,$4,$5,$6,$7,$8,$9), ($10,$11,...)
+      const values: unknown[] = [];
+      const placeholders: string[] = [];
+
+      for (let j = 0; j < batch.length; j++) {
+        const c = batch[j];
+        const offset = j * 9;
+        placeholders.push(
+          `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9})`
+        );
+        values.push(exchange, symbol, timeframe, c.timestamp, c.open, c.high, c.low, c.close, c.volume);
+      }
+
+      const result = await client.query(
+        `INSERT INTO candles (exchange, symbol, timeframe, timestamp, open, high, low, close, volume)
+         VALUES ${placeholders.join(', ')}
+         ON CONFLICT (exchange, symbol, timeframe, timestamp) DO NOTHING`,
+        values
+      );
+      totalInserted += result.rowCount ?? 0;
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return totalInserted;
+}
+
+/**
  * Get candles from the database
  */
 export async function getCandles(

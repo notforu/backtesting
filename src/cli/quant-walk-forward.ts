@@ -13,6 +13,7 @@
  *   --optimize-for=METRIC   Metric to optimize (default: sharpeRatio)
  *   --symbol-b=SYMBOL       Second symbol for pairs trading (optional)
  *   --leverage=NUM          Leverage for pairs trading (default: 1)
+ *   --optimize-timeframe=TF Coarser timeframe for optimization phase (test uses original TF)
  *
  * Outputs JSON to stdout:
  * - Success: {"success":true,"trainMetrics":{...},"testMetrics":{...},"optimizedParams":{...},"oosDegrade":15.2}
@@ -124,6 +125,7 @@ async function main(): Promise<void> {
   // Parse pairs trading options
   const symbolB = args['symbol-b'];
   const leverage = args.leverage ? Number(args.leverage) : 1;
+  const optimizeTimeframe = args['optimize-timeframe'] as Timeframe | undefined;
 
   // Create walk-forward configuration
   const config: WalkForwardConfig = {
@@ -139,6 +141,7 @@ async function main(): Promise<void> {
     symbolB,
     leverage,
     mode: args.mode === 'futures' ? 'futures' : undefined,
+    optimizeTimeframe,
   };
 
   console.error(`Running walk-forward test: ${config.strategyName} on ${config.symbol}`);

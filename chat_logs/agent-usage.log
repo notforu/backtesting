@@ -1,3 +1,10 @@
+[2026-03-05 18:00] main (opus) - Paper trading verification: cached fresh data + ran aggregate backtests to compare with prod trades
+[2026-03-04 19:50] be-dev (sonnet) - Optimize fr-settlement-scalper.ts: windowed indicators O(n²)→O(n), running FR index O(n)→O(1)
+[2026-03-04 19:15] be-dev (sonnet) - Optimize volatility-breakout-scalper windowed indicator calculations
+[2026-03-04 18:30] be-dev (sonnet) - Build scalping symbol selector script (select-scalping-symbols.ts)
+[2026-03-04 18:30] be-dev (sonnet) - Add saveCandlesBulk to db.ts + update cache-candles.ts
+[2026-03-04 18:30] be-dev (sonnet) - Implement FR Settlement Window Scalper strategy
+[2026-03-04 18:30] be-dev (sonnet) - Implement Volatility Breakout Scalper strategy
 [2026-03-03 16:05] qa (sonnet) - Add capital invariant tests 7-12 to aggregate-engine.test.ts Suite 10
 [2026-03-03 03:57] fe-dev (sonnet) - Backtesting view-only mode for unauthenticated users
 [2026-03-03 03:57] Explore (sonnet) - Map backtesting UI action buttons for view-only
@@ -47,4 +54,21 @@
 [2026-03-03 20:45] qa (sonnet) - Add 6 capital invariant tests for many-asset no-double-spending scenarios
 [2026-03-03 21:00] qa (sonnet) - Add 12 capital invariant + allocation enforcement tests (all 50 pass)
 [2026-03-03 19:45] commit (haiku) - two logical commits for FR V2 research and capital invariant tests
+[2026-03-03 20:30] be-dev (sonnet) - Convert fr-v2-top-configs-export.json to BacktestConfigExportFile import format
+[2026-03-03 20:45] runner (bash) - Cache candles (1h+4h) for 9 symbols on prod (195K candles)
+[2026-03-03 20:45] runner (bash) - Cache funding rates for 9 symbols on prod (21K rates)
+[2026-03-03 21:00] runner (bash) - Import 8 FR V2 aggregation configs to prod (all succeeded)
 [2026-03-03 22:00] be-dev (sonnet) - Convert fr-v2-top-configs-export.json to BacktestConfigExportFile format as fr-v2-import.json
+[2026-03-04 18:00] quant-lead (opus) - Research 7 HF scalping strategy concepts for crypto futures (1m TF, leveraged)
+[2026-03-04 18:00] Explore (sonnet) - Explore leverage and futures support in engine
+[2026-03-04 18:00] Explore (sonnet) - Explore Bybit timeframe capabilities and data limits
+[2026-03-04 18:10] quant-lead (opus) - Brainstorm 7 creative HF scalping strategies with academic research
+[2026-03-04 18:10] architect (opus) - Design tick data infrastructure and 1m scalping architecture
+[2026-03-04 18:30] Explore (sonnet) - Explore cached data, symbol lists, FR results for HF scalping selection
+[2026-03-04 19:00] be-dev (sonnet) - Add saveCandlesBulk() to db.ts and update cache-candles.ts to use it for large batches
+[2026-03-04 19:15] be-dev (sonnet) - Create scripts/select-scalping-symbols.ts — data-driven symbol selector for HF scalping strategies
+[2026-03-04 19:30] be-dev (sonnet) - Create strategies/volatility-breakout-scalper.ts — BB squeeze detection with ATR exits
+[2026-03-04 19:45] be-dev (sonnet) - Create strategies/fr-settlement-scalper.ts — HF scalper fading forced flow before funding settlements
+[2026-03-04 19:50] docs-writer (haiku) - Create changelog for HF scalping infrastructure: symbol selection, DB bulk insert, FR Settlement + Vol Breakout scalpers
+[2026-03-05 02:30] docs-writer (haiku) - Create changelog for optimizer performance optimizations
+[2026-03-05 02:10] be-dev (sonnet) - Implement 5 performance optimizations for grid search & walk-forward (early termination, preloaded candles, sequential processing, optimize-timeframe CLI flags)

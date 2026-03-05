@@ -117,6 +117,13 @@ export interface WalkForwardConfig {
    * Trading mode: 'spot' or 'futures' (default: 'spot')
    */
   mode?: 'spot' | 'futures';
+
+  /**
+   * Coarser timeframe for the optimization (train) phase only, for speed
+   * The test (out-of-sample) phase always uses the original timeframe for accuracy
+   * E.g., set to '5m' when timeframe is '1m' to reduce bar count by 5x during grid search
+   */
+  optimizeTimeframe?: Timeframe;
 }
 
 /**
@@ -262,6 +269,7 @@ export async function runWalkForwardTest(
     symbolB: config.symbolB,
     leverage: config.leverage,
     mode,
+    optimizeTimeframe: config.optimizeTimeframe, // Coarser TF for speed (test phase uses original TF)
   };
 
   const optimizationResult = await runOptimization(optimizationConfig);

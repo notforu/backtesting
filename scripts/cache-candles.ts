@@ -10,6 +10,7 @@
 import { getProvider } from '../src/data/providers/index.js';
 import {
   saveCandles,
+  saveCandlesBulk,
   getCandleDateRange,
 } from '../src/data/db.js';
 import type { Timeframe } from '../src/core/types.js';
@@ -179,7 +180,10 @@ async function main(): Promise<void> {
         const candles = await provider.fetchCandles(symbol, tf, fetchStart, to);
 
         if (candles.length > 0) {
-          const saved = await saveCandles(candles, exchange, symbol, tf);
+          // Use bulk insert for large batches (~5x faster than single-row inserts)
+          const saved = candles.length > 100
+            ? await saveCandlesBulk(candles, exchange, symbol, tf)
+            : await saveCandles(candles, exchange, symbol, tf);
           totalCandles += saved;
 
           const firstDate = formatDate(candles[0].timestamp);
