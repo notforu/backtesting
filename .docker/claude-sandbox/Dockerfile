@@ -65,4 +65,5 @@ WORKDIR /workspace
 
 # Default command: run Claude with max permissions
 # First run will prompt for OAuth login via browser
-ENTRYPOINT ["claude", "-c", "--dangerously-skip-permissions"]
+# Pass -c (or --continue) as docker run arg to resume last session
+ENTRYPOINT ["claude", "--dangerously-skip-permissions"]

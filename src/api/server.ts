@@ -75,11 +75,19 @@ await fastify.register(configExportRoutes);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // Compiled server lives at dist/api/server.js, so ../web resolves to dist/web
+// In dev mode (tsx), __dirname is src/api — fall back to project root dist/web
 const webDistPath = path.join(__dirname, '..', 'web');
+const webDistFallback = path.join(__dirname, '..', '..', 'dist', 'web');
 
-if (existsSync(webDistPath)) {
+const resolvedWebDir = existsSync(path.join(webDistPath, 'index.html'))
+  ? webDistPath
+  : existsSync(path.join(webDistFallback, 'index.html'))
+    ? webDistFallback
+    : null;
+
+if (resolvedWebDir) {
   await fastify.register(fastifyStatic, {
-    root: webDistPath,
+    root: resolvedWebDir,
     prefix: '/',
     wildcard: false,
   });

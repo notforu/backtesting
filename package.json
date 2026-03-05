@@ -23,7 +23,8 @@
     "paper:seed": "npx tsx scripts/seed-paper-test.ts",
     "config:export": "tsx scripts/export-configs.ts",
     "config:import": "tsx scripts/import-configs.ts",
-    "user:create": "tsx scripts/create-user.ts"
+    "user:create": "tsx scripts/create-user.ts",
+    "postinstall": "node -e \"const fs=require('fs'),p=require('path'),d=p.join('node_modules','technicalindicators','lib');if(!fs.existsSync(d)){fs.symlinkSync('dist',d)}\""
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

@@ -2,7 +2,8 @@
 # Run Claude Code in a sandboxed Docker container with max permissions
 #
 # Usage:
-#   ./run.sh                    # Run in current project
+#   ./run.sh                    # Run fresh session
+#   ./run.sh -c                 # Continue last session
 #   ./run.sh /path/to/project   # Run in specific project
 #   ./run.sh --build            # Rebuild image first
 #

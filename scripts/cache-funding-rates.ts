@@ -3,6 +3,7 @@
  * Cache funding rate history for perpetual futures
  *
  * Usage:
+ *   npx tsx scripts/cache-funding-rates.ts --exchange=bybit --symbols=ALL --from=2024-01-01
  *   npx tsx scripts/cache-funding-rates.ts --exchange=bybit --symbols=BTC/USDT:USDT,ETH/USDT:USDT --from=2024-01-01
  *   npx tsx scripts/cache-funding-rates.ts --exchange=bybit --symbols=BTC/USDT:USDT --from=2024-01-01 --to=2024-12-31
  */
@@ -19,7 +20,7 @@ import {
 
 function parseArgs(): {
   exchange: string;
-  symbols: string[];
+  symbols: string[] | 'ALL';
   from: Date;
   to: Date;
 } {
@@ -40,7 +41,7 @@ function parseArgs(): {
 
   if (!parsed['symbols']) {
     console.error(
-      'Error: --symbols is required (e.g., --symbols=BTC/USDT:USDT,ETH/USDT:USDT)'
+      'Error: --symbols is required (e.g., --symbols=ALL or --symbols=BTC/USDT:USDT,ETH/USDT:USDT)'
     );
     process.exit(1);
   }
@@ -62,13 +63,12 @@ function parseArgs(): {
     process.exit(1);
   }
 
-  const symbols = parsed['symbols']
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  const symbols = parsed['symbols'].toUpperCase() === 'ALL'
+    ? 'ALL' as const
+    : parsed['symbols'].split(',').map((s) => s.trim()).filter((s) => s.length > 0);
 
-  if (symbols.length === 0) {
-    console.error('Error: --symbols must contain at least one symbol');
+  if (symbols !== 'ALL' && symbols.length === 0) {
+    console.error('Error: --symbols must contain at least one symbol or be ALL');
     process.exit(1);
   }
 
@@ -101,12 +101,7 @@ function formatDuration(ms: number): string {
 // ============================================================================
 
 async function main(): Promise<void> {
-  const { exchange, symbols, from, to } = parseArgs();
-
-  console.log(`Caching funding rates from ${exchange}`);
-  console.log(`Symbols: ${symbols.join(', ')}`);
-  console.log(`Date range: ${from.toISOString().slice(0, 10)} -> ${to.toISOString().slice(0, 10)}`);
-  console.log('');
+  const { exchange, symbols: symbolsArg, from, to } = parseArgs();
 
   if (exchange !== 'bybit') {
     console.error(`Error: Only "bybit" exchange is currently supported for funding rates.`);
@@ -114,6 +109,22 @@ async function main(): Promise<void> {
   }
 
   const provider = new BybitProvider();
+
+  // Resolve symbols
+  let symbols: string[];
+  if (symbolsArg === 'ALL') {
+    console.log(`Discovering symbols for ${exchange}...`);
+    symbols = await provider.getAvailableSymbols();
+    console.log(`Found ${symbols.length} symbols`);
+  } else {
+    symbols = symbolsArg;
+  }
+
+  console.log(`\nCaching funding rates from ${exchange}`);
+  console.log(`Symbols: ${symbols.length} (${symbolsArg === 'ALL' ? 'ALL' : symbols.join(', ')})`);
+  console.log(`Date range: ${from.toISOString().slice(0, 10)} -> ${to.toISOString().slice(0, 10)}`);
+  console.log('');
+
   const startTime = Date.now();
 
   let totalFetched = 0;
