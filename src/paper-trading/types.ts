@@ -37,6 +37,10 @@ export interface PaperPosition {
   entryTime: number;
   unrealizedPnl: number;
   fundingAccumulated: number;
+  /** Stop-loss price level, or null if not set */
+  stopLoss: number | null;
+  /** Take-profit price level, or null if not set */
+  takeProfit: number | null;
 }
 
 export interface PaperTrade {

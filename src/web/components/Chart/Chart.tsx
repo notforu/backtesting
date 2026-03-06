@@ -20,12 +20,19 @@ import {
   HistogramSeries,
   LineSeries,
   AreaSeries,
+  LineStyle,
 } from 'lightweight-charts';
 import type { Candle, Trade, RollingMetrics } from '../../types';
 
 export interface SessionEvent {
   timestamp: number;
   type: 'start' | 'resume' | 'pause' | 'gap_start' | 'gap_end';
+}
+
+export interface ActiveLevel {
+  price: number;
+  label: string;
+  color: string;
 }
 
 interface ChartProps {
@@ -41,6 +48,12 @@ interface ChartProps {
   endDate?: number;
   rollingMetrics?: RollingMetrics;
   sessionEvents?: SessionEvent[];
+  /** FR threshold for short entries (positive value, e.g. 0.0005). Shown as a red dashed line on the FR histogram. */
+  frShortThreshold?: number;
+  /** FR threshold for long entries (negative value, e.g. -0.0003). Shown as a green dashed line on the FR histogram. */
+  frLongThreshold?: number;
+  /** Horizontal price lines to draw on the chart (e.g. SL/TP levels for open positions) */
+  activeLevels?: ActiveLevel[];
 }
 
 // Convert timestamp to TradingView time format
@@ -83,7 +96,7 @@ function estimateCandles(start: number, end: number, timeframe: string): number 
   return Math.ceil(diffMs / (tfMs[timeframe] ?? 3600000));
 }
 
-export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, rollingMetrics, sessionEvents }: ChartProps) {
+export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, rollingMetrics, sessionEvents, frShortThreshold, frLongThreshold, activeLevels }: ChartProps) {
   const [displayTimeframe, setDisplayTimeframe] = useState<string | null>(null);
   const [showFundingRate, setShowFundingRate] = useState(false);
   const [showROI, setShowROI] = useState(false);
@@ -154,6 +167,8 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
   const sharpeSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const winRateSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const prevCandleCountRef = useRef<number>(0);
+  // Track active price lines (SL/TP) so they can be removed/recreated on updates
+  const priceLinesRef = useRef<ReturnType<CandlestickSeriesApi['createPriceLine']>[]>([]);
 
   // Derived: whether any overlay (FR or metric) is active
   const hasAnyOverlay = showFundingRate || showROI || showDrawdown || showSharpe || showWinRate;
@@ -442,6 +457,28 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
           borderVisible: false,
         });
 
+        // Add threshold price lines if provided
+        if (frShortThreshold !== undefined) {
+          frSeries.createPriceLine({
+            price: frShortThreshold,
+            color: '#EF4444',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'Short',
+          });
+        }
+        if (frLongThreshold !== undefined) {
+          frSeries.createPriceLine({
+            price: frLongThreshold,
+            color: '#22C55E',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'Long',
+          });
+        }
+
         frSeriesRef.current = frSeries;
       }
 
@@ -458,7 +495,7 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
         frSeriesRef.current = null;
       }
     }
-  }, [showFundingRate, fundingRates]);
+  }, [showFundingRate, fundingRates, frShortThreshold, frLongThreshold]);
 
   // ROI overlay
   useEffect(() => {
@@ -590,6 +627,37 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
       }
     }
   }, [showWinRate, rollingMetrics]);
+
+  // Active price levels (SL/TP horizontal lines)
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+
+    // Remove all existing price lines
+    for (const line of priceLinesRef.current) {
+      try {
+        series.removePriceLine(line);
+      } catch {
+        // Line may already be gone if series was recreated
+      }
+    }
+    priceLinesRef.current = [];
+
+    if (!activeLevels || activeLevels.length === 0) return;
+
+    // Create a new price line for each active level
+    for (const level of activeLevels) {
+      const line = series.createPriceLine({
+        price: level.price,
+        color: level.color,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: level.label,
+      });
+      priceLinesRef.current.push(line);
+    }
+  }, [activeLevels]);
 
   // Zoom controls
   const handleZoomIn = useCallback(() => {

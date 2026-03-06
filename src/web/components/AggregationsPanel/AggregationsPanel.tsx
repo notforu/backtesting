@@ -4,7 +4,9 @@ import { CreateAggregationModal } from './CreateAggregationModal';
 import { useBacktestStore, useConfigStore } from '../../stores/backtestStore';
 import { useAuthStore } from '../../stores/authStore';
 import { HistoryExplorerContent } from '../HistoryExplorer/HistoryExplorer';
-import type { BacktestSummary } from '../../types';
+import { usePaperSessions } from '../../hooks/usePaperTrading';
+import { usePaperTradingStore } from '../../stores/paperTradingStore';
+import type { BacktestSummary, PaperSession } from '../../types';
 
 export function AggregationsPanel() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -13,6 +15,8 @@ export function AggregationsPanel() {
   const runAggregationMutation = useRunAggregation();
   const { isRunning, selectedBacktestId } = useBacktestStore();
   const { applyHistoryParams } = useConfigStore();
+  const { data: paperSessions } = usePaperSessions();
+  const { setActivePage, setSelectedSession } = usePaperTradingStore();
   const { loadBacktest } = useLoadBacktest();
   const {
     selectedAggregationId,
@@ -52,6 +56,21 @@ export function AggregationsPanel() {
         setSelectedAggregation(null);
       }
     }
+  };
+
+  // Build a map of aggregationConfigId -> linked paper sessions for badge display
+  const sessionsByConfigId = (paperSessions ?? []).reduce<Record<string, PaperSession[]>>((acc, s) => {
+    if (s.aggregationConfigId) {
+      if (!acc[s.aggregationConfigId]) acc[s.aggregationConfigId] = [];
+      acc[s.aggregationConfigId]!.push(s);
+    }
+    return acc;
+  }, {});
+
+  const handleNavigateToSession = (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    setSelectedSession(sessionId);
+    setActivePage('paper-trading');
   };
 
   const inputClass = 'w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent';
@@ -110,6 +129,36 @@ export function AggregationsPanel() {
               <div className="text-xs text-gray-500 mt-0.5 truncate">
                 {agg.subStrategies.map(s => s.symbol.replace('/USDT:USDT', '')).join(', ')}
               </div>
+              {/* Paper trading session badges */}
+              {sessionsByConfigId[agg.id] && sessionsByConfigId[agg.id]!.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {sessionsByConfigId[agg.id]!.map((session) => {
+                    const statusColor =
+                      session.status === 'running'
+                        ? 'bg-green-900/60 text-green-400 border-green-700/50'
+                        : session.status === 'paused'
+                          ? 'bg-yellow-900/60 text-yellow-400 border-yellow-700/50'
+                          : 'bg-gray-700/60 text-gray-400 border-gray-600/50';
+                    const dotColor =
+                      session.status === 'running'
+                        ? 'bg-green-400'
+                        : session.status === 'paused'
+                          ? 'bg-yellow-400'
+                          : 'bg-gray-500';
+                    return (
+                      <button
+                        key={session.id}
+                        onClick={(e) => handleNavigateToSession(e, session.id)}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium transition-colors hover:opacity-80 ${statusColor}`}
+                        title={`View paper session: ${session.name}`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
+                        Paper: {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -24,7 +24,8 @@
  *   Only trade when BBWidth/price > minBBWidth (ensures sufficient volatility)
  */
 
-import { BollingerBands, RSI, ATR } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { BollingerBands, RSI, ATR } = ti;
 import type { Strategy, StrategyContext, StrategyParam } from '../src/strategy/base.js';
 
 // ============================================================================

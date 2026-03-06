@@ -565,6 +565,8 @@ export interface PaperPosition {
   entryTime: number;
   unrealizedPnl: number;
   fundingAccumulated: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
 }
 
 export interface PaperTrade {

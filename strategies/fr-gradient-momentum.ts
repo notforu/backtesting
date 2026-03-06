@@ -33,7 +33,8 @@
  * Requires funding rate data: run scripts/cache-funding-rates.ts first
  */
 
-import { RSI, SMA, ATR } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { RSI, SMA, ATR } = ti;
 import type { Strategy, StrategyContext, StrategyParam } from '../src/strategy/base.js';
 
 // ============================================================================

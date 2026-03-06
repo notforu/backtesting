@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePaperTradingStore } from '../../stores/paperTradingStore';
+import { useAggregationStore } from '../../stores/aggregationStore';
 import { useAuthStore } from '../../stores/authStore';
 import {
   usePaperSessions,
@@ -31,7 +32,7 @@ import {
   configDisplayName,
 } from '../PaperTradingPanel/PaperTradingPanel';
 import { Chart } from '../Chart';
-import type { SessionEvent } from '../Chart/Chart';
+import type { SessionEvent, ActiveLevel } from '../Chart/Chart';
 import { Dashboard } from '../Dashboard';
 import { PaperDrawdownChart } from './PaperDrawdownChart';
 import { mapPaperTrades, computePaperMetrics } from './paperUtils';
@@ -187,7 +188,8 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   const { data: equitySnapshots } = usePaperEquity(sessionId);
   const deleteMutation = useDeletePaperSession();
   const controls = usePaperSessionControl(sessionId);
-  const { setSelectedSession } = usePaperTradingStore();
+  const { setSelectedSession, setActivePage } = usePaperTradingStore();
+  const { setActiveConfigTab, setSelectedAggregation } = useAggregationStore();
 
   usePaperSessionSSE(sessionId);
   const { data: eventsData } = usePaperSessionEvents(sessionId);
@@ -336,6 +338,42 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshots, snapshots.length, activeAsset?.timeframe, session?.createdAt, session?.status]);
 
+  // Extract FR thresholds from active sub-strategy params (absolute thresholds only, not percentile-based)
+  // Must be before early returns so hooks are always called in the same order.
+  const frThresholds = useMemo(() => {
+    if (!activeAsset) return { short: undefined, long: undefined };
+    const activeSub = subStrategies.find(
+      (ss) => ss.symbol === activeAsset.symbol && ss.timeframe === activeAsset.timeframe,
+    );
+    const params = activeSub?.params ?? {};
+    const usePercentile = params.usePercentile;
+    // Only show fixed threshold lines when not using adaptive percentile thresholds
+    if (usePercentile === true || usePercentile === undefined) {
+      return { short: undefined, long: undefined };
+    }
+    const short = typeof params.fundingThresholdShort === 'number' ? params.fundingThresholdShort : undefined;
+    const long = typeof params.fundingThresholdLong === 'number' ? params.fundingThresholdLong : undefined;
+    return { short, long };
+  }, [activeAsset, subStrategies]);
+
+  // Compute SL/TP price levels for open positions on the active asset.
+  // These are rendered as horizontal dashed lines on the price chart.
+  const activeLevels = useMemo((): ActiveLevel[] => {
+    if (!activeAsset || !session) return [];
+    const positions = session.positions ?? [];
+    const assetPositions = positions.filter((p) => p.symbol === activeAsset.symbol);
+    const levels: ActiveLevel[] = [];
+    for (const pos of assetPositions) {
+      if (pos.stopLoss != null) {
+        levels.push({ price: pos.stopLoss, label: 'SL', color: '#EF4444' });
+      }
+      if (pos.takeProfit != null) {
+        levels.push({ price: pos.takeProfit, label: 'TP', color: '#22C55E' });
+      }
+    }
+    return levels;
+  }, [session, activeAsset]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -367,6 +405,13 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     setSelectedSession(null);
   };
 
+  const handleViewConfig = () => {
+    if (!session.aggregationConfigId) return;
+    setSelectedAggregation(session.aggregationConfigId);
+    setActiveConfigTab('aggregations');
+    setActivePage('backtesting');
+  };
+
   // Portfolio chart tab definitions
   const portfolioTabs: { id: PortfolioChartTab; label: string }[] = [
     { id: 'equity', label: 'Equity' },
@@ -396,6 +441,34 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
           )}
         </div>
       </div>
+
+      {/* Source config link — only shown when session was created from a saved aggregation config */}
+      {session.aggregationConfigId && (
+        <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+          <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
+          <span className="text-gray-400 shrink-0">Based on config:</span>
+          <span className="text-gray-300 font-medium truncate">
+            {session.aggregationConfig?.name ?? session.aggregationConfigId}
+          </span>
+          {session.aggregationConfig && (
+            <span className="text-gray-500 text-xs shrink-0">
+              {session.aggregationConfig.allocationMode.replace(/_/g, ' ')} |{' '}
+              {session.aggregationConfig.subStrategies.length} strategies
+            </span>
+          )}
+          <button
+            onClick={handleViewConfig}
+            className="ml-auto shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white text-xs font-medium transition-colors"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+            View Config
+          </button>
+        </div>
+      )}
 
       {/* Control buttons - only shown to session owner */}
       {isOwner && (
@@ -480,6 +553,8 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
                   <th className="pb-2 pr-3">Entry Price</th>
                   <th className="pb-2 pr-3">Entry Time</th>
                   <th className="pb-2 pr-3">Unrealized P&amp;L</th>
+                  <th className="pb-2 pr-3">Stop Loss</th>
+                  <th className="pb-2 pr-3">Take Profit</th>
                   <th className="pb-2">Funding</th>
                 </tr>
               </thead>
@@ -497,6 +572,12 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
                     <td className="py-2 pr-3 text-gray-400 text-xs">{new Date(pos.entryTime).toLocaleString()}</td>
                     <td className={`py-2 pr-3 font-medium ${pos.unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {fmtUsd(pos.unrealizedPnl)}
+                    </td>
+                    <td className="py-2 pr-3 text-red-400 text-xs">
+                      {pos.stopLoss != null ? fmtUsd(pos.stopLoss) : <span className="text-gray-600">-</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-green-400 text-xs">
+                      {pos.takeProfit != null ? fmtUsd(pos.takeProfit) : <span className="text-gray-600">-</span>}
                     </td>
                     <td className={`py-2 ${pos.fundingAccumulated >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {fmtUsd(pos.fundingAccumulated)}
@@ -564,6 +645,9 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
               startDate={session.createdAt}
               endDate={Date.now()}
               sessionEvents={sessionEvents}
+              frShortThreshold={frThresholds.short}
+              frLongThreshold={frThresholds.long}
+              activeLevels={activeLevels}
             />
           ) : (
             <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">

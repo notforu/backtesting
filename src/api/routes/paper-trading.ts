@@ -248,7 +248,7 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
 
         const positions = await getPaperPositions(request.params.id);
 
-        return reply.status(200).send({ ...session, openPositions: positions });
+        return reply.status(200).send({ ...session, positions });
       } catch (error) {
         fastify.log.error({ err: error, msg: 'Error getting paper trading session' });
         const message = error instanceof Error ? error.message : 'Unknown error';

@@ -40,7 +40,8 @@
  * Avoid using in low-volatility or choppy markets where false signals are common.
  */
 
-import { EMA } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { EMA } = ti;
 import type { Strategy, StrategyContext } from '../src/strategy/base.js';
 
 /**

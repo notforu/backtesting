@@ -19,7 +19,8 @@
  * Requires funding rate data cached for the symbol/timeframe.
  */
 
-import { SMA, RSI } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { SMA, RSI } = ti;
 import type { Strategy, StrategyContext, StrategyParam } from '../src/strategy/base.js';
 
 // ============================================================================

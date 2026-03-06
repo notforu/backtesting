@@ -22,7 +22,8 @@
  * - Time-Based: Maximum holding period (45 bars / ~7.5 days on 4h chart)
  */
 
-import { BollingerBands, EMA, ATR } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { BollingerBands, EMA, ATR } = ti;
 import type { Strategy, StrategyContext } from '../src/strategy/base.js';
 
 // ============================================================================

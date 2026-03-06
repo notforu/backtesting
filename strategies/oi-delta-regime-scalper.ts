@@ -25,7 +25,8 @@
  *   - Funding rates: run scripts/cache-funding-rates.ts first
  */
 
-import { EMA, ATR } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { EMA, ATR } = ti;
 import { getOpenInterest, getLongShortRatio } from '../src/data/db.js';
 import type { Strategy, StrategyContext, StrategyParam } from '../src/strategy/base.js';
 import type { OpenInterestRecord, LongShortRatioRecord } from '../src/core/types.js';

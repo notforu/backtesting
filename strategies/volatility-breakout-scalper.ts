@@ -14,7 +14,8 @@
  * Works on any liquid spot or futures market. Recommended timeframes: 15m, 1h, 4h.
  */
 
-import { SMA, ATR, BollingerBands } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { SMA, ATR, BollingerBands } = ti;
 import type { Strategy, StrategyContext, StrategyParam } from '../src/strategy/base.js';
 
 // ============================================================================

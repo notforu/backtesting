@@ -1,4 +1,5 @@
-import { CCI, SMA, ADX, ATR } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { CCI, SMA, ADX, ATR } = ti;
 import type { Strategy, StrategyContext } from '../src/strategy/base.js';
 
 interface IndicatorState {

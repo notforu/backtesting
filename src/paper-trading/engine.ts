@@ -947,6 +947,12 @@ export class PaperTradingEngine extends EventEmitter {
             // 'flat' signals were filtered out before selectedSignals was built.
             // Include subStrategyKey so that on the next tick each adapter only
             // restores the positions it originally created (not same-symbol others).
+            const { stopLoss, takeProfit } = this.computeSlTp(
+              awd,
+              barIndex,
+              entryPrice,
+              signal.direction as 'long' | 'short',
+            );
             await paperDb.savePaperPosition({
               sessionId: this.sessionId,
               symbol: awd.config.symbol,
@@ -957,6 +963,8 @@ export class PaperTradingEngine extends EventEmitter {
               entryTime: entryTimestamp,
               unrealizedPnl: 0,
               fundingAccumulated: 0,
+              stopLoss,
+              takeProfit,
             });
           } catch (err) {
             console.warn(
@@ -1149,6 +1157,93 @@ export class PaperTradingEngine extends EventEmitter {
 
   private emitEvent(event: PaperTradingEvent): void {
     this.emit('paper-event', event);
+  }
+
+  /**
+   * Compute stop-loss and take-profit price levels for a newly opened position.
+   *
+   * Supports two conventions detected from strategy params:
+   *  1. ATR-based: params.useATRStops === true (or not set) + params.atrPeriod,
+   *     params.atrStopMultiplier, params.atrTPMultiplier
+   *  2. Percentage-based: params.stopLossPct / params.takeProfitPct
+   *
+   * If neither convention is detectable, returns null for both values.
+   */
+  private computeSlTp(
+    awd: AdapterWithConfig,
+    barIndex: number,
+    entryPrice: number,
+    direction: 'long' | 'short',
+  ): { stopLoss: number | null; takeProfit: number | null } {
+    const params = awd.config.params ?? {};
+
+    try {
+      // --- ATR-based SL/TP ---
+      const useATRStops = params.useATRStops !== false; // default true if not set
+      if (useATRStops && params.atrStopMultiplier !== undefined && params.atrTPMultiplier !== undefined) {
+        const atrPeriod = typeof params.atrPeriod === 'number' ? params.atrPeriod : 14;
+        const stopMult = Number(params.atrStopMultiplier);
+        const tpMult = Number(params.atrTPMultiplier);
+
+        // Calculate ATR from candles up to and including barIndex
+        const candles = awd.candles.slice(0, barIndex + 1);
+        if (candles.length > atrPeriod) {
+          const highs = candles.map(c => c.high);
+          const lows = candles.map(c => c.low);
+          const closes = candles.map(c => c.close);
+
+          // Wilder's ATR (simple approximation: average of true ranges)
+          const trueRanges: number[] = [];
+          for (let i = 1; i < candles.length; i++) {
+            const tr = Math.max(
+              highs[i] - lows[i],
+              Math.abs(highs[i] - closes[i - 1]),
+              Math.abs(lows[i] - closes[i - 1]),
+            );
+            trueRanges.push(tr);
+          }
+          // Use last `atrPeriod` true ranges
+          const recentTRs = trueRanges.slice(-atrPeriod);
+          const atr = recentTRs.reduce((s, v) => s + v, 0) / recentTRs.length;
+
+          if (atr > 0) {
+            if (direction === 'long') {
+              return {
+                stopLoss: entryPrice - atr * stopMult,
+                takeProfit: entryPrice + atr * tpMult,
+              };
+            } else {
+              return {
+                stopLoss: entryPrice + atr * stopMult,
+                takeProfit: entryPrice - atr * tpMult,
+              };
+            }
+          }
+        }
+      }
+
+      // --- Percentage-based SL/TP ---
+      if (params.stopLossPct !== undefined || params.takeProfitPct !== undefined) {
+        const slPct = typeof params.stopLossPct === 'number' ? params.stopLossPct : null;
+        const tpPct = typeof params.takeProfitPct === 'number' ? params.takeProfitPct : null;
+
+        if (direction === 'long') {
+          return {
+            stopLoss: slPct !== null ? entryPrice * (1 - slPct / 100) : null,
+            takeProfit: tpPct !== null ? entryPrice * (1 + tpPct / 100) : null,
+          };
+        } else {
+          return {
+            stopLoss: slPct !== null ? entryPrice * (1 + slPct / 100) : null,
+            takeProfit: tpPct !== null ? entryPrice * (1 - tpPct / 100) : null,
+          };
+        }
+      }
+    } catch {
+      // Best-effort: if anything goes wrong, return null rather than crashing
+    }
+
+    return { stopLoss: null, takeProfit: null };
   }
 
   /**

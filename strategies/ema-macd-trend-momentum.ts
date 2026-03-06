@@ -1,4 +1,5 @@
-import { EMA, MACD, ADX, ATR } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { EMA, MACD, ADX, ATR } = ti;
 import type { Strategy, StrategyContext } from '../src/strategy/base.js';
 
 interface IndicatorState {

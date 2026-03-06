@@ -74,6 +74,26 @@ Before completing ANY session, verify:
 - NEVER run backtests without persisting results — the whole point is to track and compare runs
 - For aggregation runs, pass the aggregation config ID: `saveBacktestRun(result, aggregationId)`
 
+### 📊 RULE 9: Document All Research Results
+
+**Every strategy research activity MUST produce a summary in `/docs/strategies/`.**
+
+This includes:
+- **Grid search results**: Save summary table (symbol, best params, Sharpe, return, DD, trades) to a dated doc
+- **Walk-forward validation**: Save per-symbol train/test Sharpe, degradation %, pass/fail verdict
+- **Backtest explorations**: Any multi-symbol scan, parameter sweep, or strategy comparison
+- **Negative results**: Document what was tested and WHY it failed — this prevents re-investigating dead ends
+
+**Filename format**: `/docs/strategies/YYYY-MM-DD-HHMMSS-descriptive-title.md`
+
+**Before starting ANY research task:**
+1. Read `/docs/strategies/` index to understand what has already been researched
+2. Check the comprehensive assessment doc for strategy rankings and verdicts
+3. Do NOT re-investigate strategies/directions already marked as "FAILED" or "Do Not Pursue" unless the user explicitly requests it
+4. Reference prior findings when reporting new results
+
+**The goal**: Build a cumulative knowledge base so we never waste time re-testing dead ends or losing context on what works and what doesn't.
+
 ### 🖼️ RULE 7: No Screenshots or Temp Files in Repo
 
 **NEVER store screenshots (.png, .jpg, .jpeg, .gif, .bmp), temporary test scripts, or scratch files in the project root or anywhere in the repo.**

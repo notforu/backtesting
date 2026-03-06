@@ -22,7 +22,8 @@
  * sideways/ranging markets where whipsaws can occur.
  */
 
-import { SMA } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { SMA } = ti;
 import type { Strategy, StrategyContext } from '../src/strategy/base.js';
 
 /**

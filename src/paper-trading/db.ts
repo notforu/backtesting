@@ -48,6 +48,8 @@ interface PaperPositionRow {
   entry_time: string;
   unrealized_pnl: number | string;
   funding_accumulated: number | string;
+  stop_loss: number | string | null;
+  take_profit: number | string | null;
 }
 
 interface PaperTradeRow {
@@ -110,6 +112,8 @@ function rowToPosition(row: PaperPositionRow): PaperPosition {
     entryTime: Number(row.entry_time),
     unrealizedPnl: Number(row.unrealized_pnl),
     fundingAccumulated: Number(row.funding_accumulated),
+    stopLoss: row.stop_loss != null ? Number(row.stop_loss) : null,
+    takeProfit: row.take_profit != null ? Number(row.take_profit) : null,
   };
 }
 
@@ -293,14 +297,16 @@ export async function savePaperPosition(
   await p.query(
     `INSERT INTO paper_positions
      (session_id, symbol, direction, sub_strategy_key, entry_price, amount, entry_time,
-      unrealized_pnl, funding_accumulated)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      unrealized_pnl, funding_accumulated, stop_loss, take_profit)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (session_id, sub_strategy_key, direction) DO UPDATE SET
        entry_price = EXCLUDED.entry_price,
        amount = EXCLUDED.amount,
        entry_time = EXCLUDED.entry_time,
        unrealized_pnl = EXCLUDED.unrealized_pnl,
-       funding_accumulated = EXCLUDED.funding_accumulated`,
+       funding_accumulated = EXCLUDED.funding_accumulated,
+       stop_loss = EXCLUDED.stop_loss,
+       take_profit = EXCLUDED.take_profit`,
     [
       position.sessionId,
       position.symbol,
@@ -311,6 +317,8 @@ export async function savePaperPosition(
       position.entryTime,
       position.unrealizedPnl,
       position.fundingAccumulated,
+      position.stopLoss ?? null,
+      position.takeProfit ?? null,
     ]
   );
 }

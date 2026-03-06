@@ -33,7 +33,8 @@
  * - enableShorts: Whether to enable short positions (default: true)
  */
 
-import { SMA, EMA, RSI } from 'technicalindicators';
+import ti from 'technicalindicators';
+const { SMA, EMA, RSI } = ti;
 import type { Strategy, StrategyContext } from '../src/strategy/base.js';
 
 // ============================================================================
