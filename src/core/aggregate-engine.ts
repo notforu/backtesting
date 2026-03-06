@@ -309,9 +309,11 @@ export async function runAggregateBacktest(
         capitalForTrade = totalWeightSnapshot > 0
           ? (signal.weight / totalWeightSnapshot) * cashSnapshot * 0.9
           : (cashSnapshot * 0.9) / selectedSignals.length;
-      } else if (allocationMode === 'top_n' && selectedSignals.length > 1) {
-        // Equal split across all selected signals, calculated from pre-loop cash snapshot
-        capitalForTrade = (cashSnapshot * 0.9) / selectedSignals.length;
+      } else if (allocationMode === 'top_n') {
+        // Each position gets an equal fixed share of initial capital, regardless of when it opens.
+        // Using initialCapital / maxPositions ensures symmetry even when positions open on different bars.
+        const positionSizeFraction = 0.9;
+        capitalForTrade = (initialCapital * positionSizeFraction) / maxPositions;
       } else {
         // single_strongest or single signal: use 90% of available cash
         capitalForTrade = cashSnapshot * 0.9;

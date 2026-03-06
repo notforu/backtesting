@@ -1,34 +1,15 @@
+[2026-03-06 23:00] quant-lead (opus) - Critical assessment of paper trading results, drawdown probability math, portfolio expansion analysis, validation timeline
 [2026-03-06 07:32] fullstack-dev (sonnet) - Implement bidirectional navigation between paper trading sessions and aggregation configs
 [2026-03-05 19:30] docs-writer (haiku) - Create comprehensive HF scalping investigation changelog with all backtest results, fee-to-move analysis, and strategic conclusions
 [2026-03-05 22:00] quant-lead (opus) - Design 3 OI/liquidation/CVD scalping strategies with leverage on 15m: OI-Delta Regime Scalper, CVD Divergence Scalper, OI Liquidation Cascade Bounce
-[2026-03-05 20:00] quant-lead (opus) - Comprehensive research directions assessment: all viable strategies ranked, FR arb front-running idea analyzed and rejected
-[2026-03-06 13:45] docs-writer (haiku) - Create comprehensive HF scalping research final report at /docs/research/2026-03-06-hf-scalping-research-results.md
-[2026-03-06 13:00] docs-writer (haiku) - Changelog for FR regime momentum research conclusion
-[2026-03-06 11:30] be-dev (sonnet) - Fix FR regime momentum: absolute threshold (v2.0), remove percentile-based detection, fix position sizing
-[2026-03-05 16:57] be-dev (sonnet) - Add Mar 2026 scan discovery aggregation configs 48-60 to explore-fr-v2-aggregations.ts
-[2026-03-05 21:45] be-dev (sonnet) - Add direct Bybit REST API OI fetcher with pagination for historical data
-[2026-03-05 18:17] be-dev (sonnet) - Add fetchOpenInterestHistoryDirect method to BybitProvider using Bybit V5 REST API with cursor pagination
-[2026-03-05 22:00] be-dev (sonnet) - Implement OI-Delta Regime Scalper strategy
-[2026-03-05 22:30] be-dev (sonnet) - Implement OI-Delta Regime Scalper strategy
-[2026-03-05 22:35] be-dev (sonnet) - Strategy oi-delta-regime-scalper implementation complete and validated
-[2026-03-05 18:31] be-dev (sonnet) - Create fr-epoch-scalper strategy with pre/post settlement window logic, EMA+ATR, epoch trade tracking
-[2026-03-05 18:41] be-dev (sonnet) - Create bb-rsi-scalper.ts mean-reversion strategy
-[2026-03-05 18:30] be-dev (sonnet) - Create FR Epoch Scalper 1m strategy
-[2026-03-05 18:41] be-dev (sonnet) - Create BB-RSI Scalper 1m strategy
-[2026-03-05 19:30] docs-writer (haiku) - Write HF scalping research changelog
-[2026-03-05 19:35] commit (haiku) - Commit HF scalping research + infrastructure
-[2026-03-06 07:23] quant (sonnet) - Backtesting fr-gradient-momentum across multiple symbols (SOL, DOGE, LDO, ARB, ZEC, TRB, IOST, STG)
-[2026-03-06 07:23] quant (sonnet) - Test FR V2 vol-adjusted position sizing vs fixed baseline across 6 production symbols
-[2026-03-06 07:23] quant (sonnet) - FR Regime Momentum backtest on 6 symbols (5m)
-[2026-03-06 07:23] quant (sonnet) - FR Gradient Momentum backtest on 8 symbols (4h/1h)
-[2026-03-06 07:23] quant (sonnet) - FR V2 vol-adjusted sizing comparison on 6 production symbols
-[2026-03-06 07:32] fullstack-dev (sonnet) - SL/TP lines on paper trading chart (backend + frontend)
-[2026-03-06 07:32] fe-dev (sonnet) - FR threshold lines on funding rate chart
-[2026-03-06 07:32] fullstack-dev (sonnet) - Link paper sessions to configs (bidirectional UI navigation)
-[2026-03-06 07:32] fullstack-dev (sonnet) - implement SL/TP lines on paper trading price chart
-[2026-03-06 07:32] fe-dev (sonnet) - Add FR threshold lines to funding rate chart in paper trading
-[2026-03-06 07:41] quant (sonnet) - Completed FR V2 vol-adjusted sizing comparison: 18 backtests saved to DB
-[2026-03-06 07:52] quant (sonnet) - Completed fr-gradient-momentum backtest analysis and IOST optimization
-[2026-03-06 07:56] docs-writer (haiku) - Document Tier 1 research results
-[2026-03-06 07:56] quant (sonnet) - Walk-forward validate FR V2 on 6 production symbols
-[2026-03-06 07:57] quant (sonnet) - Walk-forward validate FR V2 on 6 production symbols: LDO, DOGE, IMX, ICP, XLM, NEAR
+[2026-03-06 08:28] be-dev (sonnet) - Fix top_n capital allocation bug in aggregate-engine + paper-trading engine
+[2026-03-06 08:28] ui-tester (sonnet) - Test FR threshold lines, strategy loading, SL/TP via Playwright
+[2026-03-06 08:28] quant (sonnet) - Backtest top_n vs single_strongest allocation comparison
+[2026-03-06 08:28] be-dev (sonnet) - Fix top_n capital allocation bug in aggregate-engine.ts and paper-trading/engine.ts
+[2026-03-06 09:24] quant (sonnet) - Walk-forward validate FR V2 on 6 production symbols: LDO, DOGE, IMX, ICP, XLM, NEAR
+[2026-03-06 09:25] be-dev (sonnet) - Fix top_n capital allocation bug (re-run after Docker crash)
+[2026-03-06 09:25] quant (sonnet) - Walk-forward FR V2 on 6 production symbols (re-run after Docker crash)
+[2026-03-06 09:25] be-dev (sonnet) - Verified top_n capital allocation fix already applied in aggregate-engine.ts and paper-trading/engine.ts
+[2026-03-06 09:26] quant (sonnet) - Backtest top_n vs single_strongest comparison (re-run)
+[2026-03-06 09:26] ui-tester (sonnet) - Verify FR threshold lines + technicalindicators fix
+[2026-03-06 22:30] quant (sonnet) - Compare top_n vs single_strongest allocation modes for FR V2 (6 symbols, 2024-2026)

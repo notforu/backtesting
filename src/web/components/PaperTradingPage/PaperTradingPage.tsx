@@ -338,7 +338,9 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshots, snapshots.length, activeAsset?.timeframe, session?.createdAt, session?.status]);
 
-  // Extract FR thresholds from active sub-strategy params (absolute thresholds only, not percentile-based)
+  // Extract FR thresholds from active sub-strategy params.
+  // Always show absolute threshold lines as reference, even when usePercentile=true
+  // (percentile thresholds are dynamic, but absolute thresholds serve as visual anchor).
   // Must be before early returns so hooks are always called in the same order.
   const frThresholds = useMemo(() => {
     if (!activeAsset) return { short: undefined, long: undefined };
@@ -346,11 +348,6 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
       (ss) => ss.symbol === activeAsset.symbol && ss.timeframe === activeAsset.timeframe,
     );
     const params = activeSub?.params ?? {};
-    const usePercentile = params.usePercentile;
-    // Only show fixed threshold lines when not using adaptive percentile thresholds
-    if (usePercentile === true || usePercentile === undefined) {
-      return { short: undefined, long: undefined };
-    }
     const short = typeof params.fundingThresholdShort === 'number' ? params.fundingThresholdShort : undefined;
     const long = typeof params.fundingThresholdLong === 'number' ? params.fundingThresholdLong : undefined;
     return { short, long };

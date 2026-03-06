@@ -133,11 +133,16 @@ export class PaperTradingEngine extends EventEmitter {
     const oldStatus = this._status;
     this._status = 'running';
 
+    // Reset retry state on start (may be restarting from error)
+    this.retryCount = 0;
+    this.lastError = null;
+    this.lastErrorAt = null;
+
     // Restore portfolio state from DB before first tick
     await this.restoreState();
 
     this.emitEvent({ type: 'status_change', sessionId: this.sessionId, oldStatus, newStatus: 'running' });
-    await paperDb.updatePaperSession(this.sessionId, { status: 'running' });
+    await paperDb.updatePaperSession(this.sessionId, { status: 'running', errorMessage: null });
 
     // Run the first tick immediately, then schedule subsequent ticks
     this.scheduleTick(0);
@@ -905,8 +910,11 @@ export class PaperTradingEngine extends EventEmitter {
               totalWeightSnapshot > 0
                 ? (signal.weight / totalWeightSnapshot) * cashSnapshot * 0.9
                 : (cashSnapshot * 0.9) / selectedSignals.length;
-          } else if (this.config.allocationMode === 'top_n' && selectedSignals.length > 1) {
-            capitalForTrade = (cashSnapshot * 0.9) / selectedSignals.length;
+          } else if (this.config.allocationMode === 'top_n') {
+            // Each position gets an equal fixed share of initial capital, regardless of when it opens.
+            // Using initialCapital / maxPositions ensures symmetry even when positions open on different bars.
+            const positionSizeFraction = 0.9;
+            capitalForTrade = (this.config.initialCapital * positionSizeFraction) / this.config.maxPositions;
           } else {
             capitalForTrade = cashSnapshot * 0.9;
           }
