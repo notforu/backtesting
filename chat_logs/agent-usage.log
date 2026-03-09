@@ -1,3 +1,8 @@
+[2026-03-09 09:50] fe-dev (sonnet) - Verify FR threshold extraction and trades display for simple backtests
+[2026-03-09 11:49] Explore (sonnet) - Explore trades & FR display code
+[2026-03-09 11:49] be-dev (sonnet) - Fix walk-forward trades persistence in WalkForwardResult
+[2026-03-09 11:49] fe-dev (sonnet) - Fix FR threshold lines in backtesting view + remove last FR value line
+[2026-03-09 11:49] ui-tester (sonnet) - Verify UI fixes for trades, FR thresholds, last value line
 [2026-03-06 23:00] quant-lead (opus) - Critical assessment of paper trading results, drawdown probability math, portfolio expansion analysis, validation timeline
 [2026-03-06 07:32] fullstack-dev (sonnet) - Implement bidirectional navigation between paper trading sessions and aggregation configs
 [2026-03-05 19:30] docs-writer (haiku) - Create comprehensive HF scalping investigation changelog with all backtest results, fee-to-move analysis, and strategic conclusions
@@ -13,3 +18,22 @@
 [2026-03-06 09:26] quant (sonnet) - Backtest top_n vs single_strongest comparison (re-run)
 [2026-03-06 09:26] ui-tester (sonnet) - Verify FR threshold lines + technicalindicators fix
 [2026-03-06 22:30] quant (sonnet) - Compare top_n vs single_strongest allocation modes for FR V2 (6 symbols, 2024-2026)
+[2026-03-06 12:53] main (opus) - Create 10-symbol expanded paper trading config on prod via API
+[2026-03-06 10:02] quant (sonnet) - Walk-forward validation for 6 production symbols: LDO, DOGE, IMX, ICP, XLM, NEAR
+[2026-03-06 13:00] quant (sonnet) - Run FR V2 symbol scan on 25 new symbols to find portfolio candidates
+[2026-03-06 13:00] main (opus) - Run symbol scan (50 symbols for FR V2 viability)
+[2026-03-06 13:30] main (opus) - Walk-forward validate LDO, DOGE, IMX (batch 2a)
+[2026-03-06 14:30] main (opus) - Walk-forward validate ICP, XLM, NEAR (batch 2b)
+[2026-03-06 15:00] docs-writer (haiku) - Save WF validation + scan results docs
+[2026-03-06 15:00] main (opus) - Create WF-validated 7-symbol paper trading session on prod
+[2026-03-08 23:47] be-dev (sonnet) - Fix walk-forward script to include actual trades/equity/rollingMetrics in saved test-period results
+[2026-03-08 23:47] fe-dev (sonnet) - Fix FR threshold lines in backtesting/multi-asset views and hide FR histogram price line
+[2026-03-09 00:00] fe-dev (sonnet) - Fix FR threshold lines not showing for aggregation backtests in App.tsx
+[2026-03-09 09:55] fe-dev (sonnet) - Enhance FR threshold extraction in PaperTradingPage to fall back to strategy default values
+[2026-03-09 09:57] fe-dev (sonnet) - Add strategy default parameter fallback for FR thresholds in aggregation backtesting view (App.tsx)
+[2026-03-09 18:30] Explore (sonnet) - Investigate FR thresholds & trades display issues
+[2026-03-09 18:35] Explore (sonnet) - Investigate simple backtest trades data flow
+[2026-03-09 18:45] fe-dev (sonnet) - Fix FR thresholds for aggregation backtesting (App.tsx)
+[2026-03-09 18:45] fe-dev (sonnet) - Verify paper trading FR thresholds & trades display
+[2026-03-09 18:55] fe-dev (sonnet) - Add strategy defaults fallback for paper trading FR thresholds
+[2026-03-09 19:05] fe-dev (sonnet) - Add strategy defaults fallback for App.tsx aggregation FR thresholds

@@ -227,9 +227,10 @@ function buildBacktestResultFromWF(
       exchange,
       mode: 'futures',
     },
-    trades: [],
-    equity: [],
+    trades: !isTrainPeriod && wfResult.testTrades ? wfResult.testTrades : [],
+    equity: !isTrainPeriod && wfResult.testEquity ? wfResult.testEquity : [],
     metrics,
+    rollingMetrics: !isTrainPeriod && wfResult.testRollingMetrics ? wfResult.testRollingMetrics : undefined,
     createdAt: Date.now(),
   };
 }

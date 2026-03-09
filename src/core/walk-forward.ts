@@ -14,7 +14,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import type { Timeframe, PerformanceMetrics, PairsBacktestConfig } from './types.js';
+import type { Timeframe, PerformanceMetrics, PairsBacktestConfig, Trade, EquityPoint, RollingMetrics } from './types.js';
 import { runOptimization, type OptimizationConfig, type OptimizationResult } from './optimizer.js';
 import { runBacktest, type EngineConfig } from './engine.js';
 import { runPairsBacktest } from './pairs-engine.js';
@@ -172,6 +172,13 @@ export interface WalkForwardResult {
    * Full optimization result from training period
    */
   optimizationResult: OptimizationResult;
+
+  /** Full trades from test period backtest (optional, for persistence) */
+  testTrades?: Trade[];
+  /** Full equity curve from test period (optional, for persistence) */
+  testEquity?: EquityPoint[];
+  /** Rolling metrics from test period (optional, for persistence) */
+  testRollingMetrics?: RollingMetrics;
 }
 
 // ============================================================================
@@ -372,6 +379,9 @@ export async function runWalkForwardTest(
     oosDegrade,
     isRobust,
     optimizationResult,
+    testTrades: testResult.trades,
+    testEquity: testResult.equity,
+    testRollingMetrics: testResult.rollingMetrics,
   };
 }
 

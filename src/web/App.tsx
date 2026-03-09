@@ -17,7 +17,7 @@ import { HistoryExplorer } from './components/HistoryExplorer';
 import { RunParamsModal } from './components/HistoryExplorer/RunParamsModal';
 import { useBacktestStore, useConfigStore } from './stores/backtestStore';
 import { useScannerStore } from './stores/scannerStore';
-import { useLoadBacktest, useCandles, useRunBacktest } from './hooks/useBacktest';
+import { useLoadBacktest, useCandles, useRunBacktest, useStrategy } from './hooks/useBacktest';
 import { runAdhocAggregation } from './api/client';
 import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult, type BacktestSummary, type Timeframe } from './types';
 import { PaperTradingPage } from './components/PaperTradingPage';
@@ -110,6 +110,15 @@ function AppContent() {
   useEffect(() => {
     setSelectedAssetIndex(-1);
   }, [currentResult?.id]);
+
+  // Fetch strategy defaults for FR threshold fallback (aggregation view)
+  const activeSubStrategyName = useMemo(() => {
+    if (!isMultiAsset || !selectedAsset || !currentResult) return '';
+    const subs = (currentResult as any)?.config?.params?.subStrategies as Array<{symbol: string; strategyName?: string}> | undefined;
+    const match = subs?.find(s => s.symbol === selectedAsset.symbol);
+    return match?.strategyName ?? '';
+  }, [isMultiAsset, selectedAsset, currentResult]);
+  const { data: activeSubStrategyDetails } = useStrategy(activeSubStrategyName);
 
   // Fetch candles for selected asset in multi-asset view
   const candleParams = selectedAsset && currentResult ? {
@@ -376,6 +385,25 @@ function AppContent() {
                         return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : undefined;
                       })()}
                       rollingMetrics={(currentResult as any).perAssetResults?.[selectedAsset.symbol]?.rollingMetrics}
+                      frShortThreshold={(() => {
+                        const params = (currentResult as BacktestResult)?.config?.params;
+                        const subs = (params as any)?.subStrategies as Array<{symbol: string; params?: Record<string, unknown>}> | undefined;
+                        const matchingSub = subs?.find(s => s.symbol === selectedAsset!.symbol);
+                        const v = matchingSub?.params?.fundingThresholdShort ?? params?.fundingThresholdShort;
+                        if (typeof v === 'number') return v;
+                        // Fall back to strategy defaults
+                        const def = activeSubStrategyDetails?.params?.find(p => p.name === 'fundingThresholdShort');
+                        return def && typeof def.default === 'number' ? def.default : undefined;
+                      })()}
+                      frLongThreshold={(() => {
+                        const params = (currentResult as BacktestResult)?.config?.params;
+                        const subs = (params as any)?.subStrategies as Array<{symbol: string; params?: Record<string, unknown>}> | undefined;
+                        const matchingSub = subs?.find(s => s.symbol === selectedAsset!.symbol);
+                        const v = matchingSub?.params?.fundingThresholdLong ?? params?.fundingThresholdLong;
+                        if (typeof v === 'number') return v;
+                        const def = activeSubStrategyDetails?.params?.find(p => p.name === 'fundingThresholdLong');
+                        return def && typeof def.default === 'number' ? def.default : undefined;
+                      })()}
                     />
                   ) : (
                     <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
@@ -409,6 +437,14 @@ function AppContent() {
                     startDate={(() => { const sd = (currentResult as BacktestResult)?.config.startDate; return sd != null ? (typeof sd === 'number' ? sd : new Date(sd).getTime()) : undefined; })()}
                     endDate={(() => { const ed = (currentResult as BacktestResult)?.config.endDate; return ed != null ? (typeof ed === 'number' ? ed : new Date(ed).getTime()) : undefined; })()}
                     rollingMetrics={(currentResult as BacktestResult)?.rollingMetrics}
+                    frShortThreshold={(() => {
+                      const v = (currentResult as BacktestResult)?.config?.params?.fundingThresholdShort;
+                      return typeof v === 'number' ? v : undefined;
+                    })()}
+                    frLongThreshold={(() => {
+                      const v = (currentResult as BacktestResult)?.config?.params?.fundingThresholdLong;
+                      return typeof v === 'number' ? v : undefined;
+                    })()}
                   />
                 </>
               )}

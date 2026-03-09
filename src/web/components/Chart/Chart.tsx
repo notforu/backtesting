@@ -447,6 +447,7 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
         const frSeries = chartRef.current.addSeries(HistogramSeries, {
           priceScaleId: 'funding-rate',
           lastValueVisible: false,
+          priceLineVisible: false,
           priceFormat: {
             type: 'custom',
             formatter: (price: number) => `${(price * 100).toFixed(4)}%`,
