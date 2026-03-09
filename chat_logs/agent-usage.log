@@ -39,3 +39,8 @@
 [2026-03-09 19:05] fe-dev (sonnet) - Add strategy defaults fallback for App.tsx aggregation FR thresholds
 [2026-03-09 11:25] fe-dev (sonnet) - Simplify FR threshold extraction: remove useStrategy API fallback from App.tsx and PaperTradingPage.tsx
 [2026-03-09 19:30] docs-writer (haiku) - Create changelog for resolved params & trades fixes (engine now stores fully resolved params, FR thresholds direct from config)
+[2026-03-09 19:30] commit (haiku) - Store fully resolved params in backtest results and simplify FR threshold display
+[2026-03-09 14:25] fe-dev (sonnet) - Add collapsible strategy configuration widget to paper trading session detail view
+[2026-03-09 14:25] fullstack-dev (sonnet) - Added mandatory Playwright MCP instruction block to ui-tester agent
+[2026-03-09 14:25] fe-dev (sonnet) - Fix maxDrawdownPercent always being 0% in paper trading metrics
+[2026-03-09 00:00] fe-dev (sonnet) - Enhance paper trading session view with exchange-style positions and orders widget

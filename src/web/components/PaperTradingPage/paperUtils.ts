@@ -42,6 +42,7 @@ export function computePaperMetrics(
   trades: PaperTrade[],
   initialCapital: number,
   currentEquity: number,
+  equitySnapshots: { equity: number }[] = [],
 ): PerformanceMetrics {
   const closeTrades = trades.filter(
     (t) => t.action === 'close_long' || t.action === 'close_short',
@@ -68,11 +69,22 @@ export function computePaperMetrics(
     ? closeTrades.reduce((s, t) => s + (t.pnlPercent ?? 0), 0) / closeTrades.length
     : 0;
 
+  let peak = initialCapital;
+  let maxDrawdown = 0;
+  let maxDrawdownPercent = 0;
+  for (const snap of equitySnapshots) {
+    if (snap.equity > peak) peak = snap.equity;
+    const dd = peak - snap.equity;
+    const ddPct = peak > 0 ? (dd / peak) * 100 : 0;
+    if (dd > maxDrawdown) maxDrawdown = dd;
+    if (ddPct > maxDrawdownPercent) maxDrawdownPercent = ddPct;
+  }
+
   return {
     totalReturn,
     totalReturnPercent,
-    maxDrawdown: 0,
-    maxDrawdownPercent: 0,
+    maxDrawdown,
+    maxDrawdownPercent,
     sharpeRatio: 0,
     sortinoRatio: 0,
     winRate,

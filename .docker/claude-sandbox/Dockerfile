@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     fonts-liberation \
     fonts-noto-color-emoji \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user first (needed for ownership)
@@ -57,8 +58,14 @@ RUN npm install -g playwright && \
 # Create .claude directory for credentials persistence
 RUN mkdir -p /home/claude/.claude && chown -R claude:claude /home/claude/.claude
 
+# Create .ssh directory for SSH key persistence
+RUN mkdir -p /home/claude/.ssh && chmod 700 /home/claude/.ssh && \
+    chown -R claude:claude /home/claude/.ssh
+
 # Set Playwright browser path for the claude user
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 USER claude
 WORKDIR /workspace
@@ -66,4 +73,4 @@ WORKDIR /workspace
 # Default command: run Claude with max permissions
 # First run will prompt for OAuth login via browser
 # Pass -c (or --continue) as docker run arg to resume last session
-ENTRYPOINT ["claude", "--dangerously-skip-permissions"]
+ENTRYPOINT ["entrypoint.sh"]

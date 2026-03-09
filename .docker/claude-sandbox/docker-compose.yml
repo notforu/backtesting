@@ -33,6 +33,8 @@ services:
       - ${PROJECT_DIR:-./../..}:/workspace
       # Persist Claude credentials between runs (login once, reuse)
       - claude-credentials:/home/claude/.claude
+      # Persist SSH keys for GitHub and prod server access
+      - claude-ssh:/home/claude/.ssh
 
     # Pass API key from host environment (optional if using OAuth)
     environment:
@@ -68,4 +70,5 @@ services:
 
 volumes:
   claude-credentials:
+  claude-ssh:
   pgdata:

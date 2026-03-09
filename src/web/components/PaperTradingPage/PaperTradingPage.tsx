@@ -36,7 +36,7 @@ import type { SessionEvent, ActiveLevel } from '../Chart/Chart';
 import { Dashboard } from '../Dashboard';
 import { PaperDrawdownChart } from './PaperDrawdownChart';
 import { mapPaperTrades, computePaperMetrics } from './paperUtils';
-import type { Timeframe, PaperEquitySnapshot } from '../../types';
+import type { Timeframe, PaperEquitySnapshot, Candle, PaperPosition } from '../../types';
 
 // ============================================================================
 // Candle range helper — compute a start date providing timeframe-appropriate
@@ -174,6 +174,512 @@ function ChartTabBar<T extends string>({
           {tab.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ============================================================================
+// PositionsAndOrders — exchange-style positions + pending orders widget
+// ============================================================================
+
+type PosOrderTab = 'positions' | 'orders';
+
+/** Derive a mark price from the latest candle close. */
+function getMarkPrice(chartCandles: Candle[] | null | undefined): number | null {
+  if (!chartCandles || chartCandles.length === 0) return null;
+  // chartCandles covers one asset — last candle close is the current mark price
+  return chartCandles[chartCandles.length - 1].close;
+}
+
+/** Format a number as USD, compact for larger values */
+function fmtPrice(n: number): string {
+  if (n >= 1000) return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${n.toFixed(n < 1 ? 6 : 4)}`;
+}
+
+function PositionsAndOrders({
+  positions,
+  chartCandles,
+}: {
+  positions: PaperPosition[];
+  chartCandles: Candle[] | null | undefined;
+}) {
+  const [activeTab, setActiveTab] = useState<PosOrderTab>('positions');
+
+  // Derive pending orders from SL/TP on each position
+  type PendingOrder = {
+    key: string;
+    posId: number;
+    symbol: string;
+    direction: 'long' | 'short';
+    type: 'Stop Loss' | 'Take Profit';
+    side: 'Sell' | 'Buy';
+    triggerPrice: number;
+    amount: number;
+  };
+
+  const pendingOrders: PendingOrder[] = [];
+  for (const pos of positions) {
+    if (pos.stopLoss != null) {
+      pendingOrders.push({
+        key: `sl-${pos.id}`,
+        posId: pos.id,
+        symbol: pos.symbol,
+        direction: pos.direction,
+        type: 'Stop Loss',
+        // closing a long = sell; closing a short = buy
+        side: pos.direction === 'long' ? 'Sell' : 'Buy',
+        triggerPrice: pos.stopLoss,
+        amount: pos.amount,
+      });
+    }
+    if (pos.takeProfit != null) {
+      pendingOrders.push({
+        key: `tp-${pos.id}`,
+        posId: pos.id,
+        symbol: pos.symbol,
+        direction: pos.direction,
+        type: 'Take Profit',
+        side: pos.direction === 'long' ? 'Sell' : 'Buy',
+        triggerPrice: pos.takeProfit,
+        amount: pos.amount,
+      });
+    }
+  }
+
+  const posCount = positions.length;
+  const ordCount = pendingOrders.length;
+
+  // Get a single mark price from the candle feed (all candles belong to one asset)
+  const markPrice = getMarkPrice(chartCandles);
+
+  const symbolLabel = (sym: string) =>
+    sym.replace('/USDT:USDT', '').replace('/USDT', '');
+
+  return (
+    <section className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
+      {/* Header with tabs */}
+      <div className="flex items-center border-b border-gray-700 px-1">
+        <button
+          onClick={() => setActiveTab('positions')}
+          className={`px-4 py-3 text-xs font-semibold transition-colors border-b-2 ${
+            activeTab === 'positions'
+              ? 'border-primary-500 text-white'
+              : 'border-transparent text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          Positions
+          {posCount > 0 && (
+            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+              activeTab === 'positions' ? 'bg-primary-600/40 text-primary-300' : 'bg-gray-700 text-gray-400'
+            }`}>
+              {posCount}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('orders')}
+          className={`px-4 py-3 text-xs font-semibold transition-colors border-b-2 ${
+            activeTab === 'orders'
+              ? 'border-primary-500 text-white'
+              : 'border-transparent text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          Orders
+          {ordCount > 0 && (
+            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+              activeTab === 'orders' ? 'bg-primary-600/40 text-primary-300' : 'bg-gray-700 text-gray-400'
+            }`}>
+              {ordCount}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Positions tab */}
+      {activeTab === 'positions' && (
+        <>
+          {positions.length === 0 ? (
+            <div className="px-4 py-8 text-center text-gray-500 text-sm">
+              No open positions
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-500 border-b border-gray-800">
+                    <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Symbol</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Size</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Entry Price</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Mark Price</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Unr. PnL</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">PnL %</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Margin</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Funding</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">SL</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">TP</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Entry Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {positions.map((pos) => {
+                    // Mark price: use live candle feed when available, otherwise fall back to entry price
+                    const mark = markPrice ?? pos.entryPrice;
+                    // Approximate margin = notional / 1 (no leverage stored, so use notional as margin proxy)
+                    const notional = pos.entryPrice * pos.amount;
+                    // PnL %: unrealizedPnl / notional
+                    const pnlPct = notional > 0 ? (pos.unrealizedPnl / notional) * 100 : 0;
+                    const pnlPositive = pos.unrealizedPnl >= 0;
+
+                    return (
+                      <tr
+                        key={pos.id}
+                        className="border-b border-gray-800/60 hover:bg-gray-800/40 transition-colors"
+                      >
+                        {/* Symbol + direction badge */}
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              pos.direction === 'long'
+                                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            }`}>
+                              {pos.direction === 'long' ? 'Long' : 'Short'}
+                            </span>
+                            <span className="text-white font-semibold">
+                              {symbolLabel(pos.symbol)}
+                            </span>
+                          </div>
+                        </td>
+                        {/* Size */}
+                        <td className="px-3 py-2.5 text-right text-gray-300 font-mono">
+                          {pos.amount.toFixed(pos.amount < 0.01 ? 6 : pos.amount < 1 ? 4 : 3)}
+                        </td>
+                        {/* Entry Price */}
+                        <td className="px-3 py-2.5 text-right text-gray-300 font-mono">
+                          {fmtPrice(pos.entryPrice)}
+                        </td>
+                        {/* Mark Price */}
+                        <td className="px-3 py-2.5 text-right text-gray-200 font-mono">
+                          {fmtPrice(mark)}
+                        </td>
+                        {/* Unrealized PnL */}
+                        <td className={`px-3 py-2.5 text-right font-mono font-semibold ${pnlPositive ? 'text-green-400' : 'text-red-400'}`}>
+                          {pnlPositive ? '+' : ''}{fmtUsd(pos.unrealizedPnl)}
+                        </td>
+                        {/* PnL % */}
+                        <td className={`px-3 py-2.5 text-right font-mono ${pnlPositive ? 'text-green-400' : 'text-red-400'}`}>
+                          {pnlPositive ? '+' : ''}{pnlPct.toFixed(2)}%
+                        </td>
+                        {/* Margin (notional as approximate) */}
+                        <td className="px-3 py-2.5 text-right text-gray-400 font-mono">
+                          {fmtUsd(notional)}
+                        </td>
+                        {/* Funding Accumulated */}
+                        <td className={`px-3 py-2.5 text-right font-mono ${pos.fundingAccumulated >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {pos.fundingAccumulated !== 0
+                            ? `${pos.fundingAccumulated >= 0 ? '+' : ''}${fmtUsd(pos.fundingAccumulated)}`
+                            : <span className="text-gray-600">—</span>
+                          }
+                        </td>
+                        {/* Stop Loss */}
+                        <td className="px-3 py-2.5 text-right font-mono">
+                          {pos.stopLoss != null
+                            ? <span className="text-red-400">{fmtPrice(pos.stopLoss)}</span>
+                            : <span className="text-gray-600">—</span>
+                          }
+                        </td>
+                        {/* Take Profit */}
+                        <td className="px-3 py-2.5 text-right font-mono">
+                          {pos.takeProfit != null
+                            ? <span className="text-green-400">{fmtPrice(pos.takeProfit)}</span>
+                            : <span className="text-gray-600">—</span>
+                          }
+                        </td>
+                        {/* Entry Time */}
+                        <td className="px-3 py-2.5 text-right text-gray-500 whitespace-nowrap">
+                          {new Date(pos.entryTime).toLocaleString(undefined, {
+                            month: 'short', day: 'numeric',
+                            hour: '2-digit', minute: '2-digit',
+                          })}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Orders tab */}
+      {activeTab === 'orders' && (
+        <>
+          {pendingOrders.length === 0 ? (
+            <div className="px-4 py-8 text-center text-gray-500 text-sm">
+              No pending orders
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-500 border-b border-gray-800">
+                    <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Symbol</th>
+                    <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Type</th>
+                    <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Side</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Trigger Price</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Size</th>
+                    <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingOrders.map((order) => {
+                    const isSL = order.type === 'Stop Loss';
+                    return (
+                      <tr
+                        key={order.key}
+                        className="border-b border-gray-800/60 hover:bg-gray-800/40 transition-colors"
+                      >
+                        {/* Symbol */}
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              order.direction === 'long'
+                                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            }`}>
+                              {order.direction === 'long' ? 'Long' : 'Short'}
+                            </span>
+                            <span className="text-white font-semibold">
+                              {symbolLabel(order.symbol)}
+                            </span>
+                          </div>
+                        </td>
+                        {/* Type */}
+                        <td className="px-3 py-2.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            isSL
+                              ? 'bg-red-500/15 text-red-400 border border-red-500/25'
+                              : 'bg-green-500/15 text-green-400 border border-green-500/25'
+                          }`}>
+                            {order.type}
+                          </span>
+                        </td>
+                        {/* Side */}
+                        <td className="px-3 py-2.5">
+                          <span className={`font-semibold ${order.side === 'Sell' ? 'text-red-400' : 'text-green-400'}`}>
+                            {order.side}
+                          </span>
+                        </td>
+                        {/* Trigger Price */}
+                        <td className="px-3 py-2.5 text-right font-mono text-gray-200">
+                          {fmtPrice(order.triggerPrice)}
+                        </td>
+                        {/* Size */}
+                        <td className="px-3 py-2.5 text-right font-mono text-gray-300">
+                          {order.amount.toFixed(order.amount < 0.01 ? 6 : order.amount < 1 ? 4 : 3)}
+                        </td>
+                        {/* Status */}
+                        <td className="px-3 py-2.5">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-yellow-500/15 text-yellow-400 border border-yellow-500/25">
+                            Pending
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ============================================================================
+// StrategyConfigWidget — collapsible card showing sub-strategy details
+// ============================================================================
+
+type WidgetSubStrategy = {
+  strategyName: string;
+  symbol: string;
+  timeframe: string;
+  exchange?: string;
+  params?: Record<string, unknown>;
+};
+
+type WidgetAggregationConfig = {
+  name?: string;
+  allocationMode: string;
+  maxPositions?: number;
+  exchange?: string;
+  subStrategies: WidgetSubStrategy[];
+};
+
+function formatParamValue(value: unknown): string {
+  if (value === null || value === undefined) return '-';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') {
+    if (Number.isInteger(value)) return String(value);
+    return parseFloat(value.toPrecision(4)).toString();
+  }
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
+function camelToDisplay(key: string): string {
+  return key
+    .replace(/Percent$/, '%')
+    .replace(/([A-Z])/g, ' $1')
+    .trim()
+    .toLowerCase();
+}
+
+function ParamGrid({ params, compact = false }: { params: Record<string, unknown>; compact?: boolean }) {
+  const entries = Object.entries(params);
+  if (entries.length === 0) return null;
+  return (
+    <div className={`grid gap-x-4 gap-y-1 ${compact ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'}`}>
+      {entries.map(([key, value]) => (
+        <div key={key} className="flex items-baseline gap-1 min-w-0">
+          <span className="text-[11px] text-gray-500 shrink-0" title={key}>
+            {camelToDisplay(key)}:
+          </span>
+          <span className="text-[11px] text-gray-300 font-mono truncate" title={String(value)}>
+            {formatParamValue(value)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SingleStrategyDetail({ sub, fallbackExchange }: { sub: WidgetSubStrategy; fallbackExchange?: string }) {
+  const exchange = sub.exchange ?? fallbackExchange ?? 'bybit';
+  const params = sub.params ?? {};
+  const paramEntries = Object.entries(params);
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-0.5">Strategy</p>
+          <p className="text-sm font-medium text-white">{sub.strategyName}</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-0.5">Symbol</p>
+          <p className="text-sm font-medium text-gray-200">{sub.symbol.replace(':USDT', '')}</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-0.5">Timeframe</p>
+          <p className="text-sm font-medium text-gray-200">{sub.timeframe}</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-0.5">Exchange</p>
+          <p className="text-sm font-medium text-gray-200 capitalize">{exchange}</p>
+        </div>
+      </div>
+      {paramEntries.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1.5">Parameters</p>
+          <ParamGrid params={params} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubStrategyCard({
+  sub,
+  index,
+  fallbackExchange,
+}: {
+  sub: WidgetSubStrategy;
+  index: number;
+  fallbackExchange?: string;
+}) {
+  const exchange = sub.exchange ?? fallbackExchange ?? 'bybit';
+  const params = sub.params ?? {};
+  return (
+    <div className="bg-gray-900/60 border border-gray-700/60 rounded-lg p-3 space-y-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-[10px] font-semibold text-gray-500 bg-gray-700 rounded px-1.5 py-0.5 shrink-0">
+          #{index}
+        </span>
+        <span className="text-sm font-semibold text-white truncate">{sub.strategyName}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] px-2 py-0.5 rounded bg-blue-900/40 text-blue-300 font-medium">
+          {sub.symbol.replace('/USDT:USDT', '').replace('/USDT', '')}
+        </span>
+        <span className="text-[11px] px-2 py-0.5 rounded bg-gray-700 text-gray-300">
+          {sub.timeframe}
+        </span>
+        <span className="text-[11px] px-2 py-0.5 rounded bg-gray-700 text-gray-400 capitalize">
+          {exchange}
+        </span>
+      </div>
+      {Object.keys(params).length > 0 && (
+        <div className="pt-1 border-t border-gray-700/50">
+          <ParamGrid params={params} compact />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StrategyConfigWidget({ aggregationConfig }: { aggregationConfig: WidgetAggregationConfig }) {
+  const [expanded, setExpanded] = useState(false);
+  const subs = aggregationConfig.subStrategies;
+  return (
+    <div className="bg-gray-800 rounded-lg border border-gray-700">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-700/40 transition-colors rounded-lg"
+      >
+        <div className="flex items-center gap-2">
+          <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span className="text-sm font-semibold text-white">Strategy Configuration</span>
+          <span className="text-xs text-gray-500 ml-1">
+            {subs.length === 1 ? '1 strategy' : `${subs.length} strategies`}
+            {' · '}
+            {aggregationConfig.allocationMode.replace(/_/g, ' ')}
+            {aggregationConfig.maxPositions != null && ` · max ${aggregationConfig.maxPositions} pos`}
+          </span>
+        </div>
+        <svg
+          className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-gray-700 pt-3">
+          {subs.length === 0 ? (
+            <p className="text-sm text-gray-500">No sub-strategies found.</p>
+          ) : subs.length === 1 ? (
+            <SingleStrategyDetail sub={subs[0]} fallbackExchange={aggregationConfig.exchange} />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {subs.map((sub, idx) => (
+                <SubStrategyCard
+                  key={idx}
+                  sub={sub}
+                  index={idx + 1}
+                  fallbackExchange={aggregationConfig.exchange}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -318,8 +824,8 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   // Compute metrics
   const metrics = useMemo(() => {
     if (!session) return null;
-    return computePaperMetrics(displayedPaperTrades, session.initialCapital, session.currentEquity);
-  }, [session, displayedPaperTrades]);
+    return computePaperMetrics(displayedPaperTrades, session.initialCapital, session.currentEquity, snapshots);
+  }, [session, displayedPaperTrades, snapshots]);
 
   // Reset asset index on session change; reset chart tabs too
   useEffect(() => {
@@ -533,57 +1039,9 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
         Created: <span className="text-gray-400">{fmtDate(session.createdAt)}</span>
       </p>
 
-      {/* Open positions */}
-      {session.positions && session.positions.length > 0 && (
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-          <h3 className="text-sm font-semibold text-white mb-3">
-            Open Positions ({session.positions.length})
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-400 border-b border-gray-700">
-                  <th className="pb-2 pr-3">Direction</th>
-                  <th className="pb-2 pr-3">Symbol</th>
-                  <th className="pb-2 pr-3">Amount</th>
-                  <th className="pb-2 pr-3">Entry Price</th>
-                  <th className="pb-2 pr-3">Entry Time</th>
-                  <th className="pb-2 pr-3">Unrealized P&amp;L</th>
-                  <th className="pb-2 pr-3">Stop Loss</th>
-                  <th className="pb-2 pr-3">Take Profit</th>
-                  <th className="pb-2">Funding</th>
-                </tr>
-              </thead>
-              <tbody>
-                {session.positions.map((pos) => (
-                  <tr key={pos.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                    <td className="py-2 pr-3">
-                      <span className={`text-xs px-2 py-0.5 rounded ${pos.direction === 'long' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                        {pos.direction === 'long' ? 'Long' : 'Short'}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3 text-white font-medium">{pos.symbol}</td>
-                    <td className="py-2 pr-3 text-gray-300">{pos.amount.toFixed(6)}</td>
-                    <td className="py-2 pr-3 text-gray-300">{fmtUsd(pos.entryPrice)}</td>
-                    <td className="py-2 pr-3 text-gray-400 text-xs">{new Date(pos.entryTime).toLocaleString()}</td>
-                    <td className={`py-2 pr-3 font-medium ${pos.unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {fmtUsd(pos.unrealizedPnl)}
-                    </td>
-                    <td className="py-2 pr-3 text-red-400 text-xs">
-                      {pos.stopLoss != null ? fmtUsd(pos.stopLoss) : <span className="text-gray-600">-</span>}
-                    </td>
-                    <td className="py-2 pr-3 text-green-400 text-xs">
-                      {pos.takeProfit != null ? fmtUsd(pos.takeProfit) : <span className="text-gray-600">-</span>}
-                    </td>
-                    <td className={`py-2 ${pos.fundingAccumulated >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {fmtUsd(pos.fundingAccumulated)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {/* Strategy Configuration — collapsible widget */}
+      {session.aggregationConfig && session.aggregationConfig.subStrategies.length > 0 && (
+        <StrategyConfigWidget aggregationConfig={session.aggregationConfig} />
       )}
 
       {/* Asset tab selector */}
@@ -684,6 +1142,12 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
           </>
         )}
       </section>
+
+      {/* Positions & Orders — exchange-style widget */}
+      <PositionsAndOrders
+        positions={session.positions ?? []}
+        chartCandles={chartCandles}
+      />
 
       {/* Dashboard metrics */}
       <section>
