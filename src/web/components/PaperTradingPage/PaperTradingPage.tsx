@@ -17,7 +17,7 @@ import {
   usePaperSessionSSE,
   usePaperSessionEvents,
 } from '../../hooks/usePaperTrading';
-import { useCandles, useStrategy } from '../../hooks/useBacktest';
+import { useCandles } from '../../hooks/useBacktest';
 import { usePriceStream } from '../../hooks/usePriceStream';
 import { CreatePaperSessionModal } from '../PaperTradingPanel/CreatePaperSessionModal';
 import { PaperEquityChart } from '../PaperTradingPanel/PaperEquityChart';
@@ -338,36 +338,19 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshots, snapshots.length, activeAsset?.timeframe, session?.createdAt, session?.status]);
 
-  // Extract FR thresholds from active sub-strategy params, falling back to strategy defaults.
-  // Always show absolute threshold lines as reference, even when usePercentile=true
-  // (percentile thresholds are dynamic, but absolute thresholds serve as visual anchor).
+  // Extract FR thresholds from active sub-strategy params directly.
+  // The backend always stores full resolved params in subStrategy.params.
   // Must be before early returns so hooks are always called in the same order.
-  const activeSubForFR = useMemo(() => {
-    if (!activeAsset) return null;
-    return subStrategies.find(
-      (ss) => ss.symbol === activeAsset.symbol && ss.timeframe === activeAsset.timeframe,
-    ) ?? null;
-  }, [activeAsset, subStrategies]);
-
-  const activeStrategyName = activeSubForFR?.strategyName ?? '';
-  const { data: strategyDetails } = useStrategy(activeStrategyName);
-
   const frThresholds = useMemo(() => {
-    const params = activeSubForFR?.params ?? {};
-    // First try explicit params
-    let short: number | undefined = typeof params.fundingThresholdShort === 'number' ? params.fundingThresholdShort : undefined;
-    let long: number | undefined = typeof params.fundingThresholdLong === 'number' ? params.fundingThresholdLong : undefined;
-    // Fall back to strategy defaults
-    if (short === undefined && strategyDetails?.params) {
-      const def = strategyDetails.params.find(p => p.name === 'fundingThresholdShort');
-      if (def && typeof def.default === 'number') short = def.default;
-    }
-    if (long === undefined && strategyDetails?.params) {
-      const def = strategyDetails.params.find(p => p.name === 'fundingThresholdLong');
-      if (def && typeof def.default === 'number') long = def.default;
-    }
+    if (!activeAsset) return { short: undefined, long: undefined };
+    const activeSub = subStrategies.find(
+      (ss) => ss.symbol === activeAsset.symbol && ss.timeframe === activeAsset.timeframe,
+    );
+    const params = activeSub?.params ?? {};
+    const short = typeof params.fundingThresholdShort === 'number' ? params.fundingThresholdShort : undefined;
+    const long = typeof params.fundingThresholdLong === 'number' ? params.fundingThresholdLong : undefined;
     return { short, long };
-  }, [activeSubForFR, strategyDetails]);
+  }, [activeAsset, subStrategies]);
 
   // Compute SL/TP price levels for open positions on the active asset.
   // These are rendered as horizontal dashed lines on the price chart.

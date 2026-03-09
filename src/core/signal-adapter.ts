@@ -88,7 +88,7 @@ export class SignalAdapter implements SignalProvider {
   readonly timeframe: Timeframe;
 
   private readonly strategy: Strategy;
-  private readonly params: Record<string, unknown>;
+  readonly params: Record<string, unknown>;
   private readonly weightCalculator: WeightCalculator;
 
   // Candle and funding-rate data loaded during init()

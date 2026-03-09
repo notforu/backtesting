@@ -564,7 +564,7 @@ export async function runPairsBacktest(
   // 13. Build result
   const result: PairsBacktestResult = {
     id: config.id,
-    config,
+    config: { ...config, params },
     trades,
     equity,
     metrics,

@@ -520,13 +520,19 @@ export async function runAggregateBacktest(
       params: {
         allocationMode,
         maxPositions,
-        subStrategies: subStrategies.map(s => ({
-          strategyName: s.strategyName,
-          symbol: s.symbol,
-          timeframe: s.timeframe,
-          params: s.params,
-          exchange: s.exchange,
-        })),
+        subStrategies: subStrategies.map(s => {
+          // Use resolved params (defaults merged with user overrides) from the adapter
+          const awd = adaptersWithData.find(
+            a => a.config.symbol === s.symbol && a.config.timeframe === s.timeframe && a.config.strategyName === s.strategyName
+          );
+          return {
+            strategyName: s.strategyName,
+            symbol: s.symbol,
+            timeframe: s.timeframe,
+            params: awd ? awd.adapter.params : s.params,
+            exchange: s.exchange,
+          };
+        }),
         assets: subStrategies.map(s => `${s.symbol}@${s.timeframe}`).join(','),
         perAssetSummary: Object.values(perAssetResults).map(r => ({
           symbol: r.symbol,

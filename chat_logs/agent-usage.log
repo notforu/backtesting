@@ -37,3 +37,5 @@
 [2026-03-09 18:45] fe-dev (sonnet) - Verify paper trading FR thresholds & trades display
 [2026-03-09 18:55] fe-dev (sonnet) - Add strategy defaults fallback for paper trading FR thresholds
 [2026-03-09 19:05] fe-dev (sonnet) - Add strategy defaults fallback for App.tsx aggregation FR thresholds
+[2026-03-09 11:25] fe-dev (sonnet) - Simplify FR threshold extraction: remove useStrategy API fallback from App.tsx and PaperTradingPage.tsx
+[2026-03-09 19:30] docs-writer (haiku) - Create changelog for resolved params & trades fixes (engine now stores fully resolved params, FR thresholds direct from config)

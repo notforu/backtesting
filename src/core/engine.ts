@@ -655,7 +655,7 @@ export async function runBacktest(
   // 11. Build result
   const result: BacktestResult = {
     id: validatedConfig.id,
-    config: validatedConfig,
+    config: { ...validatedConfig, params },
     trades,
     equity,
     metrics,
