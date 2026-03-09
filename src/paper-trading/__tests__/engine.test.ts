@@ -261,6 +261,8 @@ describe('PaperTradingEngine', () => {
       entryTime: Date.now() - 86400000,
       unrealizedPnl: 0,
       fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
     };
 
     // Session has currentCash = 6000 (after 4000 spent on position)
@@ -321,6 +323,8 @@ describe('PaperTradingEngine', () => {
       entryTime: Date.now() - 86400000,
       unrealizedPnl: 0,
       fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
     };
 
     const sessionWithPosition = makePaperSession({ currentCash: 6000, currentEquity: 10000 });
@@ -384,6 +388,7 @@ describe('PaperTradingEngine', () => {
       subStrategyKey: 'mock-strategy:BTC/USDT:4h',
       entryPrice: 50_000, amount: 0.1, entryTime: Date.now() - 3600000,
       unrealizedPnl: 0, fundingAccumulated: 0,
+      stopLoss: null, takeProfit: null,
     };
 
     const sessionWithPos = makePaperSession({ aggregationConfig: config, currentCash: 5000, currentEquity: 10000 });
@@ -812,6 +817,8 @@ describe('PaperTradingEngine', () => {
       entryTime: Date.now() - 86400000,
       unrealizedPnl: 0,
       fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
     };
 
     const sessionWithPos = makePaperSession({ aggregationConfig: config, currentCash: 6000, currentEquity: 10000 });
@@ -906,6 +913,8 @@ describe('PaperTradingEngine', () => {
       entryTime: Date.now() - 86400000,
       unrealizedPnl: 0,
       fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
     };
 
     const sessionWithPos = makePaperSession({ aggregationConfig: config, currentCash: 4000, currentEquity: 10000 });
@@ -986,6 +995,8 @@ describe('PaperTradingEngine', () => {
       entryTime: Date.now() - 86400000,
       unrealizedPnl: 0,
       fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
     };
 
     const session = makePaperSession({
@@ -1147,6 +1158,8 @@ describe('PaperTradingEngine', () => {
       entryTime: historicalEntryTime,
       unrealizedPnl: 1000,
       fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
     };
 
     const sessionWithPosition = makePaperSession({ currentCash: 6_000, currentEquity: 11_000 });
@@ -1192,6 +1205,8 @@ describe('PaperTradingEngine', () => {
       entryTime: historicalEntryTime,
       unrealizedPnl: 0,
       fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
     };
 
     const sessionWithPosition = makePaperSession({ currentCash: 6_000, currentEquity: 10_000 });
@@ -1531,6 +1546,8 @@ describe('PaperTradingEngine', () => {
       entryTime: latestTs - tfMs * 10,
       unrealizedPnl: 0,
       fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
     };
 
     const futuresConfig = {

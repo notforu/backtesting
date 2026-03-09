@@ -821,12 +821,6 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
     ? backtestTrades.filter((t) => t.symbol === activeAsset.symbol)
     : backtestTrades;
 
-  // Compute metrics
-  const metrics = useMemo(() => {
-    if (!session) return null;
-    return computePaperMetrics(displayedPaperTrades, session.initialCapital, session.currentEquity, snapshots);
-  }, [session, displayedPaperTrades, snapshots]);
-
   // Reset asset index on session change; reset chart tabs too
   useEffect(() => {
     setSelectedAssetIndex(-1);
@@ -837,6 +831,12 @@ function FullSessionDetail({ sessionId }: { sessionId: string }) {
   // Derive session start/pause/resume markers from equity snapshot gaps.
   // Must be before early returns so hooks are always called in the same order.
   const snapshots: PaperEquitySnapshot[] = equitySnapshots ?? [];
+
+  // Compute metrics
+  const metrics = useMemo(() => {
+    if (!session) return null;
+    return computePaperMetrics(displayedPaperTrades, session.initialCapital, session.currentEquity, snapshots);
+  }, [session, displayedPaperTrades, snapshots]);
   const sessionEvents = useMemo(() => {
     if (!activeAsset || !session) return undefined;
     const tfMs = TIMEFRAME_MS[activeAsset.timeframe] ?? 3_600_000;

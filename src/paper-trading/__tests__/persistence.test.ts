@@ -346,6 +346,8 @@ describe('Paper Trading DB Persistence', () => {
         entryTime: 1_700_000_000_000,
         unrealizedPnl: 0,
         fundingAccumulated: 0,
+        stopLoss: null,
+        takeProfit: null,
       };
 
       await paperDb.savePaperPosition(position);
