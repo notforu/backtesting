@@ -329,6 +329,7 @@ interface BacktestRunRow {
   signal_history?: unknown[] | null;
   aggregation_id?: string | null;
   aggregation_name?: string | null;
+  indicators?: unknown | null;
 }
 
 /**
@@ -343,8 +344,8 @@ export async function saveBacktestRun(result: BacktestResult, aggregationId?: st
 
     // Insert the run
     await client.query(
-      `INSERT INTO backtest_runs (id, strategy_name, config, metrics, equity, rolling_metrics, created_at, per_asset_results, signal_history, aggregation_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      `INSERT INTO backtest_runs (id, strategy_name, config, metrics, equity, rolling_metrics, created_at, per_asset_results, signal_history, aggregation_id, indicators)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         result.id,
         result.config.strategyName,
@@ -356,6 +357,7 @@ export async function saveBacktestRun(result: BacktestResult, aggregationId?: st
         (result as any).perAssetResults != null ? JSON.stringify((result as any).perAssetResults) : null,
         (result as any).signalHistory != null ? JSON.stringify((result as any).signalHistory) : null,
         aggregationId ?? null,
+        result.indicators != null ? JSON.stringify(result.indicators) : null,
       ]
     );
 
@@ -401,7 +403,7 @@ export async function saveBacktestRun(result: BacktestResult, aggregationId?: st
 export async function getBacktestRun(id: string): Promise<BacktestResult | null> {
   const p = getPool();
   const { rows } = await p.query<BacktestRunRow>(
-    `SELECT id, strategy_name, config, metrics, equity, rolling_metrics, created_at, per_asset_results, signal_history, aggregation_id
+    `SELECT id, strategy_name, config, metrics, equity, rolling_metrics, created_at, per_asset_results, signal_history, aggregation_id, indicators
      FROM backtest_runs
      WHERE id = $1`,
     [id]
@@ -443,6 +445,11 @@ export async function getBacktestRun(id: string): Promise<BacktestResult | null>
   }
   if (row.aggregation_id != null) {
     (backtest as any).aggregationId = row.aggregation_id;
+  }
+  if (row.indicators != null) {
+    backtest.indicators = typeof row.indicators === 'string'
+      ? JSON.parse(row.indicators)
+      : row.indicators as Record<string, { timestamps: number[]; values: number[] }>;
   }
 
   return backtest;

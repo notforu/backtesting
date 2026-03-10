@@ -247,6 +247,14 @@ export interface StrategyContext {
    * @param message - Message to log
    */
   log(message: string): void;
+
+  /**
+   * Output a named indicator value for the current bar (e.g., computed thresholds, moving averages).
+   * These values are collected by the engine and included in BacktestResult.indicators.
+   * @param name - Indicator name (e.g., 'frShortThreshold')
+   * @param value - Numeric value for this bar
+   */
+  setIndicator(name: string, value: number): void;
 }
 
 // ============================================================================

@@ -366,6 +366,11 @@ export async function runBacktest(
   const equityValues: number[] = [];
   const filledOrders: Order[] = [];
 
+  // Indicator collector (populated via context.setIndicator())
+  const indicators: Record<string, { timestamps: number[]; values: number[] }> = {};
+  // Per-bar staging area — flushed after each strategy.onBar() call
+  let barIndicators: Record<string, number> = {};
+
   // Action queue for the strategy
   let pendingActions: PendingAction[] = [];
 
@@ -432,6 +437,10 @@ export async function runBacktest(
     // Utilities
     log(message: string): void {
       log(`[Strategy] ${message}`, ctx.currentCandle.timestamp);
+    },
+
+    setIndicator(name: string, value: number): void {
+      barIndicators[name] = value;
     },
   };
 
@@ -510,10 +519,21 @@ export async function runBacktest(
 
     // Reset pending actions for this bar
     pendingActions = [];
+    barIndicators = {};
 
     // Update reusable context and call strategy
     updateContext(i);
     strategy.onBar(ctx);
+
+    // Flush per-bar indicators into the main collector
+    for (const [name, value] of Object.entries(barIndicators)) {
+      if (!indicators[name]) {
+        indicators[name] = { timestamps: [], values: [] };
+      }
+      indicators[name].timestamps.push(candle.timestamp);
+      indicators[name].values.push(value);
+    }
+    barIndicators = {};
 
     // Process strategy actions
     for (const pendingAction of pendingActions) {
@@ -660,6 +680,7 @@ export async function runBacktest(
     equity,
     metrics,
     rollingMetrics,
+    ...(Object.keys(indicators).length > 0 ? { indicators } : {}),
     createdAt: Date.now(),
   };
 

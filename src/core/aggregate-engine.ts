@@ -501,6 +501,7 @@ export async function runAggregateBacktest(
       rollingMetrics: assetRolling,
       fundingIncome: symbolFunding,
       tradingPnl,
+      ...(awd.adapter.indicators ? { indicators: awd.adapter.indicators } : {}),
     };
   }
 

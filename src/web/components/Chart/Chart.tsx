@@ -54,6 +54,8 @@ interface ChartProps {
   frLongThreshold?: number;
   /** Horizontal price lines to draw on the chart (e.g. SL/TP levels for open positions) */
   activeLevels?: ActiveLevel[];
+  /** Per-bar indicator data from the strategy (e.g. dynamic FR thresholds) */
+  indicators?: Record<string, { timestamps: number[]; values: number[] }>;
 }
 
 // Convert timestamp to TradingView time format
@@ -96,7 +98,7 @@ function estimateCandles(start: number, end: number, timeframe: string): number 
   return Math.ceil(diffMs / (tfMs[timeframe] ?? 3600000));
 }
 
-export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, rollingMetrics, sessionEvents, frShortThreshold, frLongThreshold, activeLevels }: ChartProps) {
+export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, rollingMetrics, sessionEvents, frShortThreshold, frLongThreshold, activeLevels, indicators }: ChartProps) {
   const [displayTimeframe, setDisplayTimeframe] = useState<string | null>(null);
   const [showFundingRate, setShowFundingRate] = useState(false);
   const [showROI, setShowROI] = useState(false);
@@ -169,6 +171,9 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
   const prevCandleCountRef = useRef<number>(0);
   // Track active price lines (SL/TP) so they can be removed/recreated on updates
   const priceLinesRef = useRef<ReturnType<CandlestickSeriesApi['createPriceLine']>[]>([]);
+  // Dynamic indicator threshold series (line series on funding-rate scale)
+  const frShortThresholdSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const frLongThresholdSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
   // Derived: whether any overlay (FR or metric) is active
   const hasAnyOverlay = showFundingRate || showROI || showDrawdown || showSharpe || showWinRate;
@@ -301,6 +306,8 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
       ddSeriesRef.current = null;
       sharpeSeriesRef.current = null;
       winRateSeriesRef.current = null;
+      frShortThresholdSeriesRef.current = null;
+      frLongThresholdSeriesRef.current = null;
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -459,28 +466,6 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
           borderVisible: false,
         });
 
-        // Add threshold price lines if provided
-        if (frShortThreshold !== undefined) {
-          frSeries.createPriceLine({
-            price: frShortThreshold,
-            color: '#EF4444',
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: 'Short',
-          });
-        }
-        if (frLongThreshold !== undefined) {
-          frSeries.createPriceLine({
-            price: frLongThreshold,
-            color: '#22C55E',
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: 'Long',
-          });
-        }
-
         frSeriesRef.current = frSeries;
       }
 
@@ -496,8 +481,108 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
         chartRef.current.removeSeries(frSeriesRef.current);
         frSeriesRef.current = null;
       }
+      // Also remove dynamic threshold series when FR histogram is hidden
+      if (frShortThresholdSeriesRef.current && chartRef.current) {
+        chartRef.current.removeSeries(frShortThresholdSeriesRef.current);
+        frShortThresholdSeriesRef.current = null;
+      }
+      if (frLongThresholdSeriesRef.current && chartRef.current) {
+        chartRef.current.removeSeries(frLongThresholdSeriesRef.current);
+        frLongThresholdSeriesRef.current = null;
+      }
     }
   }, [showFundingRate, fundingRates, frShortThreshold, frLongThreshold]);
+
+  // Dynamic indicator threshold line series (on funding-rate scale)
+  useEffect(() => {
+    if (!chartRef.current || !showFundingRate) return;
+
+    // Determine short threshold data: dynamic indicators or constant fallback
+    const shortData = indicators?.frShortThreshold;
+    const hasShortLine = !!(shortData && shortData.timestamps.length > 0) || frShortThreshold !== undefined;
+    if (hasShortLine) {
+      if (!frShortThresholdSeriesRef.current) {
+        frShortThresholdSeriesRef.current = chartRef.current.addSeries(LineSeries, {
+          color: '#EF4444',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          priceScaleId: 'funding-rate',
+          lastValueVisible: true,
+          priceLineVisible: false,
+          priceFormat: {
+            type: 'custom',
+            formatter: (price: number) => `${(price * 100).toFixed(4)}%`,
+          },
+          title: 'Short',
+        });
+      }
+      if (shortData && shortData.timestamps.length > 0) {
+        // Dynamic per-bar threshold from strategy indicators
+        frShortThresholdSeriesRef.current.setData(
+          shortData.timestamps.map((t, i) => ({
+            time: (t / 1000) as Time,
+            value: shortData.values[i],
+          }))
+        );
+      } else if (frShortThreshold !== undefined && fundingRates && fundingRates.length > 0) {
+        // Constant fallback: draw a flat line across the funding rate time range
+        const first = fundingRates[0];
+        const last = fundingRates[fundingRates.length - 1];
+        frShortThresholdSeriesRef.current.setData([
+          { time: (first.timestamp / 1000) as Time, value: frShortThreshold },
+          { time: (last.timestamp / 1000) as Time, value: frShortThreshold },
+        ]);
+      }
+    } else {
+      if (frShortThresholdSeriesRef.current && chartRef.current) {
+        chartRef.current.removeSeries(frShortThresholdSeriesRef.current);
+        frShortThresholdSeriesRef.current = null;
+      }
+    }
+
+    // Determine long threshold data: dynamic indicators or constant fallback
+    const longData = indicators?.frLongThreshold;
+    const hasLongLine = !!(longData && longData.timestamps.length > 0) || frLongThreshold !== undefined;
+    if (hasLongLine) {
+      if (!frLongThresholdSeriesRef.current) {
+        frLongThresholdSeriesRef.current = chartRef.current.addSeries(LineSeries, {
+          color: '#22C55E',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          priceScaleId: 'funding-rate',
+          lastValueVisible: true,
+          priceLineVisible: false,
+          priceFormat: {
+            type: 'custom',
+            formatter: (price: number) => `${(price * 100).toFixed(4)}%`,
+          },
+          title: 'Long',
+        });
+      }
+      if (longData && longData.timestamps.length > 0) {
+        // Dynamic per-bar threshold from strategy indicators
+        frLongThresholdSeriesRef.current.setData(
+          longData.timestamps.map((t, i) => ({
+            time: (t / 1000) as Time,
+            value: longData.values[i],
+          }))
+        );
+      } else if (frLongThreshold !== undefined && fundingRates && fundingRates.length > 0) {
+        // Constant fallback: draw a flat line across the funding rate time range
+        const first = fundingRates[0];
+        const last = fundingRates[fundingRates.length - 1];
+        frLongThresholdSeriesRef.current.setData([
+          { time: (first.timestamp / 1000) as Time, value: frLongThreshold },
+          { time: (last.timestamp / 1000) as Time, value: frLongThreshold },
+        ]);
+      }
+    } else {
+      if (frLongThresholdSeriesRef.current && chartRef.current) {
+        chartRef.current.removeSeries(frLongThresholdSeriesRef.current);
+        frLongThresholdSeriesRef.current = null;
+      }
+    }
+  }, [indicators, showFundingRate, fundingRates, frShortThreshold, frLongThreshold]);
 
   // ROI overlay
   useEffect(() => {

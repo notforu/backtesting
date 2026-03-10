@@ -390,6 +390,7 @@ function AppContent() {
                         const v = matchingSub?.params?.fundingThresholdLong ?? params?.fundingThresholdLong;
                         return typeof v === 'number' ? v : undefined;
                       })()}
+                      indicators={(currentResult as any).perAssetResults?.[selectedAsset.symbol]?.indicators}
                     />
                   ) : (
                     <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
@@ -431,6 +432,7 @@ function AppContent() {
                       const v = (currentResult as BacktestResult)?.config?.params?.fundingThresholdLong;
                       return typeof v === 'number' ? v : undefined;
                     })()}
+                    indicators={(currentResult as BacktestResult)?.indicators}
                   />
                 </>
               )}

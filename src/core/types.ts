@@ -249,6 +249,11 @@ export const BacktestResultSchema = z.object({
   equity: z.array(EquityPointSchema),
   metrics: PerformanceMetricsSchema,
   rollingMetrics: RollingMetricsSchema.optional(),
+  /** Per-bar indicator values emitted by strategies via context.setIndicator() */
+  indicators: z.record(
+    z.string(),
+    z.object({ timestamps: z.array(z.number()), values: z.array(z.number()) })
+  ).optional(),
   createdAt: z.number(),
 });
 

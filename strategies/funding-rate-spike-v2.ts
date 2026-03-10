@@ -443,6 +443,10 @@ const strategy: Strategy = {
       frNormalLongThreshold = fundingThresholdLong / 2;
     }
 
+    // Emit thresholds as chart indicators so the frontend can overlay them
+    context.setIndicator('frShortThreshold', shortThreshold);
+    context.setIndicator('frLongThreshold', longThreshold);
+
     // 4. Calculate ATR
     const closes = candleView.closes();
     const highs = candleView.highs();

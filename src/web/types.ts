@@ -195,6 +195,8 @@ export interface BacktestResult {
   candles: Candle[];
   createdAt: number; // timestamp
   duration: number; // backtest execution time in ms
+  /** Per-bar indicator data emitted by the strategy (e.g. dynamic FR thresholds) */
+  indicators?: Record<string, { timestamps: number[]; values: number[] }>;
 }
 
 export interface BacktestSummary {
@@ -372,6 +374,8 @@ export interface PerAssetResult {
   rollingMetrics?: RollingMetrics;
   fundingIncome: number;
   tradingPnl: number;
+  /** Per-bar indicator data emitted by the strategy for this asset */
+  indicators?: Record<string, { timestamps: number[]; values: number[] }>;
 }
 
 export interface AggregateBacktestResult extends BacktestResult {

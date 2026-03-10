@@ -81,6 +81,8 @@ export interface PerAssetResult {
   rollingMetrics?: RollingMetrics;
   fundingIncome: number;
   tradingPnl: number;
+  /** Per-bar indicator values emitted by the strategy via context.setIndicator() */
+  indicators?: Record<string, { timestamps: number[]; values: number[] }>;
 }
 
 /** Result of an aggregate backtest */

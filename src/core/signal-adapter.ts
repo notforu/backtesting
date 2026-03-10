@@ -106,6 +106,10 @@ export class SignalAdapter implements SignalProvider {
   // Actions collected during a single onBar() call
   private pendingActions: PendingAction[] = [];
 
+  // Indicator collector (populated via context.setIndicator())
+  private _indicators: Record<string, { timestamps: number[]; values: number[] }> = {};
+  private _barIndicators: Record<string, number> = {};
+
   // Track the last bar index processed by wantsExit() so that getSignal()
   // on the same bar after confirmExit() does not call onBar() a second time.
   private lastWantsExitBarIndex: number = -1;
@@ -127,6 +131,24 @@ export class SignalAdapter implements SignalProvider {
     this.params = validateStrategyParams(strategy, params);
     this.key = `${strategy.name}:${symbol}:${timeframe}`;
     this.weightCalculator = getWeightCalculator(strategy.name);
+  }
+
+  /** Flush per-bar indicators into the main collector */
+  private flushBarIndicators(barIndex: number): void {
+    const ts = this.candles[barIndex].timestamp;
+    for (const [name, value] of Object.entries(this._barIndicators)) {
+      if (!this._indicators[name]) {
+        this._indicators[name] = { timestamps: [], values: [] };
+      }
+      this._indicators[name].timestamps.push(ts);
+      this._indicators[name].values.push(value);
+    }
+    this._barIndicators = {};
+  }
+
+  /** Get collected indicators (for inclusion in per-asset results) */
+  get indicators(): Record<string, { timestamps: number[]; values: number[] }> | undefined {
+    return Object.keys(this._indicators).length > 0 ? this._indicators : undefined;
   }
 
   // --------------------------------------------------------------------------
@@ -205,8 +227,10 @@ export class SignalAdapter implements SignalProvider {
       this.lastWantsExitActions = [];
     } else {
       this.pendingActions = [];
+      this._barIndicators = {};
       const context = this.createShadowContext(barIndex);
       this.strategy.onBar(context);
+      this.flushBarIndicators(barIndex);
     }
 
     if (this.pendingActions.length === 0) return null;
@@ -279,8 +303,10 @@ export class SignalAdapter implements SignalProvider {
     if (!this.initialized || barIndex >= this.candles.length) return false;
 
     this.pendingActions = [];
+    this._barIndicators = {};
     const context = this.createShadowContext(barIndex);
     this.strategy.onBar(context);
+    this.flushBarIndicators(barIndex);
 
     // Save the bar index and actions so getSignal() on the same bar can reuse
     // them instead of calling onBar() a second time.
@@ -440,6 +466,7 @@ export class SignalAdapter implements SignalProvider {
     // Capture instance fields for use inside closures (avoid this-alias)
     const adapterCandles = this.candles;
     const pendingActions = this.pendingActions;
+    const barIndicators = this._barIndicators;
 
     const context: StrategyContext = {
       // ----- Market data -----
@@ -498,6 +525,9 @@ export class SignalAdapter implements SignalProvider {
       // ----- Utilities -----
       log(_message: string): void {
         // Silent in shadow mode - strategy logs are discarded to avoid noise
+      },
+      setIndicator(name: string, value: number): void {
+        barIndicators[name] = value;
       },
     };
 

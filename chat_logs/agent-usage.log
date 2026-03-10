@@ -44,3 +44,11 @@
 [2026-03-09 14:25] fullstack-dev (sonnet) - Added mandatory Playwright MCP instruction block to ui-tester agent
 [2026-03-09 14:25] fe-dev (sonnet) - Fix maxDrawdownPercent always being 0% in paper trading metrics
 [2026-03-09 00:00] fe-dev (sonnet) - Enhance paper trading session view with exchange-style positions and orders widget
+[2026-03-09 00:00] fullstack-dev (sonnet) - Fix TypeScript build errors: move metrics useMemo after snapshots declaration, add stopLoss/takeProfit to PaperPosition mocks
+[2026-03-10 01:35] fe-dev (sonnet) - Add dynamic per-bar indicator line series (FR thresholds) to Chart component
+[2026-03-10 01:35] be-dev (sonnet) - Add per-bar indicator output mechanism (setIndicator) to strategy context and engine
+[2026-03-10 01:38] be-dev (sonnet) - Add setIndicator mechanism to engine, types, strategy context, and FR V2 strategy
+[2026-03-10 01:38] fe-dev (sonnet) - Display dynamic FR threshold lines on chart instead of static price lines
+[2026-03-10 00:00] qa (sonnet) - write unit tests for FR V2 dynamic indicators via context.setIndicator() in SignalAdapter
+[2026-03-10 02:51] be-dev (sonnet) - Add indicators column to backtest_runs table and persist/restore from DB
+[2026-03-10 10:50] be-dev (sonnet) - Add indicators column to DB, persist and restore indicators in saveBacktestRun/getBacktestRun
