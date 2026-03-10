@@ -9,6 +9,7 @@ import { getHistory, getHistoryGroups, exportConfigs, type HistoryParams, type B
 import type { BacktestSummary } from '../../types';
 import { ImportConfigModal } from '../ImportConfigModal/ImportConfigModal';
 import { useAuthStore } from '../../stores/authStore';
+import { Spinner } from '../Spinner/Spinner';
 
 // ============================================================================
 // Types
@@ -185,10 +186,7 @@ function RunRow({ run, isSelected, isHighlighted, isLoading, onSelect, isSelecte
       </td>
       <td className="py-2 pr-3">
         {isLoading ? (
-          <svg className="animate-spin h-3 w-3 text-primary-400" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
+          <Spinner size="sm" className="text-primary-400" />
         ) : (
           <span className={`font-medium text-sm ${(run.totalReturnPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {formatReturn(run.totalReturnPercent)}
@@ -267,10 +265,7 @@ function CompactRunRow({ run, isSelected, isLoading, onSelect }: {
       </td>
       <td className="py-1.5 pr-2">
         {isLoading ? (
-          <svg className="animate-spin h-3 w-3 text-primary-400" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
+          <Spinner size="sm" className="text-primary-400" />
         ) : (
           <span className={`text-xs font-medium ${(run.totalReturnPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {formatReturn(run.totalReturnPercent)}
@@ -410,10 +405,7 @@ function AssetGroup({ group, filters, selectedId, onSelectRun }: {
         <div className="overflow-x-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-6">
-              <svg className="animate-spin h-5 w-5 text-primary-400" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
+              <Spinner size="md" className="text-primary-400" />
             </div>
           ) : (
             <table className="w-full text-sm">
@@ -818,10 +810,7 @@ export function HistoryExplorerContent({
             {/* Loading more indicator */}
             {isLoading && filteredRuns.length > 0 && (
               <div className="flex items-center justify-center py-4 gap-2 text-gray-400 text-sm">
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
+                <Spinner size="sm" />
                 Loading more...
               </div>
             )}

@@ -20,6 +20,10 @@ import type {
   OpenInterestRecord,
   LongShortRatioRecord,
 } from '../core/types.js';
+import type { AggregateBacktestResult } from '../core/signal-types.js';
+
+/** Union type for any backtest result that can be saved to the database */
+export type AnyBacktestResult = BacktestResult | AggregateBacktestResult;
 
 const { Pool } = pg;
 
@@ -335,9 +339,12 @@ interface BacktestRunRow {
 /**
  * Save a backtest run to the database (using new trades_v2 schema)
  */
-export async function saveBacktestRun(result: BacktestResult, aggregationId?: string): Promise<void> {
+export async function saveBacktestRun(result: AnyBacktestResult, aggregationId?: string): Promise<void> {
   const p = getPool();
   const client = await p.connect();
+
+  // Extract aggregate-specific fields when present (AggregateBacktestResult)
+  const aggregateResult = 'perAssetResults' in result ? result as AggregateBacktestResult : null;
 
   try {
     await client.query('BEGIN');
@@ -354,8 +361,8 @@ export async function saveBacktestRun(result: BacktestResult, aggregationId?: st
         JSON.stringify(result.equity),
         result.rollingMetrics != null ? JSON.stringify(result.rollingMetrics) : null,
         result.createdAt,
-        (result as any).perAssetResults != null ? JSON.stringify((result as any).perAssetResults) : null,
-        (result as any).signalHistory != null ? JSON.stringify((result as any).signalHistory) : null,
+        aggregateResult?.perAssetResults != null ? JSON.stringify(aggregateResult.perAssetResults) : null,
+        aggregateResult?.signalHistory != null ? JSON.stringify(aggregateResult.signalHistory) : null,
         aggregationId ?? null,
         result.indicators != null ? JSON.stringify(result.indicators) : null,
       ]
@@ -398,9 +405,10 @@ export async function saveBacktestRun(result: BacktestResult, aggregationId?: st
 }
 
 /**
- * Get a backtest run by ID
+ * Get a backtest run by ID.
+ * Returns AggregateBacktestResult when the run has per-asset results, BacktestResult otherwise.
  */
-export async function getBacktestRun(id: string): Promise<BacktestResult | null> {
+export async function getBacktestRun(id: string): Promise<AnyBacktestResult | null> {
   const p = getPool();
   const { rows } = await p.query<BacktestRunRow>(
     `SELECT id, strategy_name, config, metrics, equity, rolling_metrics, created_at, per_asset_results, signal_history, aggregation_id, indicators
@@ -416,7 +424,12 @@ export async function getBacktestRun(id: string): Promise<BacktestResult | null>
 
   const trades = await getTrades(id);
 
-  const backtest: BacktestResult = {
+  const parsedIndicators: Record<string, { timestamps: number[]; values: number[] }> | undefined =
+    row.indicators != null
+      ? (typeof row.indicators === 'string' ? JSON.parse(row.indicators) : row.indicators) as Record<string, { timestamps: number[]; values: number[] }>
+      : undefined;
+
+  const baseResult: BacktestResult = {
     id: row.id,
     config: (typeof row.config === 'string'
       ? JSON.parse(row.config)
@@ -434,25 +447,26 @@ export async function getBacktestRun(id: string): Promise<BacktestResult | null>
       : undefined,
     trades,
     createdAt: Number(row.created_at),
+    indicators: parsedIndicators,
   };
 
-  // Add aggregate-specific fields if they exist (PG returns parsed JSONB directly)
+  // If aggregate-specific fields exist, return as AggregateBacktestResult
   if (row.per_asset_results != null) {
-    (backtest as any).perAssetResults = row.per_asset_results;
-  }
-  if (row.signal_history != null) {
-    (backtest as any).signalHistory = row.signal_history;
-  }
-  if (row.aggregation_id != null) {
-    (backtest as any).aggregationId = row.aggregation_id;
-  }
-  if (row.indicators != null) {
-    backtest.indicators = typeof row.indicators === 'string'
-      ? JSON.parse(row.indicators)
-      : row.indicators as Record<string, { timestamps: number[]; values: number[] }>;
+    const aggregateResult: AggregateBacktestResult & { aggregationId?: string } = {
+      ...baseResult,
+      perAssetResults: row.per_asset_results as AggregateBacktestResult['perAssetResults'],
+      signalHistory: (row.signal_history ?? []) as AggregateBacktestResult['signalHistory'],
+      ...(row.aggregation_id != null ? { aggregationId: row.aggregation_id } : {}),
+    };
+    return aggregateResult;
   }
 
-  return backtest;
+  // Plain backtest result — attach aggregationId if present
+  if (row.aggregation_id != null) {
+    (baseResult as BacktestResult & { aggregationId: string }).aggregationId = row.aggregation_id;
+  }
+
+  return baseResult;
 }
 
 /**

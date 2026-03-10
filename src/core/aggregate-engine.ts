@@ -11,6 +11,7 @@ import { MultiSymbolPortfolio } from './multi-portfolio.js';
 import { loadStrategy } from '../strategy/loader.js';
 import { getCandles, getFundingRates, saveBacktestRun } from '../data/db.js';
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
+import { DEFAULT_BYBIT_TAKER_FEE_RATE } from './constants.js';
 
 interface AdapterWithData {
   adapter: SignalAdapter;
@@ -42,8 +43,8 @@ export async function runAggregateBacktest(
   // Defensively convert string dates to timestamps
   const startDate = typeof config.startDate === 'string' ? new Date(config.startDate).getTime() : config.startDate;
   const endDate = typeof config.endDate === 'string' ? new Date(config.endDate).getTime() : config.endDate;
-  // engineConfig.feeRate takes priority; fall back to config.feeRate, then default
-  const feeRate = engineConfig.feeRate ?? config.feeRate ?? 0.00055;
+  // engineConfig.feeRate takes priority; fall back to config.feeRate, then Bybit default
+  const feeRate = engineConfig.feeRate ?? config.feeRate ?? DEFAULT_BYBIT_TAKER_FEE_RATE;
   const slippagePercent = config.slippagePercent ?? 0;
   const saveResults = engineConfig.saveResults ?? true;
 

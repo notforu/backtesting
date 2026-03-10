@@ -1384,7 +1384,6 @@ describe('SignalAdapter', () => {
 
       expect(onBarCallCount).toBe(1);         // onBar ran exactly once
       expect(wantsExit).toBe(true);           // closeLong was emitted
-      // getSignal uses first action (CLOSE_LONG) → returns null for entry signals
       expect(signal).toBeNull();
     });
   });

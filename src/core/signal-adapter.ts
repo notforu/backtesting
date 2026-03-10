@@ -16,65 +16,12 @@
  * - Call resetShadow() to clear shadow state unconditionally.
  */
 
-import type { Strategy, StrategyContext, CandleView } from '../strategy/base.js';
+import type { Strategy, StrategyContext } from '../strategy/base.js';
 import type { Candle, FundingRate, Position, Timeframe } from './types.js';
 import type { Signal, SignalProvider, SignalDirection, WeightContext, WeightCalculator } from './signal-types.js';
 import { getWeightCalculator } from './weight-calculators.js';
 import { validateStrategyParams } from '../strategy/base.js';
-
-// ============================================================================
-// CandleView implementation (memory-efficient, same pattern as engine.ts)
-// ============================================================================
-
-class CandleViewImpl implements CandleView {
-  constructor(private readonly candles: Candle[], private readonly endIndex: number) {}
-
-  get length(): number {
-    return this.endIndex + 1;
-  }
-
-  at(index: number): Candle | undefined {
-    if (index < 0 || index > this.endIndex) return undefined;
-    return this.candles[index];
-  }
-
-  slice(start?: number, end?: number): Candle[] {
-    return this.candles.slice(start ?? 0, Math.min(end ?? this.length, this.length));
-  }
-
-  closes(): number[] {
-    const result = new Array<number>(this.length);
-    for (let i = 0; i <= this.endIndex; i++) result[i] = this.candles[i].close;
-    return result;
-  }
-
-  volumes(): number[] {
-    const result = new Array<number>(this.length);
-    for (let i = 0; i <= this.endIndex; i++) result[i] = this.candles[i].volume;
-    return result;
-  }
-
-  highs(): number[] {
-    const result = new Array<number>(this.length);
-    for (let i = 0; i <= this.endIndex; i++) result[i] = this.candles[i].high;
-    return result;
-  }
-
-  lows(): number[] {
-    const result = new Array<number>(this.length);
-    for (let i = 0; i <= this.endIndex; i++) result[i] = this.candles[i].low;
-    return result;
-  }
-}
-
-// ============================================================================
-// Internal types
-// ============================================================================
-
-interface PendingAction {
-  action: 'OPEN_LONG' | 'CLOSE_LONG' | 'OPEN_SHORT' | 'CLOSE_SHORT';
-  amount: number | 'all';
-}
+import { CandleViewImpl, type PendingAction } from './candle-view.js';
 
 // ============================================================================
 // SignalAdapter
@@ -234,6 +181,14 @@ export class SignalAdapter implements SignalProvider {
     }
 
     if (this.pendingActions.length === 0) return null;
+
+    // If the FIRST action is a close, the primary intent on this bar was an exit.
+    // Return null so the engine handles only the exit. Any open action that follows
+    // is suppressed: the engine will pick up a fresh entry signal on the next bar.
+    const firstAction = this.pendingActions[0];
+    if (firstAction.action === 'CLOSE_LONG' || firstAction.action === 'CLOSE_SHORT') {
+      return null;
+    }
 
     // Find the first entry action, skipping close actions.
     // On exit bars, wantsExit() may have captured [CLOSE_LONG, OPEN_SHORT]

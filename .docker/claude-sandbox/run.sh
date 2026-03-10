@@ -4,6 +4,7 @@
 # Usage:
 #   ./run.sh                    # Run fresh session
 #   ./run.sh -c                 # Continue last session
+#   ./run.sh -r                 # Resume specific session (interactive picker)
 #   ./run.sh /path/to/project   # Run in specific project
 #   ./run.sh --build            # Rebuild image first
 #
@@ -15,12 +16,28 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Check for rebuild flag
-if [[ "$1" == "--build" ]]; then
-    echo "Rebuilding Claude sandbox image..."
-    docker-compose build --no-cache
-    shift
-fi
+# Parse flags
+CLAUDE_ARGS=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --build)
+            echo "Rebuilding Claude sandbox image..."
+            docker-compose build --no-cache
+            shift
+            ;;
+        -c|--continue)
+            CLAUDE_ARGS="--continue"
+            shift
+            ;;
+        -r|--resume)
+            CLAUDE_ARGS="--resume"
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
 # Determine project directory
 if [[ -n "$1" && -d "$1" ]]; then
@@ -34,7 +51,8 @@ echo "Starting Claude Code sandbox..."
 echo "Project: $PROJECT_DIR"
 echo "Mode: --dangerously-skip-permissions (sandboxed)"
 echo "Auth: ~/.claude credentials (read-only mount)"
+[[ -n "$CLAUDE_ARGS" ]] && echo "Args: $CLAUDE_ARGS"
 echo ""
 
 # Run the container
-PROJECT_DIR="$PROJECT_DIR" docker-compose run --rm claude
+PROJECT_DIR="$PROJECT_DIR" docker-compose run --rm claude $CLAUDE_ARGS

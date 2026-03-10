@@ -48,11 +48,6 @@ export interface BrokerConfig {
    * Applied to trade value and deducted from cash
    */
   feeRate?: number;
-
-  /**
-   * Whether this is a prediction market (prices must stay between 0 and 1)
-   */
-  isPredictionMarket?: boolean;
 }
 
 /**
@@ -224,11 +219,6 @@ export class Broker {
       slippedPrice = price * (1 + slippage / 100);
     } else {
       slippedPrice = price * (1 - slippage / 100);
-    }
-
-    // Clamp for prediction markets
-    if (this.config.isPredictionMarket) {
-      slippedPrice = Math.max(0.001, Math.min(0.999, slippedPrice));
     }
 
     return slippedPrice;

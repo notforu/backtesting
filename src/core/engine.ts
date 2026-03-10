@@ -11,88 +11,20 @@ import type {
   Trade,
   Order,
   Timeframe,
-  TradeAction,
   FundingRate,
+  TradeAction,
 } from './types.js';
 import { BacktestConfigSchema } from './types.js';
 import { Portfolio } from './portfolio.js';
 import { LeveragedPortfolio } from './leveraged-portfolio.js';
 import { Broker, type BrokerConfig } from './broker.js';
 import { loadStrategy } from '../strategy/loader.js';
-import { validateStrategyParams, type StrategyContext, type LogEntry, type CandleView } from '../strategy/base.js';
+import { validateStrategyParams, type StrategyContext, type LogEntry } from '../strategy/base.js';
+import { CandleViewImpl, type PendingAction } from './candle-view.js';
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
 import { getProvider } from '../data/providers/index.js';
 import { getCandles, saveCandles, saveBacktestRun, getCandleDateRange, getFundingRates } from '../data/db.js';
-
-/**
- * Memory-efficient view into candle array without copying.
- * Mutable endIndex allows reuse across bars without re-allocation.
- */
-class CandleViewImpl implements CandleView {
-  endIndex: number;
-
-  constructor(
-    private readonly candles: Candle[],
-    endIndex: number
-  ) {
-    this.endIndex = endIndex;
-  }
-
-  get length(): number {
-    return this.endIndex + 1;
-  }
-
-  at(index: number): Candle | undefined {
-    if (index < 0 || index > this.endIndex) return undefined;
-    return this.candles[index];
-  }
-
-  slice(start?: number, end?: number): Candle[] {
-    const s = start ?? 0;
-    const e = Math.min(end ?? this.length, this.length);
-    return this.candles.slice(s, e);
-  }
-
-  closes(): number[] {
-    const result = new Array(this.length);
-    for (let i = 0; i <= this.endIndex; i++) {
-      result[i] = this.candles[i].close;
-    }
-    return result;
-  }
-
-  volumes(): number[] {
-    const result = new Array(this.length);
-    for (let i = 0; i <= this.endIndex; i++) {
-      result[i] = this.candles[i].volume;
-    }
-    return result;
-  }
-
-  highs(): number[] {
-    const result = new Array(this.length);
-    for (let i = 0; i <= this.endIndex; i++) {
-      result[i] = this.candles[i].high;
-    }
-    return result;
-  }
-
-  lows(): number[] {
-    const result = new Array(this.length);
-    for (let i = 0; i <= this.endIndex; i++) {
-      result[i] = this.candles[i].low;
-    }
-    return result;
-  }
-}
-
-/**
- * Pending action from strategy
- */
-interface PendingAction {
-  action: TradeAction;
-  amount: number | 'all';
-}
+import { DEFAULT_TAKER_FEE_RATE, DEFAULT_FUTURES_SLIPPAGE_PERCENT } from './constants.js';
 
 /**
  * Engine configuration options
@@ -202,7 +134,7 @@ export async function runBacktest(
   if (validatedConfig.mode === 'futures' && engineConfig.broker?.slippagePercent === undefined) {
     options.broker = {
       ...options.broker,
-      slippagePercent: 0.05, // 0.05% default slippage for futures
+      slippagePercent: DEFAULT_FUTURES_SLIPPAGE_PERCENT,
     };
   }
 
@@ -286,7 +218,7 @@ export async function runBacktest(
   }
 
   // 3. Get trading fees (skip API call if skipFeeFetch is set)
-  let feeRate = options.broker?.feeRate ?? 0.001; // Default 0.1% taker fee
+  let feeRate = options.broker?.feeRate ?? DEFAULT_TAKER_FEE_RATE;
 
   if (!options.skipFeeFetch) {
     log(`Fetching trading fees for ${validatedConfig.symbol}`, Date.now());

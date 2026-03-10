@@ -122,22 +122,31 @@ npm run dev  # Check it works
 
 ## Database Migrations
 
-SQLite schema changes:
+PostgreSQL schema changes use migration files:
 
-1. **Update schema** in `src/data/db.ts`
-2. **Add migration** function
-3. **Version the schema** (increment version number)
-4. **Test with fresh DB** and existing DB
+1. **Create migration** in `migrations/` directory
+   - Name format: `NNN-descriptive-name.sql` (e.g., `004-add-user-preferences.sql`)
+2. **Write SQL** for schema changes (forward migration)
+3. **Test with fresh DB** and existing DB
+4. **Commit** migration file to git
+5. **Run on startup** — `initDb()` automatically applies pending migrations
 
-```typescript
-// src/data/db.ts
-const SCHEMA_VERSION = 2;
-
-const migrations = {
-  1: (db) => { /* v1 schema */ },
-  2: (db) => { /* v1 -> v2 changes */ }
-};
+Example:
+```sql
+-- migrations/004-add-user-preferences.sql
+CREATE TABLE user_preferences (
+  user_id INTEGER PRIMARY KEY,
+  theme TEXT DEFAULT 'light',
+  notifications_enabled BOOLEAN DEFAULT true,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
 ```
+
+Migration system:
+- Tracks applied migrations in `_migrations` table
+- Runs in order by filename
+- Idempotent (safe to re-run)
+- Runs automatically on API startup
 
 ## Debugging Strategies
 

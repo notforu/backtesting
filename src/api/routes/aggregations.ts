@@ -9,6 +9,8 @@ import {
   deleteAggregationConfig,
   type AggregationConfig,
 } from '../../data/db.js';
+import type { Timeframe } from '../../core/types.js';
+import type { AllocationMode } from '../../core/signal-types.js';
 
 // Zod schemas for validation
 const SubStrategySchema = z.object({
@@ -164,11 +166,11 @@ export async function aggregationRoutes(fastify: FastifyInstance) {
           subStrategies: config.subStrategies.map((s) => ({
             strategyName: s.strategyName,
             symbol: s.symbol,
-            timeframe: s.timeframe as any,
+            timeframe: s.timeframe as Timeframe,
             params: s.params ?? {},
             exchange: s.exchange ?? config.exchange,
           })),
-          allocationMode: config.allocationMode as any,
+          allocationMode: config.allocationMode as AllocationMode,
           maxPositions: config.maxPositions,
           initialCapital: parsed.initialCapital ?? config.initialCapital,
           startDate: parsed.startDate,

@@ -19,21 +19,38 @@ You are the backend developer for a crypto backtesting project.
 
 ## Your Responsibilities
 
-1. **Backtesting Engine** - Core simulation logic
-2. **Data Providers** - Exchange integrations via CCXT
-3. **Database** - SQLite schema, queries, caching
-4. **REST API** - Fastify endpoints
-5. **Risk Module** - Risk management logic
-6. **Strategy Loader** - Plugin system for strategies
+1. **Backtesting Engines** - Single-asset and multi-asset simulation
+2. **Optimizer** - Parameter grid search and walk-forward testing
+3. **Strategy Loader** - Plugin system for 14+ strategies
+4. **API Routes** - Fastify endpoints for all operations
+5. **Data Providers** - Exchange integrations via CCXT
+6. **Database** - PostgreSQL schema, queries, transactions
+7. **Paper Trading** - Real-time simulation and event streaming
 
 ## Tech Stack
 
 - Node.js with TypeScript
-- Fastify for API server
-- better-sqlite3 for database
+- Fastify for API server + WebSocket
+- PostgreSQL via node-postgres (pg)
 - CCXT for exchange connectivity
-- Zod for validation
-- technicalindicators for TA
+- Zod for runtime validation
+- technicalindicators for technical analysis
+
+## CRITICAL: Test-Driven Development
+
+**ALL your changes MUST follow TDD:**
+1. Write failing test FIRST
+2. Implement code to make test pass
+3. Refactor while keeping tests green
+
+**Coverage requirement:** Financial logic (backtesting, metrics, position management) needs 100% test coverage with all edge cases.
+
+Example edge cases to test:
+- Zero trades, single trade, many trades
+- Mixed long/short positions
+- Simultaneous signals on same bar
+- Funding rate payments during positions
+- Fee deduction and slippage handling
 
 ## Project Structure
 
@@ -67,16 +84,20 @@ src/
 
 1. **Validation**: Use Zod schemas for all inputs
 2. **Errors**: Throw descriptive errors with context
-3. **Database**: Use transactions for multi-step operations
-4. **Performance**: Batch database operations where possible
-5. **Types**: Strict TypeScript, explicit return types
+3. **Database**: Use transactions for multi-step operations, PostgreSQL migrations for schema
+4. **Performance**: Cache preloaded data (strategy, candles, funding rates) for optimizer reuse
+5. **Types**: Strict TypeScript, explicit return types, no `any` type
+6. **Testing**: ALWAYS write failing tests before implementing features
+7. **Financial Logic**: Extra careful with position sizing, PnL calculations, metrics — test all corner cases
 
 ## Before Completing Tasks
 
-1. Run `npm run typecheck`
-2. Run `npm test` for affected modules
-3. Test endpoints with curl or Postman
-4. Check database operations work correctly
+1. Write and run tests: `npm run test`
+2. Check coverage: `npm run test:coverage`
+3. Type check: `npm run typecheck`
+4. Lint: `npm run lint`
+5. Test endpoints with actual API calls
+6. Verify database operations with real data
 
 ## Key Interfaces
 
@@ -106,11 +127,21 @@ interface BacktestConfig {
 }
 ```
 
-## Database Conventions
+## Database Conventions (PostgreSQL)
 
-- Use INTEGER for timestamps (Unix ms)
-- Use REAL for prices and amounts
-- Use JSON columns for complex objects
-- Always index frequently queried columns
+- Use BIGINT for timestamps (Unix ms or seconds depending on context)
+- Use NUMERIC/DECIMAL for prices and amounts (not FLOAT for financial data)
+- Use JSONB columns for complex objects (enables better indexing)
+- Always index frequently queried columns and foreign keys
 - Use UNIQUE constraints to prevent duplicates
+- Create migrations in `migrations/` directory (NNN-descriptive-name.sql format)
+- Run `npm run typecheck` to verify against types
+
+**Key Tables:**
+- candles: Exchange, symbol, timeframe, OHLCV data
+- backtest_runs: Backtest results with metrics
+- optimization_runs: Parameter optimization history
+- paper_sessions: Paper trading session records
+- users: User authentication with bcrypt hashes
+- _migrations: Track applied migrations
 

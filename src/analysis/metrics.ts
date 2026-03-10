@@ -4,6 +4,7 @@
  */
 
 import type { Trade, EquityPoint, PerformanceMetrics, RollingMetrics } from '../core/types.js';
+import { SORTINO_CAP, ROLLING_SHARPE_WINDOW, PROFIT_FACTOR_CAP } from '../core/constants.js';
 
 /**
  * Check if a trade is a close trade (has PnL)
@@ -289,7 +290,7 @@ function calculateSortinoRatio(returns: number[], timeframe?: string): number {
   const negativeReturns = returns.filter((r) => r < 0);
   if (negativeReturns.length === 0) {
     // No negative returns means infinite Sortino (or very high)
-    return mean > 0 ? 10 : 0; // Cap at 10 for display purposes
+    return mean > 0 ? SORTINO_CAP : 0;
   }
 
   const downsideVariance =
@@ -489,11 +490,11 @@ export function calculateRollingMetrics(
     // Drawdown (already computed in equity)
     drawdown.push(point.drawdown);
 
-    // Rolling Sharpe (50-bar window of returns)
+    // Rolling Sharpe (ROLLING_SHARPE_WINDOW-bar window of returns)
     if (i < 2) {
       rollingSharpe.push(0);
     } else {
-      const windowSize = 50;
+      const windowSize = ROLLING_SHARPE_WINDOW;
       const startIdx = Math.max(0, i - windowSize);
       const windowReturns = returns.slice(startIdx, i);
 
@@ -528,7 +529,7 @@ export function calculateRollingMetrics(
     if (totalCloseTrades === 0) {
       cumulativeProfitFactor.push(0);
     } else if (grossLoss === 0) {
-      cumulativeProfitFactor.push(grossProfit > 0 ? 10 : 0); // Cap at 10 like Sortino
+      cumulativeProfitFactor.push(grossProfit > 0 ? PROFIT_FACTOR_CAP : 0);
     } else {
       cumulativeProfitFactor.push(grossProfit / grossLoss);
     }

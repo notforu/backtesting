@@ -17,6 +17,8 @@ import {
   type HistoryFilters,
 } from '../../data/index.js';
 import { runAggregateBacktest } from '../../core/aggregate-engine.js';
+import type { Timeframe } from '../../core/types.js';
+import type { AllocationMode } from '../../core/signal-types.js';
 // Request schema for running a backtest
 const RunBacktestRequestSchema = z.object({
   strategyName: z.string().min(1),
@@ -160,10 +162,8 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const config = result.config as any;
-
       // Detect aggregate/multi-asset results (symbol is 'MULTI')
-      if (config.symbol === 'MULTI') {
+      if (result.config.symbol === 'MULTI') {
         // Multi-asset: don't fetch candles (frontend fetches per-asset)
         return reply.status(200).send({
           ...result,
@@ -394,11 +394,11 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         subStrategies: parsed.subStrategies.map((s) => ({
           strategyName: s.strategyName,
           symbol: s.symbol,
-          timeframe: s.timeframe as any,
+          timeframe: s.timeframe as Timeframe,
           params: s.params ?? {},
           exchange: s.exchange ?? parsed.exchange,
         })),
-        allocationMode: parsed.allocationMode as any,
+        allocationMode: parsed.allocationMode as AllocationMode,
         maxPositions: parsed.maxPositions,
         initialCapital: parsed.initialCapital,
         startDate: parsed.startDate,

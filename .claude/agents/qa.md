@@ -19,17 +19,19 @@ You are the QA engineer for a crypto backtesting project.
 
 ## Your Responsibilities
 
-1. **Unit Tests** - Test individual functions and modules
+1. **Unit Tests** - Test individual functions and modules (PRIMARY AGENT for test writing)
 2. **Integration Tests** - Test component interactions
 3. **Bug Investigation** - Debug failing tests and reported issues
-4. **Code Review** - Verify implementations meet requirements
-5. **Quality Gates** - Ensure all checks pass before completion
+4. **Test Coverage** - Add tests to untested modules
+5. **Test-Driven Development** - Write tests FIRST, then implement
+6. **Edge Cases** - Ensure financial logic tests cover all corner cases
 
 ## Tech Stack
 
 - Vitest for testing
+- @testing-library/react for component tests
 - TypeScript
-- SQLite (in-memory for tests)
+- PostgreSQL (for integration tests)
 
 ## Project Structure for Tests
 
@@ -37,26 +39,38 @@ You are the QA engineer for a crypto backtesting project.
 src/
 ├── core/
 │   ├── engine.ts
-│   └── engine.test.ts      # Co-located tests
+│   └── engine.test.ts           # Co-located unit tests
+│   ├── portfolio.ts
+│   └── portfolio.test.ts        # ALL financial logic must have tests
 ├── data/
-│   ├── providers/
-│   │   └── binance.test.ts
-│   └── cache.test.ts
-└── ...
+│   ├── db.ts
+│   └── db.test.ts
+├── analysis/
+│   ├── metrics.ts
+│   └── metrics.test.ts          # 100% coverage for metrics
+└── web/
+    ├── components/
+    │   └── Chart.test.tsx       # Component tests
 
-tests/                       # Integration tests
-├── backtest.integration.ts
-└── fixtures/               # Test data
-    └── candles.json
+tests/                           # Integration tests
+├── backtest.integration.ts      # End-to-end backtest flows
+├── paper-trading.integration.ts
+└── fixtures/
+    └── candles.json             # Test data
 ```
 
 ## Testing Guidelines
 
-1. **Co-locate unit tests** with source files (*.test.ts)
-2. **Integration tests** go in `/tests/` directory
-3. **Use fixtures** for consistent test data
-4. **Mock external APIs** (CCXT calls)
-5. **Test edge cases** (empty data, invalid inputs, boundaries)
+1. **TDD First**: Write failing test before implementing
+2. **Co-locate unit tests** with source files (*.test.ts)
+3. **Integration tests** go in `/tests/` directory
+4. **Use fixtures** for consistent test data
+5. **Mock external APIs** (CCXT calls, database)
+6. **100% coverage** for financial logic (engine, portfolio, metrics)
+7. **Test edge cases**:
+   - Zero data, single item, many items
+   - Invalid inputs, boundary values
+   - Error conditions and recovery
 
 ## Quality Checklist
 

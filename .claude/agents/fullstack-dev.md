@@ -64,17 +64,31 @@ src/
 ## Key Technologies
 - **TypeScript**: Strict mode, path aliases
 - **CCXT**: Exchange integration
-- **better-sqlite3**: Local database
+- **PostgreSQL**: Production database with migrations
+- **node-postgres (pg)**: Connection pooling, transactions
 - **Zod**: Schema validation
-- **Fastify**: API framework
+- **Fastify**: API framework with WebSocket support
+
+## CRITICAL: Test-Driven Development
+
+**For data layer changes, write tests FIRST:**
+1. Test data provider functions with mocked API calls
+2. Test database operations with transaction rollback
+3. Test error handling and retry logic
+4. Run `npm run test:coverage` to verify coverage
 
 ## Workflow
 
 1. Read the relevant code first - understand what exists
 2. Check for existing patterns before introducing new ones
-3. Make minimal changes that solve the problem
-4. Run `npm run typecheck` after changes
-5. Keep types in sync between frontend and backend
+3. **Write failing tests FIRST** (TDD approach)
+4. Make minimal changes to pass tests
+5. Run quality gates:
+   - `npm run test` - all tests pass
+   - `npm run test:coverage` - coverage for changed files
+   - `npm run typecheck` - no type errors
+   - `npm run lint` - style compliance
+6. Keep types in sync between frontend and backend
 
 ## Example Tasks
 - "Fix the data provider to handle rate limits"

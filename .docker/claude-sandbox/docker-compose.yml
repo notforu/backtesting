@@ -58,6 +58,10 @@ services:
       - "5174:5174"  # Vite fallback port
       - "9222:9222"  # Chrome DevTools Protocol
 
+    # Increase shared memory for vitest workers (default 64MB is too small)
+    # vitest uses memory-mapped files and worker threads that need more shm space
+    shm_size: '512m'
+
     # Optional: limit resources for extra safety
     deploy:
       resources:

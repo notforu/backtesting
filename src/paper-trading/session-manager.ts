@@ -280,16 +280,14 @@ export class SessionManager {
       this.clearDailySummaryTimer(sessionId);
     }
 
-    // Persist "paused" status to DB for all active engines so they can be restored on restart
+    // Pause all engines so they can be restored on restart.
+    // The engine's own pause() guard handles the 'not running' case gracefully.
     for (const [sessionId, engine] of this.engines) {
       try {
-        if (engine.status === 'running' || engine.status === 'paused') {
-          await paperDb.updatePaperSession(sessionId, { status: 'paused' });
-        }
-        engine.shutdownCleanup();
+        await engine.pause();
       } catch (err) {
         console.error(
-          `[SessionManager] Error cleaning up engine ${sessionId}:`,
+          `[SessionManager] Error pausing engine ${sessionId}:`,
           err,
         );
       }

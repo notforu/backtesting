@@ -9,6 +9,7 @@ import { runBacktest, type EngineConfig } from './engine.js';
 import { loadStrategy } from '../strategy/loader.js';
 import { saveOptimizedParams, saveCandles, getCandleDateRange, getCandles, getFundingRates } from '../data/db.js';
 import { getProvider } from '../data/providers/index.js';
+import { DEFAULT_TAKER_FEE_RATE } from './constants.js';
 
 // ============================================================================
 // Types
@@ -156,7 +157,7 @@ export async function runOptimization(
   }
 
   // Pre-fetch trading fees once (cache for all backtest runs)
-  let cachedFeeRate = 0.001; // Default 0.1% taker fee
+  let cachedFeeRate = DEFAULT_TAKER_FEE_RATE;
   try {
     const fees = await provider.fetchTradingFees(symbol);
     cachedFeeRate = fees.taker;

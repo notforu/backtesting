@@ -110,14 +110,23 @@ This includes:
 
 ## Project Overview
 
-A modular crypto backtesting platform for testing trading strategies across multiple exchanges. Built with TypeScript (full stack), designed for flexibility and future live trading integration.
+A mature crypto backtesting and paper trading platform with:
+- Single and multi-asset portfolio backtesting
+- Parameter optimization via grid search
+- Walk-forward robustness testing
+- Real-time paper trading simulation (5-min ticks)
+- 14 production strategies (momentum, funding rate, market structure)
+- PostgreSQL persistence with authentication
+- Complete REST API (40+ endpoints)
+- React dashboard with charts and optimization UI
+- Currently at **Phase 4** (paper trading complete, connector abstraction next)
 
 ## Quick Reference
 
-- **Stack**: TypeScript, Fastify, React, SQLite, CCXT, TradingView Lightweight Charts
+- **Stack**: TypeScript, Fastify, React, PostgreSQL, CCXT, TradingView Lightweight Charts
 - **Entry Points**: `src/api/server.ts` (backend), `src/web/main.tsx` (frontend)
 - **Strategies**: Plugin files in `/strategies/` folder
-- **Database**: SQLite at `/data/backtesting.db`
+- **Database**: PostgreSQL (see DATABASE_URL env var, runs in Docker)
 
 ## Agent System
 
@@ -246,6 +255,35 @@ This includes but is not limited to:
 
 **Test-first (TDD) approach required for bug fixes**: Write failing tests first, then fix code, then verify green.
 
+### 🧪 RULE 10: Test-Driven Development (TDD) Required for All Development
+
+**ALL code changes (except one-time scripts) MUST follow TDD:**
+
+1. **Write failing tests FIRST** that describe the expected behavior
+2. **Implement the minimum code** to make tests pass
+3. **Refactor** while keeping tests green
+
+**Agent-specific TDD enforcement:**
+- `be-dev`: Must write/update tests before implementing features or fixing bugs
+- `fe-dev`: Must write component tests for new components (use vitest + testing-library)
+- `qa`: Primary test-writing agent — used for adding coverage to existing untested code
+- `quant`: Must validate strategy changes with backtest comparison tests
+- `fullstack-dev`: Must test data layer changes (database operations, data fetching)
+
+**Exceptions (no TDD required):**
+- One-time scripts in `/scripts/`
+- Documentation changes (.md files)
+- Configuration/build changes
+- Pure refactoring with existing test coverage
+
+**Coverage requirement:** Run `npm run test:coverage` to verify coverage for changed files.
+
+**Why TDD matters:**
+- False-positive backtest results caused by calculation bugs lead to losing real money
+- Every edge case in financial logic must be tested
+- TDD catches integration bugs early
+- Forces clear thinking about requirements before implementation
+
 ## Key Directories
 
 ```
@@ -270,7 +308,8 @@ npm run dev          # Start development (API + frontend)
 npm run build        # Production build
 npm run typecheck    # Check TypeScript
 npm run lint         # Check code style
-npm run test         # Run tests
+npm run test         # Run unit tests (vitest)
+npm run test:coverage # Show test coverage
 npm run backtest     # CLI backtest runner
 
 # Quant Agent CLI Tools

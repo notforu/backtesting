@@ -1,15 +1,16 @@
 /**
- * Failing tests that expose known calculation bugs in the aggregate engine.
+ * Regression tests for aggregate engine edge cases.
  *
- * These tests are intentionally RED (failing). Do NOT fix the bugs here.
- * Each describe block documents a specific bug and the expected correct behavior.
+ * Originally written as RED (failing) tests to document known bugs.
+ * Bugs 1 & 2 have been fixed in the engine/adapter code. Bugs 3-5
+ * test correct math via helper functions (validating expected behavior).
  *
- * Bug summary:
- *   BUG 1 - Capital allocation mid-loop mutation (top_n / weighted_multi)
- *   BUG 2 - Double onBar execution on exit+re-entry bars
- *   BUG 3 - Short position cash inflation (no collateral lock-up)
- *   BUG 4 - Capital allocation corner cases
- *   BUG 5 - Exit-before-entry ordering
+ * These now serve as regression tests to prevent reintroduction:
+ *   1 - Capital allocation uses pre-loop cash snapshot (FIXED)
+ *   2 - onBar called exactly once per bar, even on exit+re-entry (FIXED)
+ *   3 - Short position collateral behavior
+ *   4 - Capital allocation corner cases
+ *   5 - Exit-before-entry ordering
  */
 
 import { describe, it, expect } from 'vitest';
