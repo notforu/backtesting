@@ -465,12 +465,33 @@ export function Chart({ candles, trades, height = 500, isFutures = false, backte
         frSeriesRef.current = frSeries;
       }
 
-      // Set FR data with per-bar green/red coloring
-      const frData = fundingRates.map((fr) => ({
-        time: (fr.timestamp / 1000) as Time,
-        value: fr.fundingRate,
-        color: fr.fundingRate >= 0 ? '#22C55E' : '#EF4444',
-      }));
+      // Align FR data to candle timestamps by forward-filling.
+      // Funding rates are recorded every 8h but candles may be every 4h (or other
+      // intervals), so we find the last FR value at or before each candle timestamp
+      // to avoid gaps in the histogram.
+      const frData: { time: Time; value: number; color: string }[] = [];
+      if (displayCandles.length > 0 && fundingRates.length > 0) {
+        // fundingRates is sorted ascending by timestamp
+        let frIdx = 0;
+        for (const candle of displayCandles) {
+          // Advance frIdx while the next FR still has timestamp <= candle.timestamp
+          while (
+            frIdx + 1 < fundingRates.length &&
+            fundingRates[frIdx + 1].timestamp <= candle.timestamp
+          ) {
+            frIdx++;
+          }
+          // Only emit a bar if there is an applicable FR (not a future one)
+          if (fundingRates[frIdx].timestamp <= candle.timestamp) {
+            const fr = fundingRates[frIdx];
+            frData.push({
+              time: (candle.timestamp / 1000) as Time,
+              value: fr.fundingRate,
+              color: fr.fundingRate >= 0 ? '#22C55E' : '#EF4444',
+            });
+          }
+        }
+      }
       frSeriesRef.current.setData(frData);
     } else {
       if (frSeriesRef.current && chartRef.current) {
@@ -487,7 +508,7 @@ export function Chart({ candles, trades, height = 500, isFutures = false, backte
         frLongThresholdSeriesRef.current = null;
       }
     }
-  }, [showFundingRate, fundingRates, frShortThreshold, frLongThreshold]);
+  }, [showFundingRate, fundingRates, frShortThreshold, frLongThreshold, displayCandles]);
 
   // Dynamic indicator threshold line series (on funding-rate scale)
   useEffect(() => {

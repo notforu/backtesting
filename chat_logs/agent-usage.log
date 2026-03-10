@@ -3,6 +3,7 @@
 [2026-03-09 11:49] be-dev (sonnet) - Fix walk-forward trades persistence in WalkForwardResult
 [2026-03-09 11:49] fe-dev (sonnet) - Fix FR threshold lines in backtesting view + remove last FR value line
 [2026-03-09 11:49] ui-tester (sonnet) - Verify UI fixes for trades, FR thresholds, last value line
+[2026-03-10 09:00] docs-writer (haiku) - Create changelog for funding rate histogram gap fix
 [2026-03-06 23:00] quant-lead (opus) - Critical assessment of paper trading results, drawdown probability math, portfolio expansion analysis, validation timeline
 [2026-03-06 07:32] fullstack-dev (sonnet) - Implement bidirectional navigation between paper trading sessions and aggregation configs
 [2026-03-05 19:30] docs-writer (haiku) - Create comprehensive HF scalping investigation changelog with all backtest results, fee-to-move analysis, and strategic conclusions
@@ -68,3 +69,16 @@
 [2026-03-10 12:20] docs-writer (haiku) - Create changelog for refactoring
 [2026-03-10 12:00] docs-writer (haiku) - Create major cleanup changelog: remove Polymarket, Pairs Trading, result storage
 [2026-03-10 12:30] docs-writer (haiku) - Create comprehensive system inventory at /docs/SYSTEM_INVENTORY.md
+[2026-03-10 05:39] fe-dev (sonnet) - Fix all frontend critical and medium severity issues: ErrorBoundary, TradesTable extraction, Spinner component, store splitting, App.tsx reduction
+[2026-03-10 05:40] be-dev (sonnet) - Fix all backend critical and medium severity architecture issues
+[2026-03-10 05:40] qa (sonnet) - Write comprehensive unit tests for portfolio.ts, broker.ts, and metrics.ts; also add vitest coverage config
+[2026-03-10 14:30] docs-writer (haiku) - Comprehensive documentation refresh: update ARCHITECTURE.md, PROJECT_GOALS.md, CLAUDE.md, WORKFLOWS.md, and 8 agent configs to reflect current Phase 4 system state
+[2026-03-10 06:27] builder (haiku) - Fix vitest Bus error in Docker
+[2026-03-10 06:38] fe-dev (sonnet) - Reduce App.tsx from 542 to under 400 lines by extracting components and hooks
+[2026-03-10 06:38] fe-dev (sonnet) - Decompose PaperTradingPage.tsx (1421 lines) into focused sub-components
+[2026-03-10 06:38] qa (sonnet) - Write unit tests for optimizer grid generation, walk-forward split/degradation, and engine createBacktestConfig
+[2026-03-10 06:49] fe-dev (sonnet) - Completed PaperTradingPage decomposition: 1421 lines → 66 lines orchestrator + 7 sub-components
+[2026-03-10 06:56] be-dev (sonnet) - Fix close+open priority bugs in signal-adapter.ts getSignal()
+[2026-03-10 00:00] be-dev (sonnet) - Fix shutdownAll() bug in session-manager.ts to call pause() on running engines
+[2026-03-10 07:14] fe-dev (sonnet) - Fix funding rate histogram gaps on 4h chart by forward-filling FR values to candle timestamps
+[2026-03-10 07:15] fe-dev (sonnet) - Fix FR histogram gaps on 4h chart by forward-filling
