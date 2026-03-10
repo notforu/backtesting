@@ -4,14 +4,16 @@
 
 import { create } from 'zustand';
 
+export type ActivePage = 'backtesting' | 'configurations' | 'paper-trading';
+
 interface PaperTradingStore {
   selectedSessionId: string | null;
   isCreateModalOpen: boolean;
-  activePage: 'backtesting' | 'paper-trading';
+  activePage: ActivePage;
 
   setSelectedSession: (id: string | null) => void;
   setCreateModalOpen: (open: boolean) => void;
-  setActivePage: (page: 'backtesting' | 'paper-trading') => void;
+  setActivePage: (page: ActivePage) => void;
 }
 
 export const usePaperTradingStore = create<PaperTradingStore>((set) => ({

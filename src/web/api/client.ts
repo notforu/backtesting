@@ -5,6 +5,7 @@
 
 import type {
   BacktestResult,
+  BacktestSummary,
   PaginatedHistory,
   Candle,
   CandleRequest,
@@ -29,6 +30,8 @@ import type {
   PaperTradingEvent,
   CreatePaperSessionRequest,
   PaperSessionEventsResponse,
+  StrategyConfigEntity,
+  StrategyConfigListItem,
 } from '../types';
 
 const API_BASE = '/api';
@@ -824,6 +827,58 @@ export async function forcePaperTick(id: string): Promise<unknown> {
 
 export async function getPaperSessionEvents(id: string, limit = 100, offset = 0): Promise<PaperSessionEventsResponse> {
   return apiFetch<PaperSessionEventsResponse>(`/paper-trading/sessions/${id}/events?limit=${limit}&offset=${offset}`);
+}
+
+// ============================================================================
+// Strategy Config Endpoints
+// ============================================================================
+
+export async function getStrategyConfigs(filters?: {
+  strategy?: string;
+  symbol?: string;
+  timeframe?: string;
+}): Promise<StrategyConfigListItem[]> {
+  const params = new URLSearchParams();
+  if (filters?.strategy) params.set('strategy', filters.strategy);
+  if (filters?.symbol) params.set('symbol', filters.symbol);
+  if (filters?.timeframe) params.set('timeframe', filters.timeframe);
+  const queryString = params.toString();
+  return apiFetch<StrategyConfigListItem[]>(`/strategy-configs${queryString ? `?${queryString}` : ''}`);
+}
+
+export async function getStrategyConfig(id: string): Promise<StrategyConfigEntity> {
+  return apiFetch<StrategyConfigEntity>(`/strategy-configs/${encodeURIComponent(id)}`);
+}
+
+export async function createStrategyConfig(config: {
+  strategyName: string;
+  symbol: string;
+  timeframe: string;
+  params: Record<string, unknown>;
+}): Promise<{ config: StrategyConfigEntity; created: boolean }> {
+  return apiFetch<{ config: StrategyConfigEntity; created: boolean }>('/strategy-configs', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function deleteStrategyConfig(id: string): Promise<{ message: string; deletedRuns: number }> {
+  return apiFetch<{ message: string; deletedRuns: number }>(`/strategy-configs/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getStrategyConfigRuns(id: string): Promise<BacktestSummary[]> {
+  return apiFetch<BacktestSummary[]>(`/strategy-configs/${encodeURIComponent(id)}/runs`);
+}
+
+export async function getStrategyConfigVersions(
+  strategy: string,
+  symbol: string,
+  timeframe: string,
+): Promise<StrategyConfigEntity[]> {
+  const params = new URLSearchParams({ strategy, symbol, timeframe });
+  return apiFetch<StrategyConfigEntity[]>(`/strategy-configs/versions?${params}`);
 }
 
 /**

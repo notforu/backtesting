@@ -3,9 +3,10 @@
  */
 
 import type { BacktestResult } from '../../types';
+import type { ActivePage } from '../../stores/paperTradingStore.js';
 
 interface AppFooterProps {
-  activePage: 'backtesting' | 'paper-trading';
+  activePage: ActivePage;
   currentResult: BacktestResult | null;
 }
 
@@ -22,6 +23,7 @@ export function AppFooter({ activePage, currentResult }: AppFooterProps) {
             </>
           )}
           {activePage === 'paper-trading' && 'Paper Trading Mode'}
+          {activePage === 'configurations' && 'Configurations'}
         </span>
       </div>
     </footer>

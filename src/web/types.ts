@@ -589,3 +589,26 @@ export interface PaperSessionEventsResponse {
   limit: number;
   offset: number;
 }
+
+// ============================================================================
+// Strategy Configuration Entity Types
+// ============================================================================
+
+export interface StrategyConfigEntity {
+  id: string;
+  strategyName: string;
+  symbol: string;
+  timeframe: string;
+  params: Record<string, unknown>;
+  contentHash: string;
+  name: string;
+  createdAt: number;
+}
+
+export interface StrategyConfigListItem extends StrategyConfigEntity {
+  runCount: number;
+  paperSessionCount: number;
+  latestRunAt?: number;
+  latestRunSharpe?: number;
+  latestRunReturn?: number;
+}

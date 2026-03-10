@@ -197,7 +197,10 @@ export const BacktestConfigSchema = z.object({
   initialCapital: z.number().positive(),
   exchange: z.string(),
   leverage: z.number().min(1).max(125).default(1).optional(),
+  /** @deprecated Mode is always futures. Kept for backward compatibility with existing records. */
   mode: z.enum(['spot', 'futures']).default('spot').optional(),
+  /** Optional reference to a strategy_configs row for this run. */
+  strategyConfigId: z.string().optional(),
 });
 
 export type BacktestConfig = z.infer<typeof BacktestConfigSchema>;

@@ -334,25 +334,42 @@ interface BacktestRunRow {
   aggregation_id?: string | null;
   aggregation_name?: string | null;
   indicators?: unknown | null;
+  strategy_config_id?: string | null;
 }
 
 /**
  * Save a backtest run to the database (using new trades_v2 schema)
  */
-export async function saveBacktestRun(result: AnyBacktestResult, aggregationId?: string): Promise<void> {
+export async function saveBacktestRun(
+  result: AnyBacktestResult,
+  aggregationId?: string,
+  strategyConfigId?: string
+): Promise<void> {
   const p = getPool();
   const client = await p.connect();
 
   // Extract aggregate-specific fields when present (AggregateBacktestResult)
   const aggregateResult = 'perAssetResults' in result ? result as AggregateBacktestResult : null;
 
+  // Extract denormalized scalar fields from config
+  const cfg = result.config as BacktestConfig & {
+    initialCapital?: number;
+    exchange?: string;
+    startDate?: number;
+    endDate?: number;
+  };
+
   try {
     await client.query('BEGIN');
 
     // Insert the run
     await client.query(
-      `INSERT INTO backtest_runs (id, strategy_name, config, metrics, equity, rolling_metrics, created_at, per_asset_results, signal_history, aggregation_id, indicators)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      `INSERT INTO backtest_runs (
+         id, strategy_name, config, metrics, equity, rolling_metrics, created_at,
+         per_asset_results, signal_history, aggregation_id, indicators,
+         strategy_config_id, initial_capital, exchange, start_date, end_date
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         result.id,
         result.config.strategyName,
@@ -365,6 +382,11 @@ export async function saveBacktestRun(result: AnyBacktestResult, aggregationId?:
         aggregateResult?.signalHistory != null ? JSON.stringify(aggregateResult.signalHistory) : null,
         aggregationId ?? null,
         result.indicators != null ? JSON.stringify(result.indicators) : null,
+        strategyConfigId ?? null,
+        cfg.initialCapital ?? null,
+        cfg.exchange ?? null,
+        cfg.startDate ?? null,
+        cfg.endDate ?? null,
       ]
     );
 
@@ -497,6 +519,7 @@ export interface BacktestSummary {
   createdAt: number;
   aggregationId?: string;
   aggregationName?: string;
+  strategyConfigId?: string;
 }
 
 /**
@@ -517,6 +540,7 @@ export interface HistoryFilters {
   sortBy?: 'runAt' | 'sharpeRatio' | 'totalReturnPercent' | 'maxDrawdownPercent' | 'winRate' | 'totalTrades';
   sortDir?: 'asc' | 'desc';
   runType?: 'strategies' | 'aggregations';
+  strategyConfigId?: string;
 }
 
 /**
@@ -596,6 +620,11 @@ export async function getBacktestSummaries(
     conditions.push(`(br.aggregation_id IS NOT NULL OR br.config->>'symbol' = 'MULTI')`);
   }
 
+  if (filters.strategyConfigId) {
+    params.push(filters.strategyConfigId);
+    conditions.push(`br.strategy_config_id = $${params.length}`);
+  }
+
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   // Determine ORDER BY clause - whitelist allowed columns to prevent injection
@@ -627,7 +656,8 @@ export async function getBacktestSummaries(
 
   const { rows } = await p.query<BacktestRunRow>(
     `SELECT br.id, br.config, br.metrics, br.created_at,
-            br.aggregation_id, ac.name AS aggregation_name
+            br.aggregation_id, ac.name AS aggregation_name,
+            br.strategy_config_id
      FROM backtest_runs br
      LEFT JOIN aggregation_configs ac ON br.aggregation_id = ac.id
      ${whereClause}
@@ -673,6 +703,9 @@ export async function getBacktestSummaries(
     }
     if (row.aggregation_name) {
       summary.aggregationName = row.aggregation_name;
+    }
+    if (row.strategy_config_id) {
+      summary.strategyConfigId = row.strategy_config_id;
     }
 
     return summary;

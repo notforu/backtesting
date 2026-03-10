@@ -1,3 +1,4 @@
+[2026-03-10 13:40] qa (sonnet) - Write unit tests for strategy-configs API routes with mocked service layer
 [2026-03-09 09:50] fe-dev (sonnet) - Verify FR threshold extraction and trades display for simple backtests
 [2026-03-09 11:49] Explore (sonnet) - Explore trades & FR display code
 [2026-03-09 11:49] be-dev (sonnet) - Fix walk-forward trades persistence in WalkForwardResult
@@ -82,3 +83,29 @@
 [2026-03-10 00:00] be-dev (sonnet) - Fix shutdownAll() bug in session-manager.ts to call pause() on running engines
 [2026-03-10 07:14] fe-dev (sonnet) - Fix funding rate histogram gaps on 4h chart by forward-filling FR values to candle timestamps
 [2026-03-10 07:15] fe-dev (sonnet) - Fix FR histogram gaps on 4h chart by forward-filling
+[2026-03-10 07:16] commit (haiku) - Fix FR histogram gaps on sub-8h timeframes with forward-filling
+[2026-03-10 12:31] be-dev (sonnet) - Create migration 015_strategy_configs.sql for strategy configs restructuring
+[2026-03-10 12:30] be-dev (sonnet) - Create DB migration 015_strategy_configs.sql
+[2026-03-10 12:30] be-dev (sonnet) - Create content hash utility + strategy config service + type updates
+[2026-03-10 12:32] be-dev (sonnet) - Create content-hash utility and strategy-config service
+[2026-03-10 12:37] be-dev (sonnet) - Create strategy-config API routes, update saveBacktestRun/getBacktestSummaries, modify backtest.ts to auto-create configs
+[2026-03-10 12:40] be-dev (sonnet) - Create strategy config API routes + modify backtest/aggregation routes
+[2026-03-10 12:40] fe-dev (sonnet) - Build ConfigurationsPage with sidebar/detail/tabs
+[2026-03-10 12:38] fe-dev (sonnet) - Build Configurations page: types, API client, store, hooks, components, App.tsx/AppHeader/URL sync updates
+[2026-03-10 19:40] architect (opus) - AI/LLM strategy generation pipeline design
+[2026-03-10 19:40] architect (opus) - Payment gateway and monetization model design
+[2026-03-10 19:40] architect (opus) - Frontend/UX chat interface design
+[2026-03-10 19:40] architect (opus) - Security, sandboxing and infrastructure design
+[2026-03-10 12:42] docs-writer (haiku) - Changelog for strategy-config API routes
+[2026-03-10 12:50] fe-dev (sonnet) - Create RunBacktestModal + wire buttons
+[2026-03-10 12:50] fe-dev (sonnet) - Wire delete config confirmation + cross-page navigation
+[2026-03-10 12:45] fe-dev (sonnet) - Create RunBacktestModal component, store, wire into App and AppHeader
+[2026-03-10 19:46] docs-writer (haiku) - Create AI Strategy Assistant master plan doc
+[2026-03-10 12:58] docs-writer (haiku) - Create changelog + update ARCHITECTURE.md for strategy configs
+[2026-03-10 20:15] docs-writer (haiku) - Create strategy configurations changelog and update architecture documentation
+[2026-03-10 13:37] qa (sonnet) - Write comprehensive unit tests for content-hash utility
+[2026-03-10 13:45] qa (sonnet) - Write comprehensive unit tests for strategy-config CRUD service with mocked DB
+[2026-03-10 13:40] qa (sonnet) - Write content-hash unit tests (29 tests)
+[2026-03-10 13:40] qa (sonnet) - Write strategy-config service tests (44 tests)
+[2026-03-10 13:40] qa (sonnet) - Write strategy-configs API route tests (44 tests)
+[2026-03-10 13:45] docs-writer (haiku) - Create changelog for 117 new strategy configuration tests (content-hash, service, API)

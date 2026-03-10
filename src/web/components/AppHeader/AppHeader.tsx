@@ -3,10 +3,12 @@
  */
 
 import type { BacktestResult } from '../../types';
+import type { ActivePage } from '../../stores/paperTradingStore.js';
+import { useRunBacktestModalStore } from '../../stores/runBacktestModalStore.js';
 
 interface AppHeaderProps {
-  activePage: 'backtesting' | 'paper-trading';
-  onNavigate: (page: 'backtesting' | 'paper-trading') => void;
+  activePage: ActivePage;
+  onNavigate: (page: ActivePage) => void;
   currentResult: BacktestResult | null;
   onShowParams: () => void;
   onShowExplorer: () => void;
@@ -29,6 +31,8 @@ export function AppHeader({
   onLogout,
   hasParams,
 }: AppHeaderProps) {
+  const openRunBacktestModal = useRunBacktestModalStore((s) => s.open);
+
   return (
     <header className="border-b border-gray-700 px-4 py-3 flex-shrink-0">
       <div className="flex items-center justify-between">
@@ -61,6 +65,16 @@ export function AppHeader({
               }`}
             >
               Backtesting
+            </button>
+            <button
+              onClick={() => onNavigate('configurations')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                activePage === 'configurations'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-800'
+              }`}
+            >
+              Configurations
             </button>
             <button
               onClick={() => onNavigate('paper-trading')}
@@ -122,6 +136,15 @@ export function AppHeader({
                   />
                 </svg>
                 Explore Runs
+              </button>
+              <button
+                onClick={() => openRunBacktestModal()}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-500 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New Backtest
               </button>
             </div>
           )}

@@ -79,6 +79,12 @@ export interface EngineConfig {
    * Allows optimizer to load the strategy once and reuse across all combinations
    */
   preloadedStrategy?: import('../strategy/base.js').Strategy;
+
+  /**
+   * Strategy config ID to link the saved run to a strategy_configs row.
+   * When provided, the run is saved with this ID in strategy_config_id.
+   */
+  strategyConfigId?: string;
 }
 
 /**
@@ -574,7 +580,7 @@ export async function runBacktest(
   // 12. Save to database
   if (options.saveResults) {
     log('Saving results to database', Date.now());
-    await saveBacktestRun(result);
+    await saveBacktestRun(result, undefined, options.strategyConfigId);
   }
 
   log(`Backtest complete. Total return: ${metrics.totalReturnPercent.toFixed(2)}%`, Date.now());

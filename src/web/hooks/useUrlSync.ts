@@ -7,18 +7,22 @@
  *   /paper-trading/:sessionId → paper-trading with specific session selected
  *   /backtesting              → backtesting page, no run loaded
  *   /backtesting/:runId       → backtesting page with specific run loaded
+ *   /configs                  → configurations page
+ *   /configs/:configId        → configurations page with specific config selected
  */
 
 import { useEffect, useRef } from 'react';
 import { usePaperTradingStore } from '../stores/paperTradingStore';
 import { useBacktestStore } from '../stores/backtestStore';
+import { useConfigurationStore } from '../stores/configurationStore';
+import type { ActivePage } from '../stores/paperTradingStore';
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
 interface ParsedPath {
-  page: 'backtesting' | 'paper-trading';
+  page: ActivePage;
   resourceId: string | null;
 }
 
@@ -33,19 +37,29 @@ function parsePathname(pathname: string): ParsedPath {
     return { page: 'paper-trading', resourceId: segments[1] ?? null };
   }
 
+  if (segments[0] === 'configs') {
+    return { page: 'configurations', resourceId: segments[1] ?? null };
+  }
+
   // Default: / → paper-trading
   return { page: 'paper-trading', resourceId: null };
 }
 
 function buildPathname(
-  page: 'backtesting' | 'paper-trading',
+  page: ActivePage,
   sessionId: string | null,
   backtestId: string | null,
+  configId: string | null,
 ): string {
   if (page === 'paper-trading') {
     if (sessionId) return `/paper-trading/${sessionId}`;
     // Default page — use the clean root URL
     return '/';
+  }
+
+  if (page === 'configurations') {
+    if (configId) return `/configs/${configId}`;
+    return '/configs';
   }
 
   if (backtestId) return `/backtesting/${backtestId}`;
@@ -60,6 +74,7 @@ export function useUrlSync(): void {
   const setActivePage = usePaperTradingStore((s) => s.setActivePage);
   const setSelectedSession = usePaperTradingStore((s) => s.setSelectedSession);
   const setSelectedBacktestId = useBacktestStore((s) => s.setSelectedBacktestId);
+  const setSelectedConfigId = useConfigurationStore((s) => s.setSelectedConfigId);
 
   // Ref to avoid pushing a history entry while we are already handling a
   // popstate event (back/forward navigation).
@@ -81,6 +96,8 @@ export function useUrlSync(): void {
     // Apply resource id
     if (page === 'paper-trading') {
       setSelectedSession(resourceId);
+    } else if (page === 'configurations') {
+      setSelectedConfigId(resourceId);
     } else {
       setSelectedBacktestId(resourceId);
     }
@@ -91,6 +108,7 @@ export function useUrlSync(): void {
       page,
       page === 'paper-trading' ? resourceId : null,
       page === 'backtesting' ? resourceId : null,
+      page === 'configurations' ? resourceId : null,
     );
     lastPushedUrl.current = canonicalPath;
 
@@ -107,15 +125,15 @@ export function useUrlSync(): void {
   // 2. On state change: State → URL
   // -------------------------------------------------------------------------
   useEffect(() => {
-    // Subscribe to changes in both stores using Zustand's getState() for the
-    // actual values (avoids stale-closure issues with selectors at this level).
+    // Subscribe to changes in all relevant stores.
     const unsubPaperTrading = usePaperTradingStore.subscribe((state) => {
       if (isFromPopState.current) return;
 
       const { activePage, selectedSessionId } = state;
       const { selectedBacktestId } = useBacktestStore.getState();
+      const { selectedConfigId } = useConfigurationStore.getState();
 
-      const newPath = buildPathname(activePage, selectedSessionId, selectedBacktestId);
+      const newPath = buildPathname(activePage, selectedSessionId, selectedBacktestId, selectedConfigId);
 
       if (newPath !== lastPushedUrl.current) {
         lastPushedUrl.current = newPath;
@@ -128,8 +146,24 @@ export function useUrlSync(): void {
 
       const { selectedBacktestId } = state;
       const { activePage, selectedSessionId } = usePaperTradingStore.getState();
+      const { selectedConfigId } = useConfigurationStore.getState();
 
-      const newPath = buildPathname(activePage, selectedSessionId, selectedBacktestId);
+      const newPath = buildPathname(activePage, selectedSessionId, selectedBacktestId, selectedConfigId);
+
+      if (newPath !== lastPushedUrl.current) {
+        lastPushedUrl.current = newPath;
+        window.history.pushState(null, '', newPath);
+      }
+    });
+
+    const unsubConfig = useConfigurationStore.subscribe((state) => {
+      if (isFromPopState.current) return;
+
+      const { selectedConfigId } = state;
+      const { activePage, selectedSessionId } = usePaperTradingStore.getState();
+      const { selectedBacktestId } = useBacktestStore.getState();
+
+      const newPath = buildPathname(activePage, selectedSessionId, selectedBacktestId, selectedConfigId);
 
       if (newPath !== lastPushedUrl.current) {
         lastPushedUrl.current = newPath;
@@ -140,6 +174,7 @@ export function useUrlSync(): void {
     return () => {
       unsubPaperTrading();
       unsubBacktest();
+      unsubConfig();
     };
   }, []);
 
@@ -156,12 +191,16 @@ export function useUrlSync(): void {
 
       if (page === 'paper-trading') {
         setSelectedSession(resourceId);
-        // Clear any stale backtest selection when navigating to paper-trading
+        setSelectedBacktestId(null);
+        setSelectedConfigId(null);
+      } else if (page === 'configurations') {
+        setSelectedConfigId(resourceId);
+        setSelectedSession(null);
         setSelectedBacktestId(null);
       } else {
         setSelectedBacktestId(resourceId);
-        // Clear any stale session selection when navigating to backtesting
         setSelectedSession(null);
+        setSelectedConfigId(null);
       }
 
       // Track the new URL to prevent the state-change subscribers from pushing
@@ -181,5 +220,5 @@ export function useUrlSync(): void {
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [setActivePage, setSelectedBacktestId, setSelectedSession]);
+  }, [setActivePage, setSelectedBacktestId, setSelectedSession, setSelectedConfigId]);
 }

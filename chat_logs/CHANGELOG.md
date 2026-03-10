@@ -1,6 +1,23 @@
 # Changelog
 
-All significant changes to the backtesting platform are documented here. See individual files in `/chat_logs/` for detailed information on each change.
+All significant changes to the backtesting platform are documented here. See individual files in `/docs/changelogs/` for detailed information on each change.
+
+## 2026-03-10: Strategy Configurations Feature
+
+**File**: `/docs/changelogs/2026-03-10-130000-strategy-configurations.md`
+
+Introduced StrategyConfig as a first-class entity with SHA256 content-address deduplication. System now stores each unique (strategy_name, symbol, timeframe, params) combination once and references it across backtest runs, paper trading sessions, and optimization results. Removed spot/futures mode distinction — all trading is now futures-based with spot behavior via 1x leverage. Added 7 new API endpoints for config CRUD, new "Configurations" UI page with strategy/aggregation browser, and RunBacktestModal for reusing configs.
+
+**Key changes**:
+- `strategy_configs` table with content_hash UNIQUE constraint and 381-config backfill migration
+- `backtest_runs` now links via strategy_config_id; denormalized run-level fields (initial_capital, exchange, start_date, end_date)
+- `aggregation_configs` restructured with sub_strategy_config_ids array; mode column removed
+- `paper_sessions` and `optimized_params` gain strategy_config_id FK
+- 7 REST endpoints for config management (CRUD, versions, run/paper linking)
+- New "Configurations" UI page with Strategies/Aggregations tabs, detail panel, metrics display
+- RunBacktestModal for creating/reusing configs with immediate/deferred execution option
+
+---
 
 ## 2026-03-05: HF Scalping Investigation — Comprehensive Results & No Viable Edge Found
 

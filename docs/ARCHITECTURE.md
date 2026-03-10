@@ -260,8 +260,9 @@ Executes strategy on one symbol with one timeframe:
 - Bar-by-bar execution loop
 - Manages positions, fees, slippage
 - Calculates metrics and equity curve
-- Supports spot and futures modes
+- Operates in futures mode with leverage support (1x for spot equivalent)
 - Optional preloaded data for optimizer reuse
+- Auto-creates strategy config on first backtest run
 
 #### Multi-Asset Engine (`src/core/aggregate-engine.ts`)
 Runs multiple strategies with shared capital:
@@ -305,7 +306,31 @@ Real-time simulation without real capital:
 - Guards against stale data (>10 min old)
 - Restores positions from database on session resume
 
-### 3. Strategy System
+### 3. Strategy Configuration System
+
+**Strategy Configuration** (`src/data/strategy-config.ts`):
+A first-class immutable entity representing a unique combination of (strategy_name, symbol, timeframe, params):
+- Content-addressable via SHA256 hash of normalized parameters
+- Prevents duplicate configs in database (deduplication via UNIQUE constraint on content_hash)
+- Referenced by backtest runs, paper trading sessions, and optimization results
+- Supports version history queries (all configs with same strategy+symbol+timeframe)
+- Auto-created when running backtests via `findOrCreate()` endpoint
+
+**Config Lifecycle**:
+1. User specifies strategy, symbol, timeframe, parameters
+2. System computes SHA256 hash of content
+3. Database lookup: if hash exists, return existing config ID; otherwise create new config
+4. Backtest/paper-trading/optimization links to this config ID
+5. Multiple runs can reference same config (no duplication)
+6. Version history: query by (strategy, symbol, timeframe) to see parameter evolution
+
+**Related Entities**:
+- `backtest_runs` → many configs (1:N) — a config may have multiple backtest runs at different dates
+- `paper_sessions` → one config (N:1) — a paper session uses one strategy config
+- `optimized_params` → many configs (1:N) — optimization grid search creates many param variants
+- `aggregation_configs` → many configs (N:M) — a portfolio references multiple sub-strategy configs
+
+### 4. Strategy System
 
 **Base Interface** (`src/strategy/base.ts`):
 ```typescript
@@ -338,7 +363,7 @@ interface StrategyContext {
 - Validates against Strategy interface
 - Caches loaded strategies
 
-### 4. Signal Adapter System
+### 5. Signal Adapter System
 
 Converts strategy trading intent to standardized signals:
 - Tracks strategy's perceived portfolio state ("shadow portfolio")
@@ -346,7 +371,7 @@ Converts strategy trading intent to standardized signals:
 - Emits signals with weight (0-1) for capital allocation
 - Enables strategies to work in aggregation engine
 
-### 5. Portfolio Management
+### 6. Portfolio Management
 
 #### Portfolio (`src/core/portfolio.ts`)
 Single-symbol position tracking:
@@ -368,7 +393,7 @@ Multi-symbol position tracking:
 - Capital allocation per asset
 - Aggregate equity calculation
 
-### 6. Broker Simulation (`src/core/broker.ts`)
+### 7. Broker Simulation (`src/core/broker.ts`)
 
 Order execution with realistic costs:
 - Market orders filled at price ± slippage
@@ -377,7 +402,7 @@ Order execution with realistic costs:
 - Spot and futures commission models
 - Fee and slippage tracking per trade
 
-### 7. Authentication System
+### 8. Authentication System
 
 **Password** (`src/auth/password.ts`): bcryptjs hashing
 **JWT** (`src/auth/jwt.ts`): Token generation/verification (24h expiry)
@@ -393,13 +418,24 @@ All other routes require valid JWT token.
 ## Database Schema (PostgreSQL)
 
 **Tables:**
-- `candles` - OHLCV data (indexed by exchange, symbol, timeframe, timestamp)
+- `strategy_configs` - Immutable strategy configurations (content-addressable, SHA256 hash deduped)
+  - Stores unique (strategy_name, symbol, timeframe, params) combinations
+  - `content_hash` column is UNIQUE for deduplication
+  - Referenced by backtest_runs, paper_sessions, optimized_params, aggregation_configs
 - `backtest_runs` - Backtest results with metrics and equity curve
+  - Now links to `strategy_config_id`
+  - Denormalized fields: initial_capital, exchange, start_date, end_date (for query efficiency)
 - `optimization_runs` - Optimization history with best parameters
+- `aggregation_configs` - Multi-asset portfolio configurations
+  - Now stores `sub_strategy_config_ids TEXT[]` instead of inline strategy configs
+  - No longer has `mode` column (system operates in futures-only mode)
+- `optimized_params` - Parameter variants from grid search
+  - Links to `strategy_config_id`
 - `funding_rates` - Futures funding rate data
 - `open_interest` - Open interest history per symbol
 - `long_short_ratio` - Long/short ratio data per symbol
 - `paper_sessions` - Paper trading session records
+  - Links to `strategy_config_id`
 - `paper_trades` - Trades executed in paper sessions
 - `paper_positions` - Current open positions per session
 - `paper_equity_snapshots` - Equity history for charting
@@ -410,6 +446,7 @@ All other routes require valid JWT token.
 - 001: Initial schema (candles, backtest_runs, etc.)
 - 002: Paper trading tables (sessions, trades, positions, equity)
 - 003: Authentication (users table)
+- 015: Strategy configurations (strategy_configs table, backtest_runs/paper_sessions/optimized_params FKs, aggregation restructure)
 - Plus additional schema changes for new features
 
 **Connection:**
@@ -419,8 +456,17 @@ All other routes require valid JWT token.
 
 ## API Endpoints
 
+### Strategy Configuration Routes
+- `GET /api/strategy-configs` - List all configs with optional filters (strategy_name, symbol, timeframe, exchange)
+- `GET /api/strategy-configs/:id` - Get specific config details
+- `POST /api/strategy-configs` - Find-or-create config (content hash deduplication)
+- `DELETE /api/strategy-configs/:id` - Delete config; cascade delete runs; unlink paper sessions
+- `GET /api/strategy-configs/:id/runs` - List backtest runs linked to this config
+- `GET /api/strategy-configs/:id/paper-sessions` - List paper trading sessions using this config
+- `GET /api/strategy-configs/versions` - Get version history for a strategy+symbol+timeframe combination
+
 ### Backtesting Routes
-- `POST /api/backtest/run` - Execute backtest (single or aggregate)
+- `POST /api/backtest/run` - Execute backtest (single or aggregate); auto-creates strategy config; returns strategyConfigId
 - `GET /api/backtest/:id` - Get backtest result by ID
 - `GET /api/backtest/history` - List results with filtering/pagination
 - `GET /api/backtest/groups` - Group results by strategy/symbol/timeframe
@@ -511,9 +557,43 @@ Calculated from trades and equity curve:
 - 1d (day)
 - 1w (week)
 
+## Trading Modes
+
+**Futures-Only Design**:
+- System operates exclusively in futures/perpetuals mode with leverage support
+- Spot behavior achieved via 1x leverage (equivalent to holding assets without margin)
+- Simplifies configuration: no `mode` parameter choice needed
+- All backtests and paper trading sessions run in perpetuals mode
+- Fee model: futures-based (maker/taker rates vary by exchange and position size)
+
+Previously, the system offered both spot and futures modes as separate trading modes. This was simplified to reduce configuration complexity and cognitive overhead. Users who want spot-equivalent behavior simply set leverage to 1x.
+
+## Entity Relationships
+
+**Strategy Configuration** is the center of the data model:
+```
+StrategyConfig (unique per content hash)
+├── Backtest Runs (1:N) — multiple backtest runs can use same config
+├── Paper Sessions (N:1) — a session uses one config
+├── Optimization Variants (1:N) — grid search creates param variants (different configs)
+└── Aggregation Configs (N:M) — a portfolio references multiple sub-strategy configs
+```
+
+**Key Relationships**:
+1. `backtest_runs` → `strategy_configs` (N:1) — many backtests may use identical config
+2. `paper_sessions` → `strategy_configs` (N:1) — each session references a config
+3. `optimized_params` → `strategy_configs` (N:1) — optimization results link to their config
+4. `aggregation_configs` → `strategy_configs` (N:M) — portfolios embed array of strategy config IDs
+
+This design enables:
+- **Deduplication**: Hash dedup prevents duplicate configs
+- **Reuse**: Paper trading or future backtests can reference existing configs
+- **Traceability**: Every run links to immutable config definition
+- **Version history**: Query by (strategy, symbol, timeframe) to see parameter evolution
+
 ## Supported Exchanges
 
-**Binance** (Spot only)
+**Binance** (Spot equivalent via 1x leverage)
 - Candles: 1m-1w via CCXT
 - Funding Rates: N/A
 

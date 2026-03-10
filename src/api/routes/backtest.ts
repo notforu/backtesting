@@ -17,6 +17,7 @@ import {
   type HistoryFilters,
 } from '../../data/index.js';
 import { runAggregateBacktest } from '../../core/aggregate-engine.js';
+import { findOrCreateStrategyConfig } from '../../data/strategy-config.js';
 import type { Timeframe } from '../../core/types.js';
 import type { AllocationMode } from '../../core/signal-types.js';
 // Request schema for running a backtest
@@ -104,9 +105,18 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         mode: parsed.mode,
       });
 
-      // Run the backtest and track duration
+      // Auto-create (or find existing) strategy config for deduplication
+      const { config: strategyConfig } = await findOrCreateStrategyConfig({
+        strategyName: parsed.strategyName,
+        symbol: parsed.symbol,
+        timeframe: parsed.timeframe,
+        params: parsed.params,
+      });
+
+      // Run the backtest and track duration.
+      // Pass strategyConfigId into the engine so it is persisted with the run.
       const startTime = Date.now();
-      const result = await runBacktest(config);
+      const result = await runBacktest(config, { strategyConfigId: strategyConfig.id });
       const duration = Date.now() - startTime;
 
       // Fetch candles for the chart display
@@ -118,11 +128,12 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         config.endDate
       );
 
-      // Return extended result with candles and duration
+      // Return extended result with candles, duration, and strategyConfigId
       return reply.status(200).send({
         ...result,
         candles,
         duration,
+        strategyConfigId: strategyConfig.id,
       });
     } catch (error) {
       if (error instanceof ZodError) {
@@ -267,6 +278,7 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         totalFees: summary.metrics.totalFees,
         aggregationId: summary.aggregationId,
         aggregationName: summary.aggregationName,
+        strategyConfigId: summary.strategyConfigId,
       }));
 
       fastify.log.info(`Returning ${results.length} backtest summaries (total: ${total})`);

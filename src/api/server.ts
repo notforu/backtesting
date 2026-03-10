@@ -19,6 +19,7 @@ import { aggregationRoutes } from './routes/aggregations.js';
 import { paperTradingRoutes } from './routes/paper-trading.js';
 import { priceStreamRoutes } from './routes/price-stream.js';
 import { configExportRoutes } from './routes/config-export.js';
+import { strategyConfigRoutes } from './routes/strategy-configs.js';
 import { initDb, closeDb } from '../data/db.js';
 import { sessionManager } from '../paper-trading/session-manager.js';
 import { ensureRootUser, authHook } from '../auth/index.js';
@@ -68,6 +69,7 @@ await fastify.register(aggregationRoutes);
 await fastify.register(paperTradingRoutes);
 await fastify.register(priceStreamRoutes);
 await fastify.register(configExportRoutes);
+await fastify.register(strategyConfigRoutes);
 
 // Serve frontend static files in production
 const __filename = fileURLToPath(import.meta.url);

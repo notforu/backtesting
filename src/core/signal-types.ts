@@ -64,6 +64,7 @@ export interface AggregateBacktestConfig {
   startDate: number; // Unix ms
   endDate: number; // Unix ms
   exchange: string;
+  /** @deprecated Mode is always futures. Kept for backward compatibility with existing configs. */
   mode?: 'spot' | 'futures';
   /** Trading fee rate as a decimal (default: 0.00055 for Bybit taker) */
   feeRate?: number;

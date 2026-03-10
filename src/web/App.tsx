@@ -26,6 +26,8 @@ import { useCurrentRunSummary } from './hooks/useCurrentRunSummary';
 import { runAdhocAggregation } from './api/client';
 import type { BacktestResult } from './types';
 import { PaperTradingPage } from './components/PaperTradingPage';
+import { ConfigurationsPage } from './components/ConfigurationsPage';
+import { RunBacktestModal } from './components/RunBacktestModal/RunBacktestModal.js';
 import { usePaperTradingStore } from './stores/paperTradingStore';
 import { useAuthStore } from './stores/authStore';
 import { useUrlSync } from './hooks/useUrlSync';
@@ -203,6 +205,14 @@ function AppContent() {
         </div>
       )}
 
+      {activePage === 'configurations' && (
+        <ErrorBoundary label="ConfigurationsPage">
+          <div className="flex-1 overflow-hidden">
+            <ConfigurationsPage />
+          </div>
+        </ErrorBoundary>
+      )}
+
       {activePage === 'paper-trading' && (
         <ErrorBoundary label="PaperTradingPage">
           <PaperTradingPage />
@@ -244,6 +254,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ErrorBoundary label="App">
         <OptimizerModal />
+        <RunBacktestModal />
         <AppContent />
       </ErrorBoundary>
     </QueryClientProvider>
