@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import type { BacktestResult, PairsBacktestResult, AggregateBacktestResult, RunBacktestRequest, Timeframe } from '../types';
+import type { BacktestResult, AggregateBacktestResult, RunBacktestRequest, Timeframe } from '../types';
 
 // ============================================================================
 // Backtest Store
@@ -12,7 +12,7 @@ import type { BacktestResult, PairsBacktestResult, AggregateBacktestResult, RunB
 
 interface BacktestStore {
   // Current backtest result
-  currentResult: BacktestResult | PairsBacktestResult | AggregateBacktestResult | null;
+  currentResult: BacktestResult | AggregateBacktestResult | null;
 
   // UI state
   isRunning: boolean;
@@ -22,7 +22,7 @@ interface BacktestStore {
   selectedBacktestId: string | null;
 
   // Actions
-  setResult: (result: BacktestResult | PairsBacktestResult | AggregateBacktestResult) => void;
+  setResult: (result: BacktestResult | AggregateBacktestResult) => void;
   setRunning: (running: boolean) => void;
   setError: (error: string | null) => void;
   setSelectedBacktestId: (id: string | null) => void;
@@ -80,7 +80,6 @@ interface ConfigStore {
   strategy: string;
   params: Record<string, unknown>;
   symbol: string;
-  symbolB: string;
   timeframe: Timeframe;
   startDate: string;
   endDate: string;
@@ -95,7 +94,6 @@ interface ConfigStore {
   setParams: (params: Record<string, unknown>) => void;
   updateParam: (key: string, value: unknown) => void;
   setSymbol: (symbol: string) => void;
-  setSymbolB: (symbolB: string) => void;
   setTimeframe: (timeframe: Timeframe) => void;
   setStartDate: (date: string) => void;
   setEndDate: (date: string) => void;
@@ -104,7 +102,7 @@ interface ConfigStore {
   setLeverage: (leverage: number) => void;
   setMode: (mode: 'spot' | 'futures') => void;
   getConfig: () => RunBacktestRequest;
-  applyHistoryParams: (result: BacktestResult | PairsBacktestResult | AggregateBacktestResult) => void;
+  applyHistoryParams: (result: BacktestResult | AggregateBacktestResult) => void;
   reset: () => void;
 }
 
@@ -126,7 +124,6 @@ const defaultConfigState = {
   strategy: '',
   params: {},
   symbol: 'BTCUSDT',
-  symbolB: '',
   timeframe: '1h' as Timeframe,
   startDate: defaultDates.startDate,
   endDate: defaultDates.endDate,
@@ -147,7 +144,6 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
       params: { ...state.params, [key]: value },
     })),
   setSymbol: (symbol) => set({ symbol }),
-  setSymbolB: (symbolB) => set({ symbolB }),
   setTimeframe: (timeframe) => set({ timeframe }),
   setStartDate: (startDate) => set({ startDate }),
   setEndDate: (endDate) => set({ endDate }),
@@ -171,39 +167,21 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
     };
   },
 
-  applyHistoryParams: (result: BacktestResult | PairsBacktestResult | AggregateBacktestResult) => {
+  applyHistoryParams: (result: BacktestResult | AggregateBacktestResult) => {
     const config = result.config as any;
-    const isPairs = config.symbolA && config.symbolB;
-    if (isPairs) {
-      set({
-        strategy: config.strategyName,
-        params: config.params,
-        symbol: config.symbolA,
-        symbolB: config.symbolB,
-        timeframe: config.timeframe,
-        startDate: new Date(config.startDate).toISOString().split('T')[0],
-        endDate: new Date(config.endDate).toISOString().split('T')[0],
-        initialCapital: config.initialCapital,
-        exchange: config.exchange,
-        leverage: config.leverage || 1,
-        _configSource: 'history',
-      });
-    } else {
-      set({
-        strategy: config.strategyName,
-        params: config.params,
-        symbol: config.symbol,
-        symbolB: '',
-        timeframe: config.timeframe,
-        startDate: new Date(config.startDate).toISOString().split('T')[0],
-        endDate: new Date(config.endDate).toISOString().split('T')[0],
-        initialCapital: config.initialCapital,
-        exchange: config.exchange,
-        leverage: 1,
-        mode: config.mode || 'spot',
-        _configSource: 'history',
-      });
-    }
+    set({
+      strategy: config.strategyName,
+      params: config.params,
+      symbol: config.symbol,
+      timeframe: config.timeframe,
+      startDate: new Date(config.startDate).toISOString().split('T')[0],
+      endDate: new Date(config.endDate).toISOString().split('T')[0],
+      initialCapital: config.initialCapital,
+      exchange: config.exchange,
+      leverage: 1,
+      mode: config.mode || 'spot',
+      _configSource: 'history',
+    });
   },
 
   reset: () => set(defaultConfigState),

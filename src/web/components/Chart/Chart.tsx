@@ -39,7 +39,6 @@ interface ChartProps {
   candles: Candle[];
   trades: Trade[];
   height?: number;
-  isPolymarket?: boolean;
   isFutures?: boolean;
   backtestTimeframe?: string;
   exchange?: string;
@@ -98,7 +97,7 @@ function estimateCandles(start: number, end: number, timeframe: string): number 
   return Math.ceil(diffMs / (tfMs[timeframe] ?? 3600000));
 }
 
-export function Chart({ candles, trades, height = 500, isPolymarket = false, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, rollingMetrics, sessionEvents, frShortThreshold, frLongThreshold, activeLevels, indicators }: ChartProps) {
+export function Chart({ candles, trades, height = 500, isFutures = false, backtestTimeframe, exchange, symbol, startDate, endDate, rollingMetrics, sessionEvents, frShortThreshold, frLongThreshold, activeLevels, indicators }: ChartProps) {
   const [displayTimeframe, setDisplayTimeframe] = useState<string | null>(null);
   const [showFundingRate, setShowFundingRate] = useState(false);
   const [showROI, setShowROI] = useState(false);
@@ -239,10 +238,7 @@ export function Chart({ candles, trades, height = 500, isPolymarket = false, isF
       borderDownColor: chartColors.borderDownColor,
       wickUpColor: chartColors.wickUpColor,
       wickDownColor: chartColors.wickDownColor,
-      priceFormat: isPolymarket ? {
-        type: 'custom',
-        formatter: (price: number) => `${(price * 100).toFixed(1)}%`,
-      } : undefined,
+      priceFormat: undefined,
     });
 
     chartRef.current = chart;

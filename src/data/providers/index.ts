@@ -6,13 +6,11 @@
 import { type DataProvider } from './base.js';
 import { BinanceProvider } from './binance.js';
 import { BybitProvider } from './bybit.js';
-import { PolymarketProvider } from './polymarket.js';
-import { ManifoldProvider } from './manifold.js';
 
 /**
  * Supported exchange identifiers
  */
-export type SupportedExchange = 'binance' | 'bybit' | 'polymarket' | 'manifold';
+export type SupportedExchange = 'binance' | 'bybit';
 
 /**
  * Registry of provider factories
@@ -20,8 +18,6 @@ export type SupportedExchange = 'binance' | 'bybit' | 'polymarket' | 'manifold';
 const providerRegistry: Record<SupportedExchange, () => DataProvider> = {
   binance: () => new BinanceProvider(),
   bybit: () => new BybitProvider(),
-  polymarket: () => new PolymarketProvider(),
-  manifold: () => new ManifoldProvider(),
 };
 
 /**
@@ -77,5 +73,3 @@ export function isExchangeSupported(exchange: string): boolean {
 export { type DataProvider, RateLimiter } from './base.js';
 export { BinanceProvider } from './binance.js';
 export { BybitProvider } from './bybit.js';
-export { PolymarketProvider } from './polymarket.js';
-export { ManifoldProvider } from './manifold.js';

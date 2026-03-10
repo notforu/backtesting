@@ -7,8 +7,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Chart } from './components/Chart';
 import { PortfolioChart } from './components/Chart/PortfolioChart';
-import { PairsChart } from './components/PairsChart';
-import { SpreadChart } from './components/SpreadChart';
 import { Dashboard } from './components/Dashboard';
 import { StrategyConfig } from './components/StrategyConfig';
 import { OptimizerModal } from './components/OptimizerModal';
@@ -19,7 +17,7 @@ import { useBacktestStore, useConfigStore } from './stores/backtestStore';
 import { useScannerStore } from './stores/scannerStore';
 import { useLoadBacktest, useCandles, useRunBacktest } from './hooks/useBacktest';
 import { runAdhocAggregation } from './api/client';
-import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type PairsBacktestResult, type BacktestSummary, type Timeframe } from './types';
+import { getTradeActionLabel, getTradeActionColor, isCloseTrade, type BacktestResult, type BacktestSummary, type Timeframe } from './types';
 import { PaperTradingPage } from './components/PaperTradingPage';
 import { usePaperTradingStore } from './stores/paperTradingStore';
 import { useAuthStore } from './stores/authStore';
@@ -35,18 +33,6 @@ const queryClient = new QueryClient({
   },
 });
 
-function isPairsResult(result: unknown): result is PairsBacktestResult {
-  if (result === null || typeof result !== 'object') return false;
-  // Check for candlesA/candlesB (live results) OR symbolA in config (loaded from history)
-  if ('candlesA' in result && 'candlesB' in result) return true;
-  if ('config' in result) {
-    const config = (result as any).config;
-    return config && typeof config === 'object' && 'symbolA' in config && 'symbolB' in config;
-  }
-  return false;
-}
-
-
 function AppContent() {
   useUrlSync();
   const { currentResult, selectedBacktestId } = useBacktestStore();
@@ -60,7 +46,6 @@ function AppContent() {
   const authUser = useAuthStore((s) => s.user);
   const authLogout = useAuthStore((s) => s.logout);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const isPairs = currentResult && isPairsResult(currentResult);
   const showScanner = scanResults.length > 0;
   const [showExplorer, setShowExplorer] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
@@ -88,9 +73,7 @@ function AppContent() {
     return {
       id: selectedBacktestId ?? 'current',
       strategyName: currentResult.config.strategyName,
-      symbol: isPairs
-        ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
-        : (currentResult as BacktestResult).config.symbol ?? 'MULTI',
+      symbol: (currentResult as BacktestResult).config.symbol ?? 'MULTI',
       timeframe: currentResult.config.timeframe,
       mode: (currentResult.config as any).mode ?? undefined,
       params: currentResult.config.params ?? {},
@@ -104,7 +87,7 @@ function AppContent() {
       aggregationId: (currentResult as any).aggregationId ?? undefined,
       aggregationName: (currentResult as any).aggregationName ?? undefined,
     };
-  }, [currentResult, selectedBacktestId, isPairs]);
+  }, [currentResult, selectedBacktestId]);
 
   // Reset selected asset when result changes
   useEffect(() => {
@@ -207,9 +190,7 @@ function AppContent() {
                     </span>{' '}
                     on{' '}
                     <span className="text-white">
-                      {isPairs
-                        ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
-                        : (currentResult as BacktestResult).config.symbol}
+                      {(currentResult as BacktestResult).config.symbol}
                     </span>
                   </span>
                 )}
@@ -279,18 +260,16 @@ function AppContent() {
             <section>
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-lg font-semibold text-white">
-                  {isPairs ? 'Pairs Charts' : isMultiAsset ? 'Multi-Asset Portfolio' : 'Chart'}
+                  {isMultiAsset ? 'Multi-Asset Portfolio' : 'Chart'}
                 </h2>
                 {currentResult && (
                   <div className="flex items-center gap-4 text-sm text-gray-400">
                     <span>
-                      {isPairs
-                        ? `${(currentResult as PairsBacktestResult).config.symbolA} / ${(currentResult as PairsBacktestResult).config.symbolB}`
-                        : isMultiAsset && selectedAsset
-                          ? `${selectedAsset.label} / ${selectedAsset.timeframe}`
-                          : isMultiAsset
-                            ? `${multiAssets.length} assets`
-                            : `${(currentResult as BacktestResult).config.symbol} / ${currentResult.config.timeframe}`}
+                      {isMultiAsset && selectedAsset
+                        ? `${selectedAsset.label} / ${selectedAsset.timeframe}`
+                        : isMultiAsset
+                          ? `${multiAssets.length} assets`
+                          : `${(currentResult as BacktestResult).config.symbol} / ${currentResult.config.timeframe}`}
                     </span>
                     <span>
                       {new Date(currentResult.config.startDate).toLocaleDateString()}{' '}
@@ -298,13 +277,11 @@ function AppContent() {
                       {new Date(currentResult.config.endDate).toLocaleDateString()}
                     </span>
                     <span>
-                      {isPairs
-                        ? `${(currentResult as PairsBacktestResult).candlesA.length} candles`
-                        : isMultiAsset && selectedAsset
-                          ? `${assetCandles?.length ?? 0} candles`
-                          : isMultiAsset
-                            ? `${currentResult.trades.length} trades`
-                            : `${(currentResult as BacktestResult).candles?.length ?? 0} candles`}
+                      {isMultiAsset && selectedAsset
+                        ? `${assetCandles?.length ?? 0} candles`
+                        : isMultiAsset
+                          ? `${currentResult.trades.length} trades`
+                          : `${(currentResult as BacktestResult).candles?.length ?? 0} candles`}
                     </span>
                   </div>
                 )}
@@ -338,24 +315,7 @@ function AppContent() {
                   ))}
                 </div>
               )}
-              {isPairs ? (
-                <>
-                  <PairsChart
-                    candlesA={(currentResult as PairsBacktestResult).candlesA}
-                    candlesB={(currentResult as PairsBacktestResult).candlesB}
-                    trades={currentResult.trades}
-                    symbolA={(currentResult as PairsBacktestResult).config.symbolA}
-                    symbolB={(currentResult as PairsBacktestResult).config.symbolB}
-                    height={450}
-                  />
-                  <div className="mt-4">
-                    <SpreadChart
-                      spreadData={(currentResult as PairsBacktestResult).spreadData ?? []}
-                      height={150}
-                    />
-                  </div>
-                </>
-              ) : isMultiAsset && selectedAsset ? (
+              {isMultiAsset && selectedAsset ? (
                 /* Multi-asset with specific asset selected - show that asset's chart */
                 <>
                   {assetCandles && assetCandles.length > 0 ? (
@@ -413,7 +373,6 @@ function AppContent() {
                     candles={(currentResult as BacktestResult)?.candles ?? []}
                     trades={currentResult?.trades ?? []}
                     height={450}
-                    isPolymarket={(currentResult as BacktestResult)?.config.exchange === 'polymarket'}
                     isFutures={
                       (currentResult as any)?.config?.mode === 'futures' ||
                       (currentResult as BacktestResult)?.metrics?.totalFundingIncome !== undefined
@@ -779,7 +738,7 @@ function AppContent() {
               const updated = {
                 ...currentResult!,
                 config: { ...currentResult!.config, params },
-              } as BacktestResult | PairsBacktestResult;
+              } as BacktestResult;
               applyHistoryParams(updated);
               setShowParamsModal(false);
               // Auto-trigger backtest with updated config

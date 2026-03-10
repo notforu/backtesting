@@ -11,7 +11,6 @@ import { MultiSymbolPortfolio } from './multi-portfolio.js';
 import { loadStrategy } from '../strategy/loader.js';
 import { getCandles, getFundingRates, saveBacktestRun } from '../data/db.js';
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
-import { saveResultToFile } from './result-storage.js';
 
 interface AdapterWithData {
   adapter: SignalAdapter;
@@ -563,12 +562,6 @@ export async function runAggregateBacktest(
       log('Results saved to database');
     } catch (err) {
       log(`Failed to save to database: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-
-    try {
-      saveResultToFile(result);
-    } catch {
-      // Non-fatal: file save failure should not abort the backtest
     }
   }
 

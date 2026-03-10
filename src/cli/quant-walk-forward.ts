@@ -11,8 +11,6 @@
  *   --timeframe=TF          Candle timeframe (default: 4h)
  *   --train-ratio=RATIO     Train/test split ratio (default: 0.7)
  *   --optimize-for=METRIC   Metric to optimize (default: sharpeRatio)
- *   --symbol-b=SYMBOL       Second symbol for pairs trading (optional)
- *   --leverage=NUM          Leverage for pairs trading (default: 1)
  *   --optimize-timeframe=TF Coarser timeframe for optimization phase (test uses original TF)
  *
  * Outputs JSON to stdout:
@@ -122,9 +120,6 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Parse pairs trading options
-  const symbolB = args['symbol-b'];
-  const leverage = args.leverage ? Number(args.leverage) : 1;
   const optimizeTimeframe = args['optimize-timeframe'] as Timeframe | undefined;
 
   // Create walk-forward configuration
@@ -138,8 +133,6 @@ async function main(): Promise<void> {
     optimizeFor,
     exchange: args.exchange || 'binance',
     initialCapital: args.capital ? Number(args.capital) : 10000,
-    symbolB,
-    leverage,
     mode: args.mode === 'futures' ? 'futures' : undefined,
     optimizeTimeframe,
   };

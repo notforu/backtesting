@@ -260,43 +260,6 @@ export const BacktestResultSchema = z.object({
 export type BacktestResult = z.infer<typeof BacktestResultSchema>;
 
 // ============================================================================
-// Pairs Backtest Types
-// ============================================================================
-
-export interface PairsBacktestConfig {
-  id: string;
-  strategyName: string;
-  params: Record<string, unknown>;
-  symbolA: string;
-  symbolB: string;
-  timeframe: Timeframe;
-  startDate: number;
-  endDate: number;
-  initialCapital: number;
-  exchange: string;
-  leverage: number;
-}
-
-export interface SpreadDataPoint {
-  timestamp: number;
-  spread: number;
-  zScore: number;
-}
-
-export interface PairsBacktestResult {
-  id: string;
-  config: PairsBacktestConfig;
-  trades: Trade[];
-  equity: EquityPoint[];
-  metrics: PerformanceMetrics;
-  rollingMetrics?: RollingMetrics;
-  candlesA: Candle[];
-  candlesB: Candle[];
-  spreadData: SpreadDataPoint[];
-  createdAt: number;
-}
-
-// ============================================================================
 // Utility functions for timeframe conversion
 // ============================================================================
 

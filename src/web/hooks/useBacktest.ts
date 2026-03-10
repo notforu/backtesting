@@ -10,7 +10,6 @@ import {
   getHistory,
   getBacktest,
   runBacktest,
-  runPairsBacktest,
   deleteBacktest,
   deleteAllHistory,
   getCandles,
@@ -25,13 +24,11 @@ import {
 import { useBacktestStore } from '../stores/backtestStore';
 import type {
   RunBacktestRequest,
-  RunPairsBacktestRequest,
   AggregateBacktestResult,
   CandleRequest,
   StrategyInfo,
   StrategyDetails,
   BacktestResult,
-  PairsBacktestResult,
   Candle,
   PaginatedHistory,
   AggregationConfig,
@@ -128,32 +125,6 @@ export function useRunBacktest() {
 
   return useMutation<BacktestResult, Error, RunBacktestRequest>({
     mutationFn: runBacktest,
-    onMutate: () => {
-      setRunning(true);
-    },
-    onSuccess: (result) => {
-      setResult(result);
-      // Invalidate history to include new result
-      queryClient.invalidateQueries({ queryKey: queryKeys.history });
-      queryClient.invalidateQueries({ queryKey: ['explorer-history'] });
-      // Cache the new result
-      queryClient.setQueryData(queryKeys.backtest(result.id), result);
-    },
-    onError: (error) => {
-      setError(error.message);
-    },
-  });
-}
-
-/**
- * Run a pairs backtest mutation
- */
-export function useRunPairsBacktest() {
-  const queryClient = useQueryClient();
-  const { setRunning, setResult, setError } = useBacktestStore();
-
-  return useMutation<PairsBacktestResult, Error, RunPairsBacktestRequest>({
-    mutationFn: runPairsBacktest,
     onMutate: () => {
       setRunning(true);
     },

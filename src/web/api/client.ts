@@ -9,9 +9,7 @@ import type {
   Candle,
   CandleRequest,
   RunBacktestRequest,
-  RunPairsBacktestRequest,
   AggregateBacktestResult,
-  PairsBacktestResult,
   StrategyDetails,
   StrategyInfo,
   ApiError,
@@ -20,7 +18,6 @@ import type {
   ScanRequest,
   ScanResultRow,
   ScanSummary,
-  ActivePolymarketMarket,
   AggregationConfig,
   CreateAggregationRequest,
   UpdateAggregationRequest,
@@ -120,18 +117,6 @@ export async function runBacktest(
   config: RunBacktestRequest
 ): Promise<BacktestResult> {
   return apiFetch<BacktestResult>('/backtest/run', {
-    method: 'POST',
-    body: JSON.stringify(config),
-  });
-}
-
-/**
- * Run a pairs trading backtest
- */
-export async function runPairsBacktest(
-  config: RunPairsBacktestRequest
-): Promise<PairsBacktestResult> {
-  return apiFetch<PairsBacktestResult>('/backtest/pairs/run', {
     method: 'POST',
     body: JSON.stringify(config),
   });
@@ -478,59 +463,6 @@ export async function deleteOptimizationById(id: string): Promise<void> {
       method: 'DELETE',
     }
   );
-}
-
-// ============================================================================
-// Polymarket Endpoints
-// ============================================================================
-
-export interface PolymarketMarket {
-  id: string;
-  question: string;
-  slug: string;
-  clobTokenIds: string;
-  endDate: string;
-  category: string;
-  active: boolean;
-  closed: boolean;
-  liquidity: string;
-  volume?: string;
-  volumeNum?: number;
-  image?: string;
-}
-
-/**
- * Search Polymarket markets with filters
- */
-export async function searchPolymarketMarkets(params: {
-  search?: string;
-  category?: string;
-  active?: string;
-  closed?: string;
-  limit?: number;
-}): Promise<PolymarketMarket[]> {
-  const queryParams = new URLSearchParams();
-  if (params.search) queryParams.append('search', params.search);
-  if (params.category) queryParams.append('category', params.category);
-  if (params.active) queryParams.append('active', params.active);
-  if (params.closed) queryParams.append('closed', params.closed);
-  queryParams.append('limit', String(params.limit || 20));
-
-  return apiFetch<PolymarketMarket[]>(`/polymarket/markets?${queryParams}`);
-}
-
-/**
- * Get available Polymarket categories
- */
-export async function getPolymarketCategories(): Promise<string[]> {
-  return apiFetch<string[]>('/polymarket/categories');
-}
-
-/**
- * Get active Polymarket markets for scanner prefill
- */
-export async function getActivePolymarketMarkets(): Promise<ActivePolymarketMarket[]> {
-  return apiFetch<ActivePolymarketMarket[]>('/polymarket/markets/active');
 }
 
 // ============================================================================

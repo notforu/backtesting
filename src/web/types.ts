@@ -131,13 +131,11 @@ export interface StrategyInfo {
   name: string;
   description: string;
   version: string;
-  isPairs?: boolean;
 }
 
 export interface StrategyDetails extends StrategyInfo {
   params: StrategyParam[];
   sourceFile: string;
-  isPairs?: boolean;
 }
 
 // ============================================================================
@@ -305,56 +303,6 @@ export interface OptimizationResult {
   }>;
 }
 
-// ============================================================================
-// Pairs Trading Types
-// ============================================================================
-
-export interface SpreadDataPoint {
-  timestamp: number;
-  spread: number;
-  zScore: number;
-}
-
-export interface PairsBacktestConfig {
-  strategyName: string;
-  params: Record<string, unknown>;
-  symbolA: string;
-  symbolB: string;
-  timeframe: Timeframe;
-  startDate: string | number;
-  endDate: string | number;
-  initialCapital: number;
-  exchange: string;
-  leverage: number;
-}
-
-export interface PairsBacktestResult {
-  id: string;
-  config: PairsBacktestConfig;
-  trades: Trade[];
-  metrics: PerformanceMetrics;
-  equity: EquityPoint[];
-  rollingMetrics?: RollingMetrics;
-  candlesA: Candle[];
-  candlesB: Candle[];
-  spreadData: SpreadDataPoint[];
-  createdAt: number;
-  duration: number;
-}
-
-export interface RunPairsBacktestRequest {
-  strategyName: string;
-  params: Record<string, unknown>;
-  symbolA: string;
-  symbolB: string;
-  timeframe: Timeframe;
-  startDate: string;
-  endDate: string;
-  initialCapital: number;
-  exchange?: string;
-  leverage?: number;
-}
-
 export interface SubStrategyConfig {
   strategyName: string;
   symbol: string;
@@ -480,13 +428,6 @@ export interface ScanSummary {
   profitable: number;
   avgSharpe: number;
   avgReturn: number;
-}
-
-export interface ActivePolymarketMarket {
-  slug: string;
-  question: string;
-  volume: number;
-  category: string;
 }
 
 // ============================================================================

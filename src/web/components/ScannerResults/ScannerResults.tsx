@@ -32,7 +32,6 @@ export function ScannerResults() {
     runBacktestMutation.mutate({
       ...config,
       symbol: result.symbol,
-      exchange: 'polymarket',
     });
   };
 

@@ -399,7 +399,7 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
                     required
                   >
                     <option value="">Select a strategy...</option>
-                    {strategies?.filter((s) => !('isPairs' in s && s.isPairs)).map((s) => (
+                    {strategies?.map((s) => (
                       <option key={s.name} value={s.name}>
                         {s.name}
                       </option>

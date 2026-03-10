@@ -47,24 +47,6 @@ export function extractExportConfig(row: BacktestRunExportRow): ExportedConfig {
     maxDrawdownPercent: (metrics.maxDrawdownPercent as number) ?? 0,
   };
 
-  // Detect pairs: config has symbolA and symbolB
-  if (config.symbolA && config.symbolB) {
-    return {
-      type: 'pairs',
-      strategyName: config.strategyName as string,
-      params: (config.params as Record<string, unknown>) ?? {},
-      symbolA: config.symbolA as string,
-      symbolB: config.symbolB as string,
-      timeframe: (config.timeframe as string) ?? '1h',
-      startDate: new Date(config.startDate as number).toISOString(),
-      endDate: new Date(config.endDate as number).toISOString(),
-      initialCapital: (config.initialCapital as number) ?? 10000,
-      exchange: (config.exchange as string) ?? 'binance',
-      originalRunId: row.id,
-      originalMetrics,
-    };
-  }
-
   // Detect aggregation: has aggregation_id OR symbol is MULTI with subStrategies in params
   if (row.aggregation_id || (config.symbol === 'MULTI' && (config.params as Record<string, unknown>)?.subStrategies)) {
     const rawSubStrategies = row.agg_sub_strategies

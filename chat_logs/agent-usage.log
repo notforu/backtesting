@@ -52,3 +52,19 @@
 [2026-03-10 00:00] qa (sonnet) - write unit tests for FR V2 dynamic indicators via context.setIndicator() in SignalAdapter
 [2026-03-10 02:51] be-dev (sonnet) - Add indicators column to backtest_runs table and persist/restore from DB
 [2026-03-10 10:50] be-dev (sonnet) - Add indicators column to DB, persist and restore indicators in saveBacktestRun/getBacktestRun
+[2026-03-10 04:53] be-dev (sonnet) - Remove Polymarket, Pairs Trading, and result-storage from backend (large refactor)
+[2026-03-10 04:53] fe-dev (sonnet) - Remove Polymarket and Pairs Trading references from frontend code
+[2026-03-10 04:54] fullstack-dev (sonnet) - deleted pm/pairs strategy files, pm/dex script files, and pairs optimization data files
+[2026-03-10 04:59] fe-dev (sonnet) - Remove Polymarket and Pairs Trading references from frontend code
+[2026-03-10 05:08] be-dev (sonnet) - Clean up Polymarket/Pairs module references across 7 files
+[2026-03-10 12:00] Explore (sonnet) - Find all Polymarket files and references
+[2026-03-10 12:00] Explore (sonnet) - Find all Pairs Trading files and references
+[2026-03-10 12:00] Explore (sonnet) - Find result-storage, funding-rate-spike refs
+[2026-03-10 12:05] be-dev (sonnet) - Delete PM/Pairs/result-storage backend files + clean imports
+[2026-03-10 12:05] fe-dev (sonnet) - Delete PM/Pairs frontend components + clean imports
+[2026-03-10 12:05] fullstack-dev (sonnet) - Delete strategy/script/data files
+[2026-03-10 12:15] be-dev (sonnet) - Fix remaining pairs/PM references in 7 files
+[2026-03-10 12:20] docs-writer (haiku) - Create SYSTEM_INVENTORY.md
+[2026-03-10 12:20] docs-writer (haiku) - Create changelog for refactoring
+[2026-03-10 12:00] docs-writer (haiku) - Create major cleanup changelog: remove Polymarket, Pairs Trading, result storage
+[2026-03-10 12:30] docs-writer (haiku) - Create comprehensive system inventory at /docs/SYSTEM_INVENTORY.md

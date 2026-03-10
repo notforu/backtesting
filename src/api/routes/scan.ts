@@ -8,7 +8,6 @@ import { z, ZodError } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { runBacktest } from '../../core/engine.js';
 import type { BacktestConfig } from '../../core/types.js';
-import { saveScanResultsToFile } from '../../core/result-storage.js';
 
 // Request schema for scanner
 const ScanRequestSchema = z.object({
@@ -17,7 +16,8 @@ const ScanRequestSchema = z.object({
   timeframe: z.enum(['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']),
   from: z.string(),
   to: z.string(),
-  slippage: z.number().min(0).max(100).optional().default(1.0),
+  exchange: z.string().optional().default('bybit'),
+  slippage: z.number().min(0).max(100).optional().default(0),
   initialCapital: z.number().positive().optional().default(10000),
   params: z.record(z.string(), z.unknown()).optional().default({}),
 });
@@ -66,21 +66,6 @@ export async function scanRoutes(fastify: FastifyInstance) {
       let returnSum = 0;
       let completedCount = 0;
 
-      // Collect results for file storage
-      const scanFileResults: Array<{
-        symbol: string;
-        metrics?: {
-          totalReturnPercent: number;
-          sharpeRatio: number;
-          maxDrawdownPercent: number;
-          winRate: number;
-          profitFactor: number;
-        };
-        tradesCount?: number;
-        status: string;
-        error?: string;
-      }> = [];
-
       // Loop through symbols sequentially
       for (let i = 0; i < total; i++) {
         const symbol = symbols[i];
@@ -104,7 +89,7 @@ export async function scanRoutes(fastify: FastifyInstance) {
             startDate: new Date(parsed.from).getTime(),
             endDate: new Date(parsed.to).getTime(),
             initialCapital: parsed.initialCapital,
-            exchange: 'polymarket',
+            exchange: parsed.exchange,
           };
 
           // Run backtest with saveResults disabled (scanner doesn't persist)
@@ -144,20 +129,6 @@ export async function scanRoutes(fastify: FastifyInstance) {
             status: 'complete',
           };
           reply.raw.write(`data: ${JSON.stringify(resultEvent)}\n\n`);
-
-          // Collect for file storage
-          scanFileResults.push({
-            symbol,
-            metrics: {
-              totalReturnPercent: metrics.totalReturnPercent,
-              sharpeRatio: metrics.sharpeRatio,
-              maxDrawdownPercent: metrics.maxDrawdownPercent,
-              winRate: metrics.winRate,
-              profitFactor: metrics.profitFactor,
-            },
-            tradesCount: trades.length,
-            status: 'complete',
-          });
         } catch (error) {
           // Send error result for this symbol and continue
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -169,13 +140,6 @@ export async function scanRoutes(fastify: FastifyInstance) {
           };
           reply.raw.write(`data: ${JSON.stringify(errorEvent)}\n\n`);
 
-          // Collect error for file storage
-          scanFileResults.push({
-            symbol,
-            status: 'error',
-            error: errorMessage,
-          });
-
           fastify.log.error(`Error backtesting ${symbol}: ${errorMessage}`);
         }
       }
@@ -184,27 +148,6 @@ export async function scanRoutes(fastify: FastifyInstance) {
       if (completedCount > 0) {
         summary.avgSharpe = sharpeSum / completedCount;
         summary.avgReturn = returnSum / completedCount;
-      }
-
-      // Save scan results to filesystem
-      try {
-        const filepath = saveScanResultsToFile(
-          parsed.strategy,
-          {
-            symbols: parsed.symbols,
-            timeframe: parsed.timeframe,
-            from: parsed.from,
-            to: parsed.to,
-            slippage: parsed.slippage,
-            initialCapital: parsed.initialCapital,
-            params: parsed.params,
-          },
-          scanFileResults,
-          summary
-        );
-        fastify.log.info(`Scan results saved to ${filepath}`);
-      } catch (err) {
-        fastify.log.error(`Failed to save scan results: ${err}`);
       }
 
       // Send done event

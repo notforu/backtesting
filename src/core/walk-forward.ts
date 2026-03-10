@@ -14,10 +14,9 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import type { Timeframe, PerformanceMetrics, PairsBacktestConfig, Trade, EquityPoint, RollingMetrics } from './types.js';
+import type { Timeframe, PerformanceMetrics, Trade, EquityPoint, RollingMetrics } from './types.js';
 import { runOptimization, type OptimizationConfig, type OptimizationResult } from './optimizer.js';
 import { runBacktest, type EngineConfig } from './engine.js';
-import { runPairsBacktest } from './pairs-engine.js';
 
 // ============================================================================
 // Types
@@ -102,16 +101,6 @@ export interface WalkForwardConfig {
    * Minimum test Sharpe ratio for robustness (default: 0.5)
    */
   minTestSharpe?: number;
-
-  /**
-   * Second symbol for pairs trading (optional)
-   */
-  symbolB?: string;
-
-  /**
-   * Leverage for pairs trading (default: 1)
-   */
-  leverage?: number;
 
   /**
    * Trading mode: 'spot' or 'futures' (default: 'spot')
@@ -273,8 +262,6 @@ export async function runWalkForwardTest(
     optimizeFor: optimizeMetric,
     maxCombinations,
     minTrades,
-    symbolB: config.symbolB,
-    leverage: config.leverage,
     mode,
     optimizeTimeframe: config.optimizeTimeframe, // Coarser TF for speed (test phase uses original TF)
   };
@@ -294,42 +281,21 @@ export async function runWalkForwardTest(
     enableLogging: false,
   };
 
-  let testResult;
-
-  if (config.symbolB) {
-    // Pairs strategy - use pairs backtest for test period
-    const pairsConfig: PairsBacktestConfig = {
+  const testResult = await runBacktest(
+    {
       id: uuidv4(),
       strategyName,
       params: optimizationResult.bestParams,
-      symbolA: symbol,
-      symbolB: config.symbolB,
+      symbol,
       timeframe,
       startDate: trainEndDate,
       endDate,
       initialCapital,
       exchange,
-      leverage: config.leverage ?? 1,
-    };
-    testResult = await runPairsBacktest(pairsConfig, engineConfig);
-  } else {
-    // Single symbol strategy - use regular backtest
-    testResult = await runBacktest(
-      {
-        id: uuidv4(),
-        strategyName,
-        params: optimizationResult.bestParams,
-        symbol,
-        timeframe,
-        startDate: trainEndDate,
-        endDate,
-        initialCapital,
-        exchange,
-        mode,
-      },
-      engineConfig
-    );
-  }
+      mode,
+    },
+    engineConfig
+  );
 
   console.log(`\nTest complete!`);
   console.log(`Test Sharpe: ${testResult.metrics.sharpeRatio.toFixed(4)}`);

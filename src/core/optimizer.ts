@@ -4,9 +4,8 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import type { Timeframe, PerformanceMetrics, PairsBacktestConfig, Candle, FundingRate } from './types.js';
+import type { Timeframe, PerformanceMetrics, Candle, FundingRate } from './types.js';
 import { runBacktest, type EngineConfig } from './engine.js';
-import { runPairsBacktest } from './pairs-engine.js';
 import { loadStrategy } from '../strategy/loader.js';
 import { saveOptimizedParams, saveCandles, getCandleDateRange, getCandles, getFundingRates } from '../data/db.js';
 import { getProvider } from '../data/providers/index.js';
@@ -34,9 +33,7 @@ export interface OptimizationConfig {
   batchSize?: number; // Parallel execution batch size
   minTrades?: number; // Minimum trades required for valid result (default: 10)
 
-  // Pairs trading specific (optional)
-  symbolB?: string; // Second symbol for pairs trading
-  leverage?: number; // Leverage for pairs trading (default: 1)
+  leverage?: number; // Leverage (default: 1)
 
   // Additional options
   saveAllRuns?: boolean; // Save every backtest run to history
@@ -117,14 +114,6 @@ export async function runOptimization(
   // Load strategy to get parameter definitions
   const strategy = await loadStrategy(strategyName);
 
-  // Check if this is a pairs strategy
-  const isPairsStrategy = (strategy as any).isPairs === true;
-
-  // Validate pairs configuration
-  if (isPairsStrategy && !config.symbolB) {
-    throw new Error('Pairs strategy requires symbolB parameter');
-  }
-
   // Generate parameter combinations
   const combinations = generateParameterCombinations(strategy.params, paramRanges, maxCombinations);
 
@@ -139,14 +128,11 @@ export async function runOptimization(
   console.log('Pre-fetching candle data...');
   const provider = getProvider(exchange);
 
-  // Fetch candles for symbol A (with PM-aware cache check, using effectiveTimeframe)
-  const isPM = ['polymarket', 'manifold'].includes(exchange);
   const cachedRange = await getCandleDateRange(exchange, symbol, effectiveTimeframe);
-  const needsFetchA = !cachedRange.start || !cachedRange.end ||
-    (!isPM && (cachedRange.start > startDate || cachedRange.end < endDate)) ||
-    (isPM && cachedRange.end < Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const needsFetch = !cachedRange.start || !cachedRange.end ||
+    cachedRange.start > startDate || cachedRange.end < endDate;
 
-  if (needsFetchA) {
+  if (needsFetch) {
     const fetchedCandles = await provider.fetchCandles(symbol, effectiveTimeframe, new Date(startDate), new Date(endDate));
     if (fetchedCandles.length > 0) {
       await saveCandles(fetchedCandles, exchange, symbol, effectiveTimeframe);
@@ -160,24 +146,6 @@ export async function runOptimization(
   console.log('Loading candles into memory for reuse...');
   const preloadedCandles: Candle[] = await getCandles(exchange, symbol, effectiveTimeframe, startDate, endDate);
   console.log(`Pre-loaded ${preloadedCandles.length} candles (${effectiveTimeframe})`);
-
-  // If pairs strategy, also fetch candles for symbol B
-  if (isPairsStrategy && config.symbolB) {
-    const cachedRangeB = await getCandleDateRange(exchange, config.symbolB, effectiveTimeframe);
-    const needsFetchB = !cachedRangeB.start || !cachedRangeB.end ||
-      (!isPM && (cachedRangeB.start > startDate || cachedRangeB.end < endDate)) ||
-      (isPM && cachedRangeB.end < Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-    if (needsFetchB) {
-      const candlesB = await provider.fetchCandles(config.symbolB, effectiveTimeframe, new Date(startDate), new Date(endDate));
-      if (candlesB.length > 0) {
-        await saveCandles(candlesB, exchange, config.symbolB, effectiveTimeframe);
-        console.log(`Cached ${candlesB.length} candles for ${config.symbolB} (${effectiveTimeframe})`);
-      }
-    } else {
-      console.log(`Using existing cached candles for ${config.symbolB} (${effectiveTimeframe})`);
-    }
-  }
 
   // Pre-load funding rates once for futures mode
   let preloadedFundingRates: FundingRate[] = [];
@@ -224,44 +192,22 @@ export async function runOptimization(
     const params = combinations[i];
 
     try {
-      let runResult: { params: Record<string, unknown>; metrics: PerformanceMetrics } | null = null;
-
-      if (isPairsStrategy) {
-        // Pairs strategy - use pairs backtest
-        const pairsConfig: PairsBacktestConfig = {
+      const result = await runBacktest(
+        {
           id: uuidv4(),
           strategyName,
           params,
-          symbolA: symbol,
-          symbolB: config.symbolB!,
+          symbol,
           timeframe: effectiveTimeframe,
           startDate,
           endDate,
           initialCapital,
           exchange,
-          leverage: config.leverage ?? 1,
-        };
-        const result = await runPairsBacktest(pairsConfig, engineConfig);
-        runResult = { params, metrics: result.metrics };
-      } else {
-        // Single symbol strategy - use regular backtest
-        const result = await runBacktest(
-          {
-            id: uuidv4(),
-            strategyName,
-            params,
-            symbol,
-            timeframe: effectiveTimeframe,
-            startDate,
-            endDate,
-            initialCapital,
-            exchange,
-            mode,
-          },
-          engineConfig
-        );
-        runResult = { params, metrics: result.metrics };
-      }
+          mode,
+        },
+        engineConfig
+      );
+      const runResult = { params, metrics: result.metrics };
 
       testedCount++;
 

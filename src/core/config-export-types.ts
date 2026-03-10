@@ -54,26 +54,7 @@ export interface AggregationExport {
   };
 }
 
-export interface PairsExport {
-  type: 'pairs';
-  strategyName: string;
-  params: Record<string, unknown>;
-  symbolA: string;
-  symbolB: string;
-  timeframe: string;
-  startDate: string;
-  endDate: string;
-  initialCapital: number;
-  exchange: string;
-  originalRunId?: string;
-  originalMetrics?: {
-    sharpeRatio: number;
-    totalReturnPercent: number;
-    maxDrawdownPercent: number;
-  };
-}
-
-export type ExportedConfig = SingleStrategyExport | AggregationExport | PairsExport;
+export type ExportedConfig = SingleStrategyExport | AggregationExport;
 
 export interface BacktestConfigExportFile {
   version: 1;
@@ -132,25 +113,9 @@ export const AggregationExportSchema = z.object({
   originalMetrics: OriginalMetricsSchema.optional(),
 });
 
-export const PairsExportSchema = z.object({
-  type: z.literal('pairs'),
-  strategyName: z.string(),
-  params: z.record(z.string(), z.unknown()).default({}),
-  symbolA: z.string(),
-  symbolB: z.string(),
-  timeframe: z.string(),
-  startDate: z.string(),
-  endDate: z.string(),
-  initialCapital: z.number().positive(),
-  exchange: z.string(),
-  originalRunId: z.string().optional(),
-  originalMetrics: OriginalMetricsSchema.optional(),
-});
-
 export const ExportedConfigSchema = z.discriminatedUnion('type', [
   SingleStrategyExportSchema,
   AggregationExportSchema,
-  PairsExportSchema,
 ]);
 
 export const BacktestConfigExportFileSchema = z.object({

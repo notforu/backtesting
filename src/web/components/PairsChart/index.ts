@@ -1,1 +1,0 @@
-export { PairsChart } from './PairsChart';

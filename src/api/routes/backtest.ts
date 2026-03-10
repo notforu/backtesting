@@ -6,8 +6,6 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z, ZodError } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { runBacktest, BacktestConfigSchema } from '../../core/index.js';
-import { runPairsBacktest } from '../../core/pairs-engine.js';
-import type { PairsBacktestConfig } from '../../core/types.js';
 import {
   getBacktestRun,
   getBacktestSummaries,
@@ -53,22 +51,6 @@ const HistoryQuerySchema = z.object({
   sortDir: z.enum(['asc', 'desc']).optional(),
   runType: z.enum(['strategies', 'aggregations']).optional(),
 });
-
-// Request schema for pairs backtest
-const RunPairsBacktestRequestSchema = z.object({
-  strategyName: z.string().min(1),
-  params: z.record(z.string(), z.unknown()).optional().default({}),
-  symbolA: z.string().min(1),
-  symbolB: z.string().min(1),
-  timeframe: z.enum(['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']).default('1h'),
-  startDate: z.number().or(z.string().transform((s) => new Date(s).getTime())),
-  endDate: z.number().or(z.string().transform((s) => new Date(s).getTime())),
-  initialCapital: z.number().positive().default(10000),
-  exchange: z.string().default('binance'),
-  leverage: z.number().min(1).max(125).default(1),
-});
-
-type RunPairsBacktestRequest = z.infer<typeof RunPairsBacktestRequestSchema>;
 
 // Request schema for ad-hoc aggregate backtest (no saved aggregation ID needed)
 const RunAdhocAggregationRequestSchema = z.object({
@@ -186,32 +168,6 @@ export async function backtestRoutes(fastify: FastifyInstance) {
         return reply.status(200).send({
           ...result,
           candles: [],
-          duration: 0,
-        });
-      }
-
-      // Check if this is a pairs result (has symbolA/symbolB)
-      if (config.symbolA && config.symbolB) {
-        // Fetch candles for both symbols
-        const candlesA = await getCandles(
-          config.exchange,
-          config.symbolA,
-          config.timeframe,
-          config.startDate,
-          config.endDate
-        );
-        const candlesB = await getCandles(
-          config.exchange,
-          config.symbolB,
-          config.timeframe,
-          config.startDate,
-          config.endDate
-        );
-
-        return reply.status(200).send({
-          ...result,
-          candlesA,
-          candlesB,
           duration: 0,
         });
       }
@@ -417,70 +373,6 @@ export async function backtestRoutes(fastify: FastifyInstance) {
           error: error.message,
         });
       }
-      return reply.status(500).send({
-        error: 'Unknown error occurred',
-      });
-    }
-  });
-
-  /**
-   * POST /api/backtest/pairs/run
-   * Execute a new pairs trading backtest
-   */
-  fastify.post('/api/backtest/pairs/run', async (
-    request: FastifyRequest<{ Body: RunPairsBacktestRequest }>,
-    reply: FastifyReply
-  ) => {
-    try {
-      // Validate and parse request
-      const parsed = RunPairsBacktestRequestSchema.parse(request.body);
-
-      // Create pairs backtest config
-      const config: PairsBacktestConfig = {
-        id: uuidv4(),
-        strategyName: parsed.strategyName,
-        params: parsed.params,
-        symbolA: parsed.symbolA,
-        symbolB: parsed.symbolB,
-        timeframe: parsed.timeframe,
-        startDate: parsed.startDate,
-        endDate: parsed.endDate,
-        initialCapital: parsed.initialCapital,
-        exchange: parsed.exchange,
-        leverage: parsed.leverage,
-      };
-
-      // Run the pairs backtest and track duration
-      const startTime = Date.now();
-      const result = await runPairsBacktest(config);
-      const duration = Date.now() - startTime;
-
-      // Return result with duration
-      return reply.status(200).send({
-        ...result,
-        duration,
-      });
-    } catch (error) {
-      // Log full error with stack trace
-      fastify.log.error({
-        err: error,
-        msg: 'Error in /api/backtest/pairs/run',
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-
-      if (error instanceof ZodError) {
-        return reply.status(400).send({
-          error: 'Validation error',
-          details: error.issues,
-        });
-      }
-
-      if (error instanceof Error) {
-        return reply.status(500).send({
-          error: error.message,
-        });
-      }
-
       return reply.status(500).send({
         error: 'Unknown error occurred',
       });

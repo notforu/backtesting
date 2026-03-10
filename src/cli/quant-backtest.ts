@@ -11,8 +11,6 @@
  *   --timeframe=TF        Candle timeframe (default: 4h)
  *   --capital=AMOUNT      Initial capital (default: 10000)
  *   --param.KEY=VALUE     Strategy parameter override
- *   --symbol-b=SYMBOL     Second symbol for pairs trading (optional)
- *   --leverage=NUM        Leverage for pairs trading (default: 1)
  *   --slippage=PERCENT    Slippage percent override (default: auto-detect based on exchange)
  *
  * Outputs JSON to stdout:
@@ -22,11 +20,9 @@
  * All logging goes to stderr
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import { runBacktest, createBacktestConfig } from '../core/engine.js';
-import { runPairsBacktest } from '../core/pairs-engine.js';
 import { closeDb } from '../data/db.js';
-import type { Timeframe, PairsBacktestConfig } from '../core/types.js';
+import type { Timeframe } from '../core/types.js';
 
 /**
  * Parse command line arguments
@@ -116,60 +112,28 @@ async function main(): Promise<void> {
     }
   }
 
-  // Check if this is a pairs strategy
-  const symbolB = args['symbol-b'];
-  const leverage = args.leverage ? Number(args.leverage) : 1;
-
-  console.error(`Running backtest: ${args.strategy} on ${args.symbol}${symbolB ? ` / ${symbolB}` : ''}`);
+  console.error(`Running backtest: ${args.strategy} on ${args.symbol}`);
 
   try {
-    let result;
-
-    if (symbolB) {
-      // Pairs strategy - use pairs backtest
-      const pairsConfig: PairsBacktestConfig = {
-        id: uuidv4(),
-        strategyName: args.strategy,
-        params: strategyParams,
-        symbolA: args.symbol,
-        symbolB: symbolB,
-        timeframe: (args.timeframe || '4h') as Timeframe,
-        startDate,
-        endDate,
-        initialCapital: args.capital ? Number(args.capital) : 10000,
-        exchange: args.exchange || 'binance',
-        leverage,
-      };
-      const pairsOptions: any = {
-        enableLogging: false,
-        saveResults: false,
-      };
-      if (args.slippage !== undefined) {
-        pairsOptions.broker = { slippagePercent: Number(args.slippage) };
-      }
-      result = await runPairsBacktest(pairsConfig, pairsOptions);
-    } else {
-      // Single symbol strategy - use regular backtest
-      const config = createBacktestConfig({
-        strategyName: args.strategy,
-        symbol: args.symbol,
-        timeframe: (args.timeframe || '4h') as Timeframe,
-        startDate,
-        endDate,
-        initialCapital: args.capital ? Number(args.capital) : 10000,
-        exchange: args.exchange || 'binance',
-        params: strategyParams,
-        mode: args.mode as 'spot' | 'futures' | undefined,
-      });
-      const options: any = {
-        enableLogging: false,
-        saveResults: false,
-      };
-      if (args.slippage !== undefined) {
-        options.broker = { slippagePercent: Number(args.slippage) };
-      }
-      result = await runBacktest(config, options);
+    const config = createBacktestConfig({
+      strategyName: args.strategy,
+      symbol: args.symbol,
+      timeframe: (args.timeframe || '4h') as Timeframe,
+      startDate,
+      endDate,
+      initialCapital: args.capital ? Number(args.capital) : 10000,
+      exchange: args.exchange || 'binance',
+      params: strategyParams,
+      mode: args.mode as 'spot' | 'futures' | undefined,
+    });
+    const options: any = {
+      enableLogging: false,
+      saveResults: false,
+    };
+    if (args.slippage !== undefined) {
+      options.broker = { slippagePercent: Number(args.slippage) };
     }
+    const result = await runBacktest(config, options);
 
     // Output JSON result to stdout
     process.stdout.write(JSON.stringify({

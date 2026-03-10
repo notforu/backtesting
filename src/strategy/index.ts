@@ -14,12 +14,6 @@ export {
   getDefaultParams,
 } from './base.js';
 
-// Pairs strategy types
-export {
-  type PairsStrategy,
-  type PairsStrategyContext,
-} from './pairs-base.js';
-
 // Strategy loader
 export {
   loadStrategy,

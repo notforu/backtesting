@@ -8,15 +8,12 @@
  * Known bugs targeted:
  *   BUG 1 - perAssetResults is silently dropped by saveBacktestRun / getBacktestRun
  *   BUG 2 - signalHistory is silently dropped by saveBacktestRun / getBacktestRun
- *   BUG 3 - result-storage.ts saveResultToFile omits perAssetResults in the JSON output
  *
  * Each test requires a live PostgreSQL connection. Tests are skipped when the
  * database is not reachable.
  */
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { readFileSync, rmSync, existsSync } from 'fs';
-import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
 // ============================================================================
@@ -24,7 +21,6 @@ import { v4 as uuidv4 } from 'uuid';
 // ============================================================================
 import { getPool, closeDb } from '../../data/db.js';
 import { saveBacktestRun, getBacktestRun, deleteBacktestRun } from '../../data/db.js';
-import { saveResultToFile } from '../result-storage.js';
 import type { AggregateBacktestResult, PerAssetResult, Signal } from '../signal-types.js';
 import type { Trade, EquityPoint, PerformanceMetrics, RollingMetrics, BacktestConfig } from '../types.js';
 
@@ -392,117 +388,6 @@ describe('BUG 2 - signalHistory persistence', () => {
     expect(loaded).toHaveProperty('signalHistory');
     const history = (loaded as AggregateBacktestResult).signalHistory;
     expect(history.length).toBeGreaterThan(0);
-  });
-});
-
-// ============================================================================
-// BUG 3: saveResultToFile drops perAssetResults from the JSON output
-// ============================================================================
-
-describe('BUG 3 - result-storage.ts drops perAssetResults', () => {
-  const tmpResultsDir = join(process.cwd(), 'results-test-tmp');
-
-  afterEach(() => {
-    // Clean up temp directory after each test
-    if (existsSync(tmpResultsDir)) {
-      rmSync(tmpResultsDir, { recursive: true, force: true });
-    }
-  });
-
-  it('saved JSON file should contain perAssetResults key', () => {
-    const result = makeAggregateResult();
-
-    // Temporarily override the results directory by monkey-patching is not
-    // straightforward with ESM, so we rely on the actual results dir and clean
-    // up after. We save and immediately find the file path.
-    const filepath = saveResultToFile(result);
-
-    try {
-      const raw = readFileSync(filepath, 'utf-8');
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-
-      // BUG 3: This will FAIL because saveResultToFile builds the output object
-      // without including perAssetResults - the field is simply not spread into
-      // the output object.
-      expect(parsed).toHaveProperty('perAssetResults');
-    } finally {
-      // Clean up the written file
-      try {
-        rmSync(filepath, { force: true });
-      } catch {
-        // ignore
-      }
-    }
-  });
-
-  it('saved JSON file perAssetResults should contain BTC/USDT and ETH/USDT entries', () => {
-    const result = makeAggregateResult();
-    const filepath = saveResultToFile(result);
-
-    try {
-      const raw = readFileSync(filepath, 'utf-8');
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-
-      // BUG 3: Will FAIL because perAssetResults is omitted from the file
-      expect(parsed).toHaveProperty('perAssetResults');
-      const perAsset = parsed.perAssetResults as Record<string, unknown>;
-      expect(Object.keys(perAsset)).toContain('BTC/USDT');
-      expect(Object.keys(perAsset)).toContain('ETH/USDT');
-    } finally {
-      try {
-        rmSync(filepath, { force: true });
-      } catch {
-        // ignore
-      }
-    }
-  });
-
-  it('saved JSON file should contain signalHistory key', () => {
-    const result = makeAggregateResult();
-    const filepath = saveResultToFile(result);
-
-    try {
-      const raw = readFileSync(filepath, 'utf-8');
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-
-      // BUG 3 (corollary): signalHistory is also not included in the file output.
-      // This will FAIL with the current saveResultToFile implementation.
-      expect(parsed).toHaveProperty('signalHistory');
-      const history = parsed.signalHistory as unknown[];
-      expect(history.length).toBeGreaterThan(0);
-    } finally {
-      try {
-        rmSync(filepath, { force: true });
-      } catch {
-        // ignore
-      }
-    }
-  });
-
-  it('perAssetResults in file should include trades and equity for each asset', () => {
-    const result = makeAggregateResult();
-    const filepath = saveResultToFile(result);
-
-    try {
-      const raw = readFileSync(filepath, 'utf-8');
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-
-      // BUG 3: Will FAIL because perAssetResults is not written to file
-      expect(parsed).toHaveProperty('perAssetResults');
-      const perAsset = parsed.perAssetResults as Record<string, Record<string, unknown>>;
-      const btcAsset = perAsset['BTC/USDT'];
-      expect(btcAsset).toBeDefined();
-      expect(btcAsset).toHaveProperty('trades');
-      expect(btcAsset).toHaveProperty('equity');
-      expect(btcAsset).toHaveProperty('metrics');
-      expect((btcAsset.trades as unknown[]).length).toBeGreaterThan(0);
-    } finally {
-      try {
-        rmSync(filepath, { force: true });
-      } catch {
-        // ignore
-      }
-    }
   });
 });
 

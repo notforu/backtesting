@@ -13,7 +13,6 @@ import { extractExportConfig, buildExportFile, parseImportFile } from '../../cor
 import type { ExportedConfig } from '../../core/config-export-types.js';
 import { runBacktest } from '../../core/engine.js';
 import { runAggregateBacktest } from '../../core/aggregate-engine.js';
-import { runPairsBacktest } from '../../core/pairs-engine.js';
 import type { Timeframe } from '../../core/types.js';
 import type { AllocationMode } from '../../core/signal-types.js';
 
@@ -70,24 +69,6 @@ async function executeConfig(config: ExportedConfig): Promise<string> {
       slippagePercent: config.slippagePercent,
     });
     // runAggregateBacktest calls saveBacktestRun internally (saveResults=true by default)
-    return result.id;
-  }
-
-  if (config.type === 'pairs') {
-    const result = await runPairsBacktest({
-      id: uuidv4(),
-      strategyName: config.strategyName,
-      params: config.params,
-      symbolA: config.symbolA,
-      symbolB: config.symbolB,
-      timeframe: config.timeframe as Timeframe,
-      startDate: new Date(config.startDate).getTime(),
-      endDate: new Date(config.endDate).getTime(),
-      initialCapital: config.initialCapital,
-      exchange: config.exchange,
-      leverage: 1,
-    });
-    // pairs engine saves internally via saveBacktestRun
     return result.id;
   }
 
@@ -157,9 +138,6 @@ export async function configExportRoutes(fastify: FastifyInstance): Promise<void
             if (c.type === 'aggregation') {
               strategy = c.name ?? 'Unnamed Aggregation';
               symbols = c.subStrategies.map((s) => s.symbol).join(', ');
-            } else if (c.type === 'pairs') {
-              strategy = c.strategyName;
-              symbols = `${c.symbolA}/${c.symbolB}`;
             } else {
               strategy = c.strategyName;
               symbols = c.symbol;

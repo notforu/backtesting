@@ -14,7 +14,7 @@ import type {
   TradeAction,
   FundingRate,
 } from './types.js';
-import { BacktestConfigSchema, timeframeToMs } from './types.js';
+import { BacktestConfigSchema } from './types.js';
 import { Portfolio } from './portfolio.js';
 import { LeveragedPortfolio } from './leveraged-portfolio.js';
 import { Broker, type BrokerConfig } from './broker.js';
@@ -23,42 +23,6 @@ import { validateStrategyParams, type StrategyContext, type LogEntry, type Candl
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
 import { getProvider } from '../data/providers/index.js';
 import { getCandles, saveCandles, saveBacktestRun, getCandleDateRange, getFundingRates } from '../data/db.js';
-import { saveResultToFile } from './result-storage.js';
-
-/**
- * Forward-fill candles to ensure no gaps in the data
- * Useful for prediction markets where some periods may have no trades
- */
-function forwardFillCandles(candles: Candle[], timeframe: Timeframe): Candle[] {
-  if (candles.length <= 1) return candles;
-
-  const timeframeMs = timeframeToMs(timeframe);
-  const filled: Candle[] = [];
-
-  let lastCandle = candles[0];
-  let candleIndex = 0;
-  const firstTs = candles[0].timestamp;
-  const lastTs = candles[candles.length - 1].timestamp;
-
-  for (let t = firstTs; t <= lastTs; t += timeframeMs) {
-    if (candleIndex < candles.length && candles[candleIndex].timestamp === t) {
-      filled.push(candles[candleIndex]);
-      lastCandle = candles[candleIndex];
-      candleIndex++;
-    } else {
-      filled.push({
-        timestamp: t,
-        open: lastCandle.close,
-        high: lastCandle.close,
-        low: lastCandle.close,
-        close: lastCandle.close,
-        volume: 0,
-      });
-    }
-  }
-
-  return filled;
-}
 
 /**
  * Memory-efficient view into candle array without copying.
@@ -338,24 +302,15 @@ export async function runBacktest(
   }
 
   // 4. Initialize portfolio and broker with fetched fee rate
-  const isPredictionMarket = ['polymarket', 'manifold'].includes(validatedConfig.exchange);
-
   const brokerConfig: BrokerConfig = {
     ...options.broker,
     feeRate,
-    isPredictionMarket,
   };
-
-  // Apply prediction market slippage defaults if no explicit slippage set
-  if ((options.broker?.slippagePercent === undefined || options.broker?.slippagePercent === 0)
-      && isPredictionMarket) {
-    brokerConfig.slippagePercent = 1; // 1% default slippage for prediction markets (tight spreads on liquid CLOB)
-  }
 
   const leverage = validatedConfig.leverage ?? 1;
   const portfolio = leverage > 1
-    ? new LeveragedPortfolio(validatedConfig.initialCapital, validatedConfig.symbol, leverage, isPredictionMarket)
-    : new Portfolio(validatedConfig.initialCapital, validatedConfig.symbol, isPredictionMarket);
+    ? new LeveragedPortfolio(validatedConfig.initialCapital, validatedConfig.symbol, leverage)
+    : new Portfolio(validatedConfig.initialCapital, validatedConfig.symbol);
   const broker = new Broker(portfolio, brokerConfig);
 
   log(`Using leverage: ${leverage}x`, Date.now());
@@ -690,15 +645,6 @@ export async function runBacktest(
     await saveBacktestRun(result);
   }
 
-  // 13. Save to filesystem (always, regardless of saveResults flag)
-  try {
-    const filepath = saveResultToFile(result);
-    log(`Results saved to ${filepath}`, Date.now());
-  } catch (err) {
-    // Don't fail the backtest if file save fails
-    console.error('Failed to save result to file:', err);
-  }
-
   log(`Backtest complete. Total return: ${metrics.totalReturnPercent.toFixed(2)}%`, Date.now());
 
   return result;
@@ -733,26 +679,14 @@ async function fetchOrLoadCandles(
   // Check what we have in cache
   const cachedRange = await getCandleDateRange(exchange, symbol, timeframe);
 
-  // Determine if cache is sufficient:
-  // - For prediction markets (polymarket, manifold), data only exists from market creation
-  //   to present. The requested startDate/endDate may be outside this range.
-  //   Accept cached data if it's recent (within 7 days of now).
-  // - For regular exchanges, require full coverage of requested range.
-  const isPredictionMarket = ['polymarket', 'manifold'].includes(exchange);
   const hasCachedData = cachedRange.start !== null && cachedRange.end !== null;
   const hasFullCoverage = hasCachedData &&
     cachedRange.start! <= startDate &&
     cachedRange.end! >= endDate;
-  const hasSufficientPMCoverage = hasCachedData && isPredictionMarket &&
-    cachedRange.end! >= Date.now() - 7 * 24 * 60 * 60 * 1000; // cached data is recent (within 7 days of now)
 
   if (hasFullCoverage) {
     console.log('Using cached candles');
     candles = await getCandles(exchange, symbol, timeframe, startDate, endDate);
-  } else if (hasSufficientPMCoverage) {
-    // PM markets: use cached data even if requested range extends beyond available data
-    console.log(`Using cached candles (PM market, data from ${new Date(cachedRange.start!).toISOString().slice(0, 10)})`);
-    candles = await getCandles(exchange, symbol, timeframe, cachedRange.start!, Math.min(endDate, Date.now()));
   } else {
     // Fetch from exchange
     console.log('Fetching candles from exchange...');
@@ -769,11 +703,6 @@ async function fetchOrLoadCandles(
       console.log(`Caching ${candles.length} candles`);
       await saveCandles(candles, exchange, symbol, timeframe);
     }
-  }
-
-  // Apply forward-fill for prediction market exchanges
-  if (['polymarket', 'manifold'].includes(exchange)) {
-    candles = forwardFillCandles(candles, timeframe);
   }
 
   return candles;

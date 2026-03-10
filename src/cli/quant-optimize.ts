@@ -12,8 +12,6 @@
  *   --optimize-for=METRIC     Metric to optimize (default: sharpeRatio)
  *   --max-combinations=NUM    Max parameter combinations (default: 500)
  *   --min-trades=NUM          Minimum trades required (default: 10)
- *   --symbol-b=SYMBOL         Second symbol for pairs trading (optional)
- *   --leverage=NUM            Leverage for pairs trading (default: 1)
  *   --optimize-timeframe=TF   Coarser timeframe for speed (e.g., 5m when main TF is 1m)
  *
  * Outputs JSON to stdout:
@@ -115,8 +113,6 @@ async function main(): Promise<void> {
   // Parse numeric options
   const maxCombinations = args['max-combinations'] ? parseInt(args['max-combinations'], 10) : 500;
   const minTrades = args['min-trades'] ? parseInt(args['min-trades'], 10) : 10;
-  const symbolB = args['symbol-b'];
-  const leverage = args.leverage ? Number(args.leverage) : 1;
   const optimizeTimeframe = args['optimize-timeframe'] as Timeframe | undefined;
 
   // Create optimization configuration
@@ -131,8 +127,6 @@ async function main(): Promise<void> {
     optimizeFor: optimizeFor as OptimizationConfig['optimizeFor'],
     maxCombinations,
     minTrades,
-    symbolB,
-    leverage,
     mode: args.mode === 'futures' ? 'futures' : undefined,
     optimizeTimeframe,
   };

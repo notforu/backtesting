@@ -79,8 +79,7 @@ export function CreateAggregationModal({ onClose }: Props) {
 
   const inputClass = 'w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent';
 
-  // Filter to only non-pairs strategies
-  const availableStrategies = strategies?.filter(s => !s.isPairs) ?? [];
+  const availableStrategies = strategies ?? [];
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
