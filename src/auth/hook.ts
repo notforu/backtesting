@@ -23,6 +23,7 @@ const PUBLIC_GET_PREFIXES = [
   '/api/funding-rates',
   '/api/backtest',
   '/api/strategies',
+  '/api/strategy-configs',
   '/api/aggregations',
   '/api/optimize',
 ];
