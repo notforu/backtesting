@@ -3,6 +3,7 @@
  * Will be expanded in a future task.
  */
 
+import { useEffect, useRef } from 'react';
 import { useAggregations } from '../../hooks/useBacktest.js';
 import { useAggregationStore } from '../../stores/aggregationStore.js';
 import { Spinner } from '../Spinner/Spinner.js';
@@ -10,6 +11,17 @@ import { Spinner } from '../Spinner/Spinner.js';
 export function AggregationConfigSidebar() {
   const { data: aggregations, isLoading, error } = useAggregations();
   const { selectedAggregationId: selectedAggregation, setSelectedAggregation } = useAggregationStore();
+
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to the selected item when selectedAggregationId changes
+  useEffect(() => {
+    if (!selectedAggregation || !listRef.current) return;
+    const el = listRef.current.querySelector<HTMLElement>(`[data-agg-id="${selectedAggregation}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [selectedAggregation]);
 
   return (
     <aside
@@ -36,7 +48,7 @@ export function AggregationConfigSidebar() {
         Aggregation Configs
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div ref={listRef} style={{ flex: 1, overflowY: 'auto' }}>
         {isLoading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
             <Spinner size="lg" className="text-gray-400" />
@@ -70,6 +82,7 @@ export function AggregationConfigSidebar() {
           return (
             <div
               key={agg.id}
+              data-agg-id={agg.id}
               onClick={() => setSelectedAggregation(isSelected ? null : agg.id)}
               style={{
                 padding: '12px 16px',

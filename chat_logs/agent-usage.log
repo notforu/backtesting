@@ -128,3 +128,9 @@
 [2026-03-11 11:13] be-dev (sonnet) - Add strategyConfigId to paper session API responses and subStrategyConfigIds to aggregation config API responses
 [2026-03-11 11:00] be-dev (sonnet) - Expose strategyConfigId and subStrategyConfigIds in API responses
 [2026-03-11 11:00] fe-dev (sonnet) - Clickable sub-strategies in AggregationConfigDetail + config link in PaperSessionDetail
+[2026-03-11 00:00] fe-dev (sonnet) - Simplify StrategyConfig and AggregationsPanel sidebar widgets, remove config lists
+[2026-03-11 14:03] fe-dev (sonnet) - Fix Configurations page: scrolling, URL routing, auto-scroll, and type safety
+[2026-03-11 12:05] fe-dev (sonnet) - Revamp RunBacktestModal with strategy/aggregation tab toggle, searchable card list, remove mode/runImmediately
+[2026-03-11 14:00] fe-dev (sonnet) - Simplify backtesting sidebar (remove config lists)
+[2026-03-11 14:00] fe-dev (sonnet) - Revamp RunBacktestModal with strategy/aggregation tabs + search
+[2026-03-11 14:00] fe-dev (sonnet) - Fix Configurations page scroll, routing, auto-scroll

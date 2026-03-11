@@ -2,19 +2,21 @@
  * Bidirectional URL <-> Zustand state synchronization using the History API.
  *
  * URL structure:
- *   /                         → paper-trading page, no specific session
- *   /paper-trading            → paper-trading page, no specific session
- *   /paper-trading/:sessionId → paper-trading with specific session selected
- *   /backtesting              → backtesting page, no run loaded
- *   /backtesting/:runId       → backtesting page with specific run loaded
- *   /configs                  → configurations page
- *   /configs/:configId        → configurations page with specific config selected
+ *   /                                → paper-trading page, no specific session
+ *   /paper-trading                   → paper-trading page, no specific session
+ *   /paper-trading/:sessionId        → paper-trading with specific session selected
+ *   /backtesting                     → backtesting page, no run loaded
+ *   /backtesting/:runId              → backtesting page with specific run loaded
+ *   /configs                         → configurations page, strategies tab
+ *   /configs/strategy/:configId      → configurations page, strategies tab, item selected
+ *   /configs/aggregation/:aggId      → configurations page, aggregations tab, item selected
  */
 
 import { useEffect, useRef } from 'react';
 import { usePaperTradingStore } from '../stores/paperTradingStore';
 import { useBacktestStore } from '../stores/backtestStore';
 import { useConfigurationStore } from '../stores/configurationStore';
+import { useAggregationStore } from '../stores/aggregationStore';
 import type { ActivePage } from '../stores/paperTradingStore';
 
 // ============================================================================
@@ -24,25 +26,46 @@ import type { ActivePage } from '../stores/paperTradingStore';
 interface ParsedPath {
   page: ActivePage;
   resourceId: string | null;
+  configTab: 'strategies' | 'aggregations' | null;
+  aggregationId: string | null;
 }
 
 function parsePathname(pathname: string): ParsedPath {
   const segments = pathname.split('/').filter(Boolean);
 
   if (segments[0] === 'backtesting') {
-    return { page: 'backtesting', resourceId: segments[1] ?? null };
+    return { page: 'backtesting', resourceId: segments[1] ?? null, configTab: null, aggregationId: null };
   }
 
   if (segments[0] === 'paper-trading') {
-    return { page: 'paper-trading', resourceId: segments[1] ?? null };
+    return { page: 'paper-trading', resourceId: segments[1] ?? null, configTab: null, aggregationId: null };
   }
 
   if (segments[0] === 'configs') {
-    return { page: 'configurations', resourceId: segments[1] ?? null };
+    // /configs/strategy/:id
+    if (segments[1] === 'strategy') {
+      return {
+        page: 'configurations',
+        resourceId: segments[2] ?? null,
+        configTab: 'strategies',
+        aggregationId: null,
+      };
+    }
+    // /configs/aggregation/:id
+    if (segments[1] === 'aggregation') {
+      return {
+        page: 'configurations',
+        resourceId: null,
+        configTab: 'aggregations',
+        aggregationId: segments[2] ?? null,
+      };
+    }
+    // /configs (no sub-path)
+    return { page: 'configurations', resourceId: null, configTab: 'strategies', aggregationId: null };
   }
 
   // Default: / → paper-trading
-  return { page: 'paper-trading', resourceId: null };
+  return { page: 'paper-trading', resourceId: null, configTab: null, aggregationId: null };
 }
 
 function buildPathname(
@@ -50,6 +73,8 @@ function buildPathname(
   sessionId: string | null,
   backtestId: string | null,
   configId: string | null,
+  aggregationId: string | null,
+  activeConfigTab: 'strategies' | 'aggregations',
 ): string {
   if (page === 'paper-trading') {
     if (sessionId) return `/paper-trading/${sessionId}`;
@@ -58,7 +83,12 @@ function buildPathname(
   }
 
   if (page === 'configurations') {
-    if (configId) return `/configs/${configId}`;
+    if (activeConfigTab === 'aggregations') {
+      if (aggregationId) return `/configs/aggregation/${aggregationId}`;
+      return '/configs';
+    }
+    // strategies tab
+    if (configId) return `/configs/strategy/${configId}`;
     return '/configs';
   }
 
@@ -75,6 +105,7 @@ export function useUrlSync(): void {
   const setSelectedSession = usePaperTradingStore((s) => s.setSelectedSession);
   const setSelectedBacktestId = useBacktestStore((s) => s.setSelectedBacktestId);
   const setSelectedConfigId = useConfigurationStore((s) => s.setSelectedConfigId);
+  const setSelectedAggregation = useAggregationStore((s) => s.setSelectedAggregation);
 
   // Ref to avoid pushing a history entry while we are already handling a
   // popstate event (back/forward navigation).
@@ -88,7 +119,7 @@ export function useUrlSync(): void {
   // 1. On mount: URL → State
   // -------------------------------------------------------------------------
   useEffect(() => {
-    const { page, resourceId } = parsePathname(window.location.pathname);
+    const { page, resourceId, configTab, aggregationId } = parsePathname(window.location.pathname);
 
     // Apply page
     setActivePage(page);
@@ -97,18 +128,26 @@ export function useUrlSync(): void {
     if (page === 'paper-trading') {
       setSelectedSession(resourceId);
     } else if (page === 'configurations') {
+      // Set the config tab without clearing the selected config id
+      if (configTab) {
+        useConfigurationStore.setState({ activeConfigTab: configTab });
+      }
       setSelectedConfigId(resourceId);
+      setSelectedAggregation(aggregationId);
     } else {
       setSelectedBacktestId(resourceId);
     }
 
     // Record the current URL as already-synced so the state-change effect
     // below does not immediately push a duplicate entry.
+    const { activeConfigTab } = useConfigurationStore.getState();
     const canonicalPath = buildPathname(
       page,
       page === 'paper-trading' ? resourceId : null,
       page === 'backtesting' ? resourceId : null,
       page === 'configurations' ? resourceId : null,
+      page === 'configurations' ? aggregationId : null,
+      activeConfigTab,
     );
     lastPushedUrl.current = canonicalPath;
 
@@ -125,56 +164,40 @@ export function useUrlSync(): void {
   // 2. On state change: State → URL
   // -------------------------------------------------------------------------
   useEffect(() => {
+    function computeAndPush() {
+      if (isFromPopState.current) return;
+
+      const { activePage, selectedSessionId } = usePaperTradingStore.getState();
+      const { selectedBacktestId } = useBacktestStore.getState();
+      const { selectedConfigId, activeConfigTab } = useConfigurationStore.getState();
+      const { selectedAggregationId } = useAggregationStore.getState();
+
+      const newPath = buildPathname(
+        activePage,
+        selectedSessionId,
+        selectedBacktestId,
+        selectedConfigId,
+        selectedAggregationId,
+        activeConfigTab,
+      );
+
+      if (newPath !== lastPushedUrl.current) {
+        lastPushedUrl.current = newPath;
+        window.history.pushState(null, '', newPath);
+      }
+    }
+
     // Subscribe to changes in all relevant stores.
-    const unsubPaperTrading = usePaperTradingStore.subscribe((state) => {
-      if (isFromPopState.current) return;
-
-      const { activePage, selectedSessionId } = state;
-      const { selectedBacktestId } = useBacktestStore.getState();
-      const { selectedConfigId } = useConfigurationStore.getState();
-
-      const newPath = buildPathname(activePage, selectedSessionId, selectedBacktestId, selectedConfigId);
-
-      if (newPath !== lastPushedUrl.current) {
-        lastPushedUrl.current = newPath;
-        window.history.pushState(null, '', newPath);
-      }
-    });
-
-    const unsubBacktest = useBacktestStore.subscribe((state) => {
-      if (isFromPopState.current) return;
-
-      const { selectedBacktestId } = state;
-      const { activePage, selectedSessionId } = usePaperTradingStore.getState();
-      const { selectedConfigId } = useConfigurationStore.getState();
-
-      const newPath = buildPathname(activePage, selectedSessionId, selectedBacktestId, selectedConfigId);
-
-      if (newPath !== lastPushedUrl.current) {
-        lastPushedUrl.current = newPath;
-        window.history.pushState(null, '', newPath);
-      }
-    });
-
-    const unsubConfig = useConfigurationStore.subscribe((state) => {
-      if (isFromPopState.current) return;
-
-      const { selectedConfigId } = state;
-      const { activePage, selectedSessionId } = usePaperTradingStore.getState();
-      const { selectedBacktestId } = useBacktestStore.getState();
-
-      const newPath = buildPathname(activePage, selectedSessionId, selectedBacktestId, selectedConfigId);
-
-      if (newPath !== lastPushedUrl.current) {
-        lastPushedUrl.current = newPath;
-        window.history.pushState(null, '', newPath);
-      }
-    });
+    const unsubPaperTrading = usePaperTradingStore.subscribe(computeAndPush);
+    const unsubBacktest = useBacktestStore.subscribe(computeAndPush);
+    const unsubConfig = useConfigurationStore.subscribe(computeAndPush);
+    const unsubAggregation = useAggregationStore.subscribe(computeAndPush);
 
     return () => {
       unsubPaperTrading();
       unsubBacktest();
       unsubConfig();
+      unsubAggregation();
     };
   }, []);
 
@@ -185,7 +208,7 @@ export function useUrlSync(): void {
     function handlePopState() {
       isFromPopState.current = true;
 
-      const { page, resourceId } = parsePathname(window.location.pathname);
+      const { page, resourceId, configTab, aggregationId } = parsePathname(window.location.pathname);
 
       setActivePage(page);
 
@@ -193,14 +216,20 @@ export function useUrlSync(): void {
         setSelectedSession(resourceId);
         setSelectedBacktestId(null);
         setSelectedConfigId(null);
+        setSelectedAggregation(null);
       } else if (page === 'configurations') {
+        if (configTab) {
+          useConfigurationStore.setState({ activeConfigTab: configTab });
+        }
         setSelectedConfigId(resourceId);
+        setSelectedAggregation(aggregationId);
         setSelectedSession(null);
         setSelectedBacktestId(null);
       } else {
         setSelectedBacktestId(resourceId);
         setSelectedSession(null);
         setSelectedConfigId(null);
+        setSelectedAggregation(null);
       }
 
       // Track the new URL to prevent the state-change subscribers from pushing
@@ -220,5 +249,5 @@ export function useUrlSync(): void {
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [setActivePage, setSelectedBacktestId, setSelectedSession, setSelectedConfigId]);
+  }, [setActivePage, setSelectedBacktestId, setSelectedSession, setSelectedConfigId, setSelectedAggregation]);
 }

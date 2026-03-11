@@ -52,7 +52,7 @@ export function AggregationConfigDetail() {
   const agg = aggregations?.find((a) => a.id === selectedAggregation);
   if (!agg) return null;
 
-  const subStrategyConfigIds = (agg as any).subStrategyConfigIds as string[] | undefined;
+  const subStrategyConfigIds = agg.subStrategyConfigIds;
 
   const handleSubStrategyClick = (i: number) => {
     const configId = subStrategyConfigIds?.[i];

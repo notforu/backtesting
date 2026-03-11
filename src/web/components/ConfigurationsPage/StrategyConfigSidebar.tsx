@@ -2,7 +2,7 @@
  * StrategyConfigSidebar — sidebar listing all strategy configurations with search.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useConfigurationStore } from '../../stores/configurationStore.js';
 import { useStrategyConfigs, useCreateStrategyConfig } from '../../hooks/useConfigurations.js';
 import { useStrategies, useStrategy } from '../../hooks/useBacktest.js';
@@ -298,8 +298,18 @@ export function StrategyConfigSidebar() {
   } = useConfigurationStore();
 
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const { data: configs, isLoading, error } = useStrategyConfigs();
+
+  // Auto-scroll to the selected item when selectedConfigId changes
+  useEffect(() => {
+    if (!selectedConfigId || !listRef.current) return;
+    const el = listRef.current.querySelector<HTMLElement>(`[data-config-id="${selectedConfigId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [selectedConfigId]);
 
   const filtered = configs?.filter((c) => {
     const q = searchQuery.toLowerCase();
@@ -380,7 +390,7 @@ export function StrategyConfigSidebar() {
       </div>
 
       {/* List */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div ref={listRef} style={{ flex: 1, overflowY: 'auto' }}>
         {isLoading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
             <Spinner size="lg" className="text-gray-400" />
@@ -410,14 +420,15 @@ export function StrategyConfigSidebar() {
         )}
 
         {filtered && filtered.length > 0 && filtered.map((config) => (
-          <ConfigCard
-            key={config.id}
-            config={config}
-            isSelected={config.id === selectedConfigId}
-            onClick={() =>
-              setSelectedConfigId(config.id === selectedConfigId ? null : config.id)
-            }
-          />
+          <div key={config.id} data-config-id={config.id}>
+            <ConfigCard
+              config={config}
+              isSelected={config.id === selectedConfigId}
+              onClick={() =>
+                setSelectedConfigId(config.id === selectedConfigId ? null : config.id)
+              }
+            />
+          </div>
         ))}
       </div>
 
