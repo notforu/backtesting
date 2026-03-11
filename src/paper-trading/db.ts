@@ -24,6 +24,7 @@ interface PaperSessionRow {
   name: string;
   aggregation_config: AggregateBacktestConfig; // JSONB auto-parsed
   aggregation_config_id: string | null;
+  strategy_config_id: string | null;
   status: string;
   initial_capital: number | string;
   current_equity: number | string;
@@ -86,6 +87,7 @@ function rowToSession(row: PaperSessionRow): PaperSession {
     name: row.name,
     aggregationConfig: row.aggregation_config,
     aggregationConfigId: row.aggregation_config_id,
+    strategyConfigId: row.strategy_config_id,
     status: row.status as PaperSession['status'],
     initialCapital: Number(row.initial_capital),
     currentEquity: Number(row.current_equity),

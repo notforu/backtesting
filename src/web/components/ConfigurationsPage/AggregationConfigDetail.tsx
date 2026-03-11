@@ -5,6 +5,8 @@
 
 import { useAggregationStore } from '../../stores/aggregationStore.js';
 import { useAggregations } from '../../hooks/useBacktest.js';
+import { useConfigurationStore } from '../../stores/configurationStore.js';
+import { usePaperTradingStore } from '../../stores/paperTradingStore.js';
 
 function EmptyState() {
   return (
@@ -36,6 +38,8 @@ function EmptyState() {
 export function AggregationConfigDetail() {
   const { selectedAggregationId: selectedAggregation } = useAggregationStore();
   const { data: aggregations } = useAggregations();
+  const { setSelectedConfigId, setActiveConfigTab } = useConfigurationStore();
+  const { setActivePage } = usePaperTradingStore();
 
   if (!selectedAggregation) {
     return (
@@ -47,6 +51,16 @@ export function AggregationConfigDetail() {
 
   const agg = aggregations?.find((a) => a.id === selectedAggregation);
   if (!agg) return null;
+
+  const subStrategyConfigIds = (agg as any).subStrategyConfigIds as string[] | undefined;
+
+  const handleSubStrategyClick = (i: number) => {
+    const configId = subStrategyConfigIds?.[i];
+    if (!configId) return;
+    setSelectedConfigId(configId);
+    setActiveConfigTab('strategies');
+    setActivePage('configurations');
+  };
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
@@ -81,29 +95,86 @@ export function AggregationConfigDetail() {
           Sub-Strategies ({agg.subStrategies.length})
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {agg.subStrategies.map((ss, i) => (
-            <div
-              key={i}
-              style={{
-                padding: '10px 14px',
-                background: '#252525',
-                borderRadius: 6,
-                border: '1px solid #333',
-              }}
-            >
-              <div style={{ fontSize: 14, color: '#e0e0e0', fontWeight: 500 }}>{ss.strategyName}</div>
-              <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
-                {ss.symbol} · {ss.timeframe}{ss.exchange ? ` · ${ss.exchange}` : ''}
-              </div>
-              {ss.params && Object.keys(ss.params).length > 0 && (
-                <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>
-                  {Object.entries(ss.params)
-                    .map(([k, v]) => `${k}: ${v}`)
-                    .join(' · ')}
+          {agg.subStrategies.map((ss, i) => {
+            const hasConfigId = !!subStrategyConfigIds?.[i];
+            const paramEntries = ss.params ? Object.entries(ss.params) : [];
+
+            return (
+              <div
+                key={i}
+                onClick={hasConfigId ? () => handleSubStrategyClick(i) : undefined}
+                style={{
+                  padding: '12px 14px',
+                  background: '#252525',
+                  borderRadius: 6,
+                  border: '1px solid #333',
+                  cursor: hasConfigId ? 'pointer' : 'default',
+                  transition: 'background 0.15s, border-color 0.15s',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+                onMouseEnter={(e) => {
+                  if (!hasConfigId) return;
+                  (e.currentTarget as HTMLDivElement).style.background = '#2e2e2e';
+                  (e.currentTarget as HTMLDivElement).style.borderColor = '#444';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.background = '#252525';
+                  (e.currentTarget as HTMLDivElement).style.borderColor = '#333';
+                }}
+              >
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 14, color: '#e0e0e0', fontWeight: 500 }}>{ss.strategyName}</div>
+                    <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
+                      {ss.symbol} · {ss.timeframe}{ss.exchange ? ` · ${ss.exchange}` : ''}
+                    </div>
+                  </div>
+                  {hasConfigId && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 11,
+                        color: '#555',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <span>View config</span>
+                      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* Params grid */}
+                {paramEntries.length > 0 && (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, 1fr)',
+                      gap: '3px 12px',
+                      paddingTop: 6,
+                      borderTop: '1px solid #2e2e2e',
+                    }}
+                  >
+                    {paramEntries.map(([k, v]) => (
+                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                        <span style={{ fontSize: 11, color: '#555' }}>{k}</span>
+                        <span style={{ fontSize: 11, color: '#888', fontVariantNumeric: 'tabular-nums' }}>
+                          {String(v)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

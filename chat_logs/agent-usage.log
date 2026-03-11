@@ -124,3 +124,7 @@
 [2026-03-11 01:00] fe-dev (sonnet) - Add strategy config list to backtesting sidebar
 [2026-03-11 01:00] fe-dev (sonnet) - Revamp RunBacktestModal with config dropdown
 [2026-03-11 01:00] fe-dev (sonnet) - Add create config form to Configurations page sidebar
+[2026-03-11 11:13] fe-dev (sonnet) - Make aggregation sub-strategy cards clickable, add params detail; update PaperSessionDetail view config link to configurations page; update types
+[2026-03-11 11:13] be-dev (sonnet) - Add strategyConfigId to paper session API responses and subStrategyConfigIds to aggregation config API responses
+[2026-03-11 11:00] be-dev (sonnet) - Expose strategyConfigId and subStrategyConfigIds in API responses
+[2026-03-11 11:00] fe-dev (sonnet) - Clickable sub-strategies in AggregationConfigDetail + config link in PaperSessionDetail

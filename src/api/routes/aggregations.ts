@@ -76,6 +76,7 @@ export async function aggregationRoutes(fastify: FastifyInstance) {
         allocationMode: parsed.allocationMode,
         maxPositions: parsed.maxPositions,
         subStrategies: parsed.subStrategies,
+        subStrategyConfigIds: [],
         initialCapital: parsed.initialCapital,
         exchange: parsed.exchange,
         mode: parsed.mode,

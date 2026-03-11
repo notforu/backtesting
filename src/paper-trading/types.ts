@@ -12,6 +12,7 @@ export interface PaperSession {
   name: string;
   aggregationConfig: AggregateBacktestConfig;  // frozen JSONB snapshot at creation time
   aggregationConfigId: string | null;
+  strategyConfigId: string | null;  // FK to strategy_configs (single-asset sessions)
   status: 'running' | 'paused' | 'stopped' | 'error';
   initialCapital: number;
   currentEquity: number;

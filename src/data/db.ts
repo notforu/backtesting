@@ -1260,6 +1260,7 @@ export interface AggregationConfig {
   allocationMode: string;  // 'single_strongest' | 'weighted_multi' | 'top_n'
   maxPositions: number;
   subStrategies: SubStrategyConfigDB[];
+  subStrategyConfigIds: string[];  // FKs to strategy_configs for each sub-strategy
   initialCapital: number;
   exchange: string;
   mode: string;  // 'spot' | 'futures'
@@ -1281,6 +1282,7 @@ interface AggregationConfigRow {
   allocation_mode: string;
   max_positions: number;
   sub_strategies: SubStrategyConfigDB[] | string;
+  sub_strategy_config_ids: string[] | null;
   initial_capital: number | string;
   exchange: string;
   mode: string;
@@ -1297,6 +1299,7 @@ function rowToAggregationConfig(row: AggregationConfigRow): AggregationConfig {
     subStrategies: (typeof row.sub_strategies === 'string'
       ? JSON.parse(row.sub_strategies)
       : row.sub_strategies) as SubStrategyConfigDB[],
+    subStrategyConfigIds: row.sub_strategy_config_ids ?? [],
     initialCapital: Number(row.initial_capital),
     exchange: row.exchange,
     mode: row.mode,
@@ -1344,7 +1347,7 @@ export async function saveAggregationConfig(config: AggregationConfig): Promise<
 export async function getAggregationConfig(id: string): Promise<AggregationConfig | null> {
   const p = getPool();
   const { rows } = await p.query<AggregationConfigRow>(
-    `SELECT id, name, allocation_mode, max_positions, sub_strategies, initial_capital, exchange, mode, created_at, updated_at
+    `SELECT id, name, allocation_mode, max_positions, sub_strategies, sub_strategy_config_ids, initial_capital, exchange, mode, created_at, updated_at
      FROM aggregation_configs
      WHERE id = $1`,
     [id]
@@ -1359,7 +1362,7 @@ export async function getAggregationConfig(id: string): Promise<AggregationConfi
 export async function getAggregationConfigs(): Promise<AggregationConfig[]> {
   const p = getPool();
   const { rows } = await p.query<AggregationConfigRow>(
-    `SELECT id, name, allocation_mode, max_positions, sub_strategies, initial_capital, exchange, mode, created_at, updated_at
+    `SELECT id, name, allocation_mode, max_positions, sub_strategies, sub_strategy_config_ids, initial_capital, exchange, mode, created_at, updated_at
      FROM aggregation_configs
      ORDER BY updated_at DESC`
   );
@@ -1424,7 +1427,7 @@ export async function updateAggregationConfig(
     `UPDATE aggregation_configs
      SET ${setClauses.join(', ')}
      WHERE id = $${params.length}
-     RETURNING id, name, allocation_mode, max_positions, sub_strategies, initial_capital, exchange, mode, created_at, updated_at`,
+     RETURNING id, name, allocation_mode, max_positions, sub_strategies, sub_strategy_config_ids, initial_capital, exchange, mode, created_at, updated_at`,
     params
   );
 

@@ -352,6 +352,7 @@ export interface AggregationConfig {
   mode: 'spot' | 'futures';
   createdAt: number;
   updatedAt: number;
+  subStrategyConfigIds?: string[];
 }
 
 export interface CreateAggregationRequest {
@@ -487,6 +488,7 @@ export interface PaperSession {
   name: string;
   aggregationConfig: AggregationConfig;
   aggregationConfigId: string | null;
+  strategyConfigId?: string | null;
   status: 'running' | 'paused' | 'stopped' | 'error';
   initialCapital: number;
   currentEquity: number;
