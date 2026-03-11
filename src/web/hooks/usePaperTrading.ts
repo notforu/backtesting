@@ -158,9 +158,35 @@ export function usePaperSessionSSE(sessionId: string | null) {
           queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
           queryClient.invalidateQueries({ queryKey: eventsKey(sessionId) });
           break;
+        case 'funding_payment':
         case 'error':
           queryClient.invalidateQueries({ queryKey: eventsKey(sessionId) });
           break;
+        case 'realtime_equity_update': {
+          // Directly update the cache — no network refetch needed for real-time prices
+          queryClient.setQueryData(sessionKey(sessionId), (old: unknown) => {
+            if (!old || typeof old !== 'object') return old;
+            const session = old as Record<string, unknown>;
+            const updatedPositions = Array.isArray(session.positions)
+              ? session.positions.map((pos: Record<string, unknown>) => {
+                  const mark = event.markPrices?.[pos.symbol as string];
+                  if (mark === undefined) return pos;
+                  const pnl =
+                    pos.direction === 'long'
+                      ? (mark - (pos.entryPrice as number)) * (pos.amount as number)
+                      : ((pos.entryPrice as number) - mark) * (pos.amount as number);
+                  return { ...pos, unrealizedPnl: pnl };
+                })
+              : session.positions;
+            return {
+              ...session,
+              currentEquity: event.equity,
+              currentCash: event.cash,
+              positions: updatedPositions,
+            };
+          });
+          break;
+        }
         default:
           break;
       }

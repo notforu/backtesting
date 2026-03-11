@@ -134,3 +134,8 @@
 [2026-03-11 14:00] fe-dev (sonnet) - Simplify backtesting sidebar (remove config lists)
 [2026-03-11 14:00] fe-dev (sonnet) - Revamp RunBacktestModal with strategy/aggregation tabs + search
 [2026-03-11 14:00] fe-dev (sonnet) - Fix Configurations page scroll, routing, auto-scroll
+[2026-03-11 14:20] main (opus) - Prod deployment: fix Dockerfile x64 compat, fix missing frThresholds.ts, fix strategy-configs auth
+[2026-03-11 14:30] main (opus) - Playwright MCP prod validation of all pages (backtesting, configs, paper trading)
+[2026-03-11 14:35] fe-dev (sonnet) - Fix funding_payment events not showing in paper trading event log
+[2026-03-11 14:38] be-dev (sonnet) - Implement real-time equity updates via CCXT Pro watchTickers WebSocket for paper trading
+[2026-03-11 14:44] docs-writer (haiku) - Changelog for real-time equity updates via CCXT Pro watchTickers

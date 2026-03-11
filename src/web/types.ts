@@ -557,7 +557,8 @@ export type PaperTradingEvent =
   | { type: 'equity_update'; sessionId: string; equity: number; cash: number; positionsValue: number; timestamp: number }
   | { type: 'tick_complete'; sessionId: string; tickNumber: number; timestamp: number; nextTickAt: number | null }
   | { type: 'error'; sessionId: string; message: string }
-  | { type: 'status_change'; sessionId: string; oldStatus: string; newStatus: string };
+  | { type: 'status_change'; sessionId: string; oldStatus: string; newStatus: string }
+  | { type: 'realtime_equity_update'; sessionId: string; equity: number; cash: number; positionsValue: number; markPrices: Record<string, number>; timestamp: number };
 
 export interface SimpleStrategyConfig {
   strategyName: string;

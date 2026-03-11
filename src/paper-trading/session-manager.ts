@@ -12,6 +12,7 @@ import { PaperTradingEngine } from './engine.js';
 import type { PaperSession, PaperTradingEvent } from './types.js';
 import * as paperDb from './db.js';
 import { TelegramNotifier } from '../notifications/telegram.js';
+import { priceWatcher } from './price-watcher.js';
 
 export class SessionManager {
   /** Map of sessionId -> active engine (only sessions with a running/paused engine) */
@@ -99,6 +100,9 @@ export class SessionManager {
 
     await engine.start();
 
+    // Register session with PriceWatcher for real-time equity updates
+    await this.registerWithPriceWatcher(sessionId, session);
+
     // Schedule daily summary at midnight UTC (only if Telegram is configured)
     if (TelegramNotifier.isConfigured()) {
       this.scheduleDailySummary(sessionId, session.name, engine);
@@ -117,6 +121,8 @@ export class SessionManager {
       return;
     }
     await engine.pause();
+    // Stop real-time equity updates when session is paused
+    priceWatcher.unregisterSession(sessionId);
   }
 
   /**
@@ -147,11 +153,20 @@ export class SessionManager {
 
       // Freshly created engine has _status='stopped', so call start() not resume()
       await engine.start();
+
+      // Register session with PriceWatcher for real-time equity updates
+      await this.registerWithPriceWatcher(sessionId, session);
       return;
     }
 
     // Engine is in memory — call resume() which now handles both 'paused' and 'error' states
     await engine.resume();
+
+    // Re-register with PriceWatcher after resume
+    const session = await paperDb.getPaperSession(sessionId);
+    if (session) {
+      await this.registerWithPriceWatcher(sessionId, session);
+    }
   }
 
   /**
@@ -169,6 +184,8 @@ export class SessionManager {
     await engine.stop();
     this.engines.delete(sessionId);
     this.clearDailySummaryTimer(sessionId);
+    // Stop real-time equity updates when session is stopped
+    priceWatcher.unregisterSession(sessionId);
   }
 
   // --------------------------------------------------------------------------
@@ -294,6 +311,13 @@ export class SessionManager {
     }
     this.engines.clear();
     this.eventListeners.clear();
+
+    // Shut down the PriceWatcher WebSocket connection
+    try {
+      await priceWatcher.stop();
+    } catch (err) {
+      console.error('[SessionManager] Error stopping PriceWatcher:', err);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -343,6 +367,11 @@ export class SessionManager {
         }
       }
 
+      // After tick completes, update the PriceWatcher with fresh position state
+      if (event.type === 'tick_complete' || event.type === 'equity_update') {
+        this.syncPriceWatcherState(sessionId);
+      }
+
       // Forward to Telegram
       this.handleTelegramNotification(event, sessionName);
 
@@ -352,12 +381,95 @@ export class SessionManager {
   }
 
   /**
+   * Register a session with the PriceWatcher for real-time equity updates.
+   * Fetches current positions from DB and starts the watch loop if not already running.
+   */
+  private async registerWithPriceWatcher(sessionId: string, session: PaperSession): Promise<void> {
+    try {
+      const positions = await paperDb.getPaperPositions(sessionId);
+
+      // Build the symbol list from both the aggregation config sub-strategies
+      // and any currently open positions (for sessions that may have drifted)
+      const symbolSet = new Set<string>();
+      for (const sub of session.aggregationConfig.subStrategies) {
+        symbolSet.add(sub.symbol);
+      }
+      for (const pos of positions) {
+        symbolSet.add(pos.symbol);
+      }
+
+      const symbols = Array.from(symbolSet);
+
+      priceWatcher.registerSession(
+        sessionId,
+        symbols,
+        session.currentCash,
+        positions,
+        (update) => {
+          const event: PaperTradingEvent = {
+            type: 'realtime_equity_update',
+            sessionId,
+            equity: update.equity,
+            cash: update.cash,
+            positionsValue: update.positionsValue,
+            markPrices: update.markPrices,
+            timestamp: update.timestamp,
+          };
+          // Forward directly to SSE listeners (not persisted, not sent to Telegram)
+          const listeners = this.eventListeners.get(sessionId);
+          if (listeners) {
+            for (const listener of listeners) {
+              try {
+                listener(event);
+              } catch {
+                // Client disconnected — SSE cleanup handles removal
+              }
+            }
+          }
+        },
+      );
+
+      // Start the watch loop (no-op if already running)
+      priceWatcher.start();
+    } catch (err) {
+      console.error(
+        `[SessionManager] Failed to register session ${sessionId} with PriceWatcher:`,
+        err,
+      );
+    }
+  }
+
+  /**
+   * After an engine tick, refresh the PriceWatcher's position snapshot from the DB
+   * so the next equity computation reflects the latest opened/closed positions.
+   * Fire-and-forget.
+   */
+  private syncPriceWatcherState(sessionId: string): void {
+    // Fetch both session (for currentCash) and positions in parallel
+    Promise.all([
+      paperDb.getPaperSession(sessionId),
+      paperDb.getPaperPositions(sessionId),
+    ])
+      .then(([session, positions]) => {
+        if (!session) return;
+        priceWatcher.updateSessionState(sessionId, session.currentCash, positions);
+      })
+      .catch(err => {
+        console.error(`[SessionManager] syncPriceWatcherState error for ${sessionId}:`, err);
+      });
+  }
+
+  /**
    * Format and persist a paper trading event to the database.
    * Fire-and-forget — errors are logged but never thrown.
    */
   private persistEvent(event: PaperTradingEvent, sessionName: string): void {
-    // Skip noisy events
-    if (event.type === 'equity_update' || event.type === 'tick_complete') return;
+    // Skip noisy / ephemeral events
+    if (
+      event.type === 'equity_update' ||
+      event.type === 'tick_complete' ||
+      event.type === 'realtime_equity_update'
+    ) return;
 
     let type: string = event.type;
     let message: string;
