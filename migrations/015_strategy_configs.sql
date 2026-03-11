@@ -61,10 +61,8 @@ CREATE INDEX IF NOT EXISTS idx_backtest_runs_strategy_config_id
 ALTER TABLE aggregation_configs ADD COLUMN IF NOT EXISTS content_hash TEXT;
 ALTER TABLE aggregation_configs ADD COLUMN IF NOT EXISTS sub_strategy_config_ids TEXT[];
 
-ALTER TABLE aggregation_configs DROP COLUMN IF EXISTS initial_capital;
-ALTER TABLE aggregation_configs DROP COLUMN IF EXISTS exchange;
-
--- mode column is dropped in step 13 after backfilling
+-- Note: initial_capital, exchange, and mode columns are kept on aggregation_configs
+-- for backward compatibility with existing code that still references them.
 
 -- ---------------------------------------------------------------------------
 -- 5. Modify paper_sessions
@@ -325,12 +323,9 @@ WHERE op.strategy_config_id IS NULL
   AND sc.params        = op.params;
 
 -- ---------------------------------------------------------------------------
--- 13. Remove mode column from aggregation_configs
+-- 13. (Skipped) mode column kept on aggregation_configs for backward compatibility
 -- ---------------------------------------------------------------------------
-ALTER TABLE aggregation_configs DROP COLUMN IF EXISTS mode;
 
 -- ---------------------------------------------------------------------------
--- 14. Record migration
+-- 14. Record migration (handled by the migration runner — no manual INSERT needed)
 -- ---------------------------------------------------------------------------
-INSERT INTO _migrations (name) VALUES ('015_strategy_configs.sql')
-  ON CONFLICT (name) DO NOTHING;

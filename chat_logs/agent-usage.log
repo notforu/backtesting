@@ -1,3 +1,6 @@
+[2026-03-11 10:15] be-dev (sonnet) - Remove custom data upload section from master plan, update capabilities matrix, roadmap, and decision matrix
+[2026-03-10 14:30] be-dev (sonnet) - Update AI strategy assistant master plan: code generation as primary approach, custom data upload section, roadmap additions, decision matrix updates
+[2026-03-10 15:00] be-dev (sonnet) - Insert new Section 2 "Возможности и ограничения для пользователя" into master plan doc and renumber all subsequent sections
 [2026-03-10 13:40] qa (sonnet) - Write unit tests for strategy-configs API routes with mocked service layer
 [2026-03-09 09:50] fe-dev (sonnet) - Verify FR threshold extraction and trades display for simple backtests
 [2026-03-09 11:49] Explore (sonnet) - Explore trades & FR display code
@@ -109,3 +112,15 @@
 [2026-03-10 13:40] qa (sonnet) - Write strategy-config service tests (44 tests)
 [2026-03-10 13:40] qa (sonnet) - Write strategy-configs API route tests (44 tests)
 [2026-03-10 13:45] docs-writer (haiku) - Create changelog for 117 new strategy configuration tests (content-hash, service, API)
+[2026-03-10 21:20] Explore (sonnet) - Comprehensive strategy system capabilities audit
+[2026-03-10 21:38] be-dev (sonnet) - Update master plan: code generation, LLM strategy, custom data upload
+[2026-03-10 21:57] be-dev (sonnet) - Add user capabilities matrix to master plan
+[2026-03-11 06:55] fe-dev (sonnet) - Replace StrategyConfig form sidebar with compact list linking to Configurations page
+[2026-03-11 00:15] fe-dev (sonnet) - Replace strategy form sidebar with compact config list
+[2026-03-11 13:58] be-dev (sonnet) - Remove custom data upload from master plan, update capabilities matrix
+[2026-03-11 08:23] fe-dev (sonnet) - Rewrite RunBacktestModal to use configuration dropdown
+[2026-03-11 08:23] fe-dev (sonnet) - Add strategy configs list to StrategyConfig sidebar panel
+[2026-03-11 08:25] fe-dev (sonnet) - Add Create Configuration button and inline form to StrategyConfigSidebar
+[2026-03-11 01:00] fe-dev (sonnet) - Add strategy config list to backtesting sidebar
+[2026-03-11 01:00] fe-dev (sonnet) - Revamp RunBacktestModal with config dropdown
+[2026-03-11 01:00] fe-dev (sonnet) - Add create config form to Configurations page sidebar

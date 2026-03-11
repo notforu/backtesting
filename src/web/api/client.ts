@@ -869,7 +869,8 @@ export async function deleteStrategyConfig(id: string): Promise<{ message: strin
 }
 
 export async function getStrategyConfigRuns(id: string): Promise<BacktestSummary[]> {
-  return apiFetch<BacktestSummary[]>(`/strategy-configs/${encodeURIComponent(id)}/runs`);
+  const data = await apiFetch<{ results: BacktestSummary[]; total: number }>(`/strategy-configs/${encodeURIComponent(id)}/runs`);
+  return data.results;
 }
 
 export async function getStrategyConfigVersions(
