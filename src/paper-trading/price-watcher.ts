@@ -56,6 +56,9 @@ export class PriceWatcher {
   /** True once start() has been called and while the loop is active. */
   private running = false;
 
+  /** True once the first non-empty tick has been logged. */
+  private loggedFirstTick = false;
+
   /** Resolves when watchLoop() should stop (set by stop()). */
   private stopSignal: (() => void) | null = null;
 
@@ -136,9 +139,10 @@ export class PriceWatcher {
     if (!snapshot) return;
     snapshot.cash = cash;
     snapshot.positions = positions;
-
-    // Rebuild the symbol set from updated positions
-    snapshot.symbols = new Set(positions.map(p => p.symbol));
+    // Add any new position symbols (don't clear existing ones from initial registration)
+    for (const p of positions) {
+      snapshot.symbols.add(p.symbol);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -205,7 +209,20 @@ export class PriceWatcher {
       // Collect all symbols across all sessions
       const allSymbols = this.collectAllSymbols();
       if (allSymbols.length === 0) {
-        // No symbols to watch — wait a bit and retry
+        // No symbols to watch — still emit equity = cash for all sessions
+        const now = Date.now();
+        for (const [, snapshot] of this.sessions) {
+          if (now - snapshot.lastEmittedAt < EMIT_THROTTLE_MS) continue;
+          const update = this.computeEquity(snapshot, {}, now);
+          if (update) {
+            snapshot.lastEmittedAt = now;
+            try {
+              snapshot.callback(update);
+            } catch {
+              // ignore
+            }
+          }
+        }
         await this.sleep(2_000);
         continue;
       }
@@ -233,6 +250,11 @@ export class PriceWatcher {
           if (mark !== undefined && !isNaN(mark) && mark > 0) {
             markPrices[symbol] = mark;
           }
+        }
+
+        if (!this.loggedFirstTick && Object.keys(markPrices).length > 0) {
+          console.log(`[PriceWatcher] Receiving prices for ${Object.keys(markPrices).length} symbols`);
+          this.loggedFirstTick = true;
         }
 
         // Emit equity updates for each registered session
