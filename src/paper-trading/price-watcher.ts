@@ -59,6 +59,10 @@ export class PriceWatcher {
   /** True once the first non-empty tick has been logged. */
   private loggedFirstTick = false;
 
+  /** Heartbeat counter for periodic loop-alive logs. */
+  private loopIterations = 0;
+  private lastHeartbeat = 0;
+
   /** Resolves when watchLoop() should stop (set by stop()). */
   private stopSignal: (() => void) | null = null;
 
@@ -233,6 +237,8 @@ export class PriceWatcher {
 
         if (!this.running) break;
 
+        this.loopIterations++;
+
         // Extract mark prices from the returned ticker map
         const markPrices: Record<string, number> = {};
         for (const [symbol, ticker] of Object.entries(tickers)) {
@@ -257,8 +263,16 @@ export class PriceWatcher {
           this.loggedFirstTick = true;
         }
 
-        // Emit equity updates for each registered session
+        // Periodic heartbeat log (every 30 seconds)
         const now = Date.now();
+        if (now - this.lastHeartbeat > 30_000) {
+          this.lastHeartbeat = now;
+          console.log(
+            `[PriceWatcher] heartbeat: ${this.loopIterations} ticks, ${Object.keys(markPrices).length} prices, ${this.sessions.size} sessions`,
+          );
+        }
+
+        // Emit equity updates for each registered session
         for (const [sessionId, snapshot] of this.sessions) {
           // Throttle per session
           if (now - snapshot.lastEmittedAt < EMIT_THROTTLE_MS) continue;
@@ -286,8 +300,16 @@ export class PriceWatcher {
       } catch (err) {
         if (!this.running) break;
 
-        // Log and continue — CCXT Pro will reconnect automatically
         const errMsg = err instanceof Error ? err.message : String(err);
+
+        // "already subscribed" is informational — subscriptions are active,
+        // just retry immediately without back-off
+        if (errMsg.includes('already subscribed')) {
+          console.warn(`[PriceWatcher] Already subscribed (retrying immediately)`);
+          continue;
+        }
+
+        // Log and continue — CCXT Pro will reconnect automatically
         console.warn(`[PriceWatcher] watchTickers error (will retry): ${errMsg}`);
 
         // Short back-off before retrying to avoid tight error loops

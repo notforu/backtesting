@@ -417,7 +417,7 @@ export class SessionManager {
           };
           // Forward directly to SSE listeners (not persisted, not sent to Telegram)
           const listeners = this.eventListeners.get(sessionId);
-          if (listeners) {
+          if (listeners && listeners.size > 0) {
             for (const listener of listeners) {
               try {
                 listener(event);
