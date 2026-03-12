@@ -1,11 +1,11 @@
 /**
  * Paper Trading - Price Watcher
  *
- * Uses CCXT Pro watchTickers (Bybit WebSocket) to stream real-time mark prices
- * for all symbols held across active paper trading sessions. Computes per-session
- * equity and emits throttled callbacks to the SessionManager.
+ * Polls Bybit mark prices via CCXT REST every 2 seconds for all symbols
+ * across active paper trading sessions. Computes per-session equity and
+ * emits callbacks to the SessionManager for SSE forwarding.
  *
- * No API keys are required — only public Bybit WebSocket topics are used.
+ * No API keys are required — only public Bybit REST endpoints are used.
  */
 
 import ccxt from 'ccxt';
@@ -34,19 +34,17 @@ interface SessionSnapshot {
   cash: number;
   positions: PaperPosition[];
   callback: EquityCallback;
-  /** Last emission timestamp (ms) — used for throttling */
-  lastEmittedAt: number;
 }
 
 // ============================================================================
 // PriceWatcher
 // ============================================================================
 
-/** Minimum ms between equity update emissions per session (2 seconds). */
-const EMIT_THROTTLE_MS = 2_000;
+/** Polling interval for mark prices (ms). */
+const POLL_INTERVAL_MS = 2_000;
 
 export class PriceWatcher {
-  /** CCXT Pro Bybit exchange instance (shared across all sessions). */
+  /** CCXT Bybit exchange instance (REST, no API keys). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private exchange: any;
 
@@ -56,28 +54,15 @@ export class PriceWatcher {
   /** True once start() has been called and while the loop is active. */
   private running = false;
 
-  /** True once the first non-empty tick has been logged. */
-  private loggedFirstTick = false;
+  /** Timer handle for the polling interval. */
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
 
-  /** Heartbeat counter for periodic loop-alive logs. */
-  private loopIterations = 0;
-  private lastHeartbeat = 0;
-
-  /** Persistent mark price cache — accumulates prices across watchTickers ticks. */
+  /** Latest mark prices (updated every poll). */
   private priceCache: Record<string, number> = {};
 
-  /** Resolves when watchLoop() should stop (set by stop()). */
-  private stopSignal: (() => void) | null = null;
-
   constructor() {
-    // ccxt.pro is exported as a named property on the default ccxt import.
-    // TypeScript types include it but we cast to any to avoid declaration issues.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ccxtAny = ccxt as any;
-    this.exchange = new ccxtAny.pro.bybit({
-      options: {
-        defaultType: 'swap',
-      },
+    this.exchange = new ccxt.bybit({
+      options: { defaultType: 'swap' },
     });
   }
 
@@ -85,17 +70,6 @@ export class PriceWatcher {
   // Session registration
   // --------------------------------------------------------------------------
 
-  /**
-   * Register a session for real-time equity tracking.
-   * If the PriceWatcher is already running, the new session's symbols are
-   * automatically included in the next watchTickers call.
-   *
-   * @param sessionId  Unique session ID
-   * @param symbols    CCXT-format symbols held by this session (e.g. "BTC/USDT:USDT")
-   * @param cash       Current available cash balance
-   * @param positions  Current open positions
-   * @param callback   Called with an EquityUpdate every ~2 s while prices move
-   */
   registerSession(
     sessionId: string,
     symbols: string[],
@@ -108,7 +82,6 @@ export class PriceWatcher {
       cash,
       positions,
       callback,
-      lastEmittedAt: 0,
     });
 
     console.log(
@@ -116,27 +89,18 @@ export class PriceWatcher {
     );
   }
 
-  /**
-   * Remove a session from real-time equity tracking.
-   * If no sessions remain, the watch loop is automatically stopped.
-   */
   unregisterSession(sessionId: string): void {
     this.sessions.delete(sessionId);
     console.log(`[PriceWatcher] Unregistered session ${sessionId}`);
 
-    // If no sessions remain, stop the loop to avoid idle connections
     if (this.sessions.size === 0 && this.running) {
-      console.log('[PriceWatcher] No sessions remaining — stopping watch loop');
+      console.log('[PriceWatcher] No sessions remaining — stopping');
       this.stop().catch(err => {
-        console.error('[PriceWatcher] Error stopping after last session removed:', err);
+        console.error('[PriceWatcher] Error stopping:', err);
       });
     }
   }
 
-  /**
-   * Update the cash and position snapshot for a session.
-   * Called after each engine tick so the next equity computation uses fresh data.
-   */
   updateSessionState(
     sessionId: string,
     cash: number,
@@ -146,7 +110,6 @@ export class PriceWatcher {
     if (!snapshot) return;
     snapshot.cash = cash;
     snapshot.positions = positions;
-    // Add any new position symbols (don't clear existing ones from initial registration)
     for (const p of positions) {
       snapshot.symbols.add(p.symbol);
     }
@@ -156,11 +119,6 @@ export class PriceWatcher {
   // Lifecycle
   // --------------------------------------------------------------------------
 
-  /**
-   * Start the WebSocket watch loop.
-   * Safe to call multiple times — does nothing if already running.
-   * Also does nothing if no sessions are registered.
-   */
   start(): void {
     if (this.running) return;
     if (this.sessions.size === 0) {
@@ -169,85 +127,47 @@ export class PriceWatcher {
     }
 
     this.running = true;
-    console.log('[PriceWatcher] Starting watch loop');
+    console.log('[PriceWatcher] Starting price polling (every 2s)');
 
-    // Run the loop in the background; errors are caught inside watchLoop()
-    void this.watchLoop();
+    // Do first poll immediately, then set interval
+    void this.poll();
+    this.pollTimer = setInterval(() => {
+      void this.poll();
+    }, POLL_INTERVAL_MS);
   }
 
-  /**
-   * Stop the WebSocket watch loop and close the exchange connection.
-   * Safe to call if not running.
-   */
   async stop(): Promise<void> {
     if (!this.running) return;
 
     this.running = false;
-    if (this.stopSignal) {
-      this.stopSignal();
-      this.stopSignal = null;
-    }
-
-    try {
-      await this.exchange.close();
-    } catch {
-      // Ignore close errors
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
     }
 
     console.log('[PriceWatcher] Stopped');
   }
 
   // --------------------------------------------------------------------------
-  // Internal loop
+  // Polling
   // --------------------------------------------------------------------------
 
-  /**
-   * Core WebSocket loop.
-   *
-   * CCXT Pro's watchTickers() resolves with updated tickers each time new
-   * price data arrives. We loop continuously: after each resolution we compute
-   * equity for every registered session and emit throttled callbacks.
-   *
-   * CCXT Pro handles reconnection automatically, so we just log errors and
-   * continue looping (unless stop() has been called).
-   */
-  private async watchLoop(): Promise<void> {
-    while (this.running) {
-      // Collect all symbols across all sessions
+  /** True while a poll is in progress (prevents overlapping polls). */
+  private polling = false;
+  private pollCount = 0;
+
+  private async poll(): Promise<void> {
+    if (!this.running || this.polling) return;
+    this.polling = true;
+
+    try {
       const allSymbols = this.collectAllSymbols();
-      if (allSymbols.length === 0) {
-        // No symbols to watch — still emit equity = cash for all sessions
-        const now = Date.now();
-        for (const [, snapshot] of this.sessions) {
-          if (now - snapshot.lastEmittedAt < EMIT_THROTTLE_MS) continue;
-          const update = this.computeEquity(snapshot, {}, now);
-          if (update) {
-            snapshot.lastEmittedAt = now;
-            try {
-              snapshot.callback(update);
-            } catch {
-              // ignore
-            }
-          }
-        }
-        await this.sleep(2_000);
-        continue;
-      }
 
-      try {
-        // watchTickers resolves each time any ticker updates
-        const tickers = await this.exchange.watchTickers(allSymbols);
+      if (allSymbols.length > 0) {
+        // Fetch all tickers in one REST call
+        const tickers = await this.exchange.fetchTickers(allSymbols);
 
-        if (!this.running) break;
-
-        this.loopIterations++;
-
-        // Update persistent price cache with new ticker data.
-        // watchTickers returns only the symbol(s) that just updated,
-        // so we accumulate prices across ticks in priceCache.
         for (const [symbol, ticker] of Object.entries(tickers)) {
-          // CCXT normalises the mark price onto ticker.markPrice (number | undefined)
-          // Fall back to ticker.info.markPrice (string from raw Bybit response)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const t = ticker as any;
           const mark =
@@ -255,70 +175,49 @@ export class PriceWatcher {
               ? t.markPrice
               : typeof t.info?.markPrice === 'string'
                 ? parseFloat(t.info.markPrice)
-                : undefined;
+                : typeof t.last === 'number'
+                  ? t.last
+                  : undefined;
 
           if (mark !== undefined && !isNaN(mark) && mark > 0) {
             this.priceCache[symbol] = mark;
           }
         }
+      }
 
-        if (!this.loggedFirstTick && Object.keys(this.priceCache).length > 0) {
-          console.log(`[PriceWatcher] Receiving prices — cache has ${Object.keys(this.priceCache).length} symbols`);
-          this.loggedFirstTick = true;
-        }
+      this.pollCount++;
 
-        // Periodic heartbeat log (every 30 seconds)
-        const now = Date.now();
-        if (now - this.lastHeartbeat > 30_000) {
-          this.lastHeartbeat = now;
-          console.log(
-            `[PriceWatcher] heartbeat: ${this.loopIterations} ticks, ${Object.keys(this.priceCache).length} cached prices, ${this.sessions.size} sessions`,
-          );
-        }
+      // Log first poll and periodic heartbeat (every 30 polls = ~60s)
+      if (this.pollCount === 1) {
+        console.log(
+          `[PriceWatcher] First poll: ${Object.keys(this.priceCache).length} prices for ${this.sessions.size} sessions`,
+        );
+      } else if (this.pollCount % 30 === 0) {
+        console.log(
+          `[PriceWatcher] heartbeat: poll #${this.pollCount}, ${Object.keys(this.priceCache).length} prices, ${this.sessions.size} sessions`,
+        );
+      }
 
-        // Emit equity updates for each registered session
-        for (const [sessionId, snapshot] of this.sessions) {
-          // Throttle per session
-          if (now - snapshot.lastEmittedAt < EMIT_THROTTLE_MS) continue;
-
-          // Check that we have mark prices for at least one of the session symbols
-          const hasAnyPrice = snapshot.positions.some(
-            p => this.priceCache[p.symbol] !== undefined,
-          );
-          // Allow emission even with no positions (equity = cash)
-          if (!hasAnyPrice && snapshot.positions.length > 0) continue;
-
-          const update = this.computeEquity(snapshot, this.priceCache, now);
-          if (update) {
-            snapshot.lastEmittedAt = now;
-            try {
-              snapshot.callback(update);
-            } catch (err) {
-              console.error(
-                `[PriceWatcher] Callback error for session ${sessionId}:`,
-                err,
-              );
-            }
+      // Emit equity updates for ALL registered sessions
+      const now = Date.now();
+      for (const [sessionId, snapshot] of this.sessions) {
+        const update = this.computeEquity(snapshot, now);
+        if (update) {
+          try {
+            snapshot.callback(update);
+          } catch (err) {
+            console.error(
+              `[PriceWatcher] Callback error for session ${sessionId}:`,
+              err,
+            );
           }
         }
-      } catch (err) {
-        if (!this.running) break;
-
-        const errMsg = err instanceof Error ? err.message : String(err);
-
-        // "already subscribed" is informational — subscriptions are active,
-        // just retry immediately without back-off
-        if (errMsg.includes('already subscribed')) {
-          console.warn(`[PriceWatcher] Already subscribed (retrying immediately)`);
-          continue;
-        }
-
-        // Log and continue — CCXT Pro will reconnect automatically
-        console.warn(`[PriceWatcher] watchTickers error (will retry): ${errMsg}`);
-
-        // Short back-off before retrying to avoid tight error loops
-        await this.sleep(1_000);
       }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.warn(`[PriceWatcher] Poll error: ${errMsg}`);
+    } finally {
+      this.polling = false;
     }
   }
 
@@ -326,9 +225,6 @@ export class PriceWatcher {
   // Helpers
   // --------------------------------------------------------------------------
 
-  /**
-   * Collect the union of all symbols across all registered sessions.
-   */
   private collectAllSymbols(): string[] {
     const set = new Set<string>();
     for (const snapshot of this.sessions.values()) {
@@ -340,27 +236,19 @@ export class PriceWatcher {
   }
 
   /**
-   * Compute equity for a session snapshot using the provided mark prices.
-   *
-   * Equity = cash + sum of position values at mark price
-   *
-   * Position value:
-   *   - Long:  markPrice * amount
-   *   - Short: (2 * entryPrice - markPrice) * amount
-   *     (this is collateral + unrealized PnL, keeping value positive when trade is profitable)
+   * Compute equity for a session using cached mark prices.
+   * Always returns an update (uses entry price as fallback for missing marks).
    */
   private computeEquity(
     snapshot: SessionSnapshot,
-    markPrices: Record<string, number>,
     now: number,
-  ): EquityUpdate | null {
+  ): EquityUpdate {
     if (snapshot.positions.length === 0) {
-      // No open positions — equity equals cash
       return {
         equity: snapshot.cash,
         cash: snapshot.cash,
         positionsValue: 0,
-        markPrices,
+        markPrices: {},
         timestamp: now,
       };
     }
@@ -369,14 +257,9 @@ export class PriceWatcher {
     const relevantMarkPrices: Record<string, number> = {};
 
     for (const pos of snapshot.positions) {
-      const mark = markPrices[pos.symbol];
+      const mark = this.priceCache[pos.symbol];
       if (mark === undefined) {
-        // Use entry price as fallback if mark price unavailable for this symbol
-        const fallback =
-          pos.direction === 'long'
-            ? pos.entryPrice * pos.amount
-            : pos.entryPrice * pos.amount; // same value either way (no PnL known)
-        positionsValue += fallback;
+        positionsValue += pos.entryPrice * pos.amount;
         continue;
       }
 
@@ -385,26 +268,17 @@ export class PriceWatcher {
       if (pos.direction === 'long') {
         positionsValue += mark * pos.amount;
       } else {
-        // Short: collateral (entryPrice * amount) + unrealized PnL (entryPrice - markPrice) * amount
-        // = (2 * entryPrice - markPrice) * amount
         positionsValue += (2 * pos.entryPrice - mark) * pos.amount;
       }
     }
 
-    const equity = snapshot.cash + positionsValue;
-
     return {
-      equity,
+      equity: snapshot.cash + positionsValue,
       cash: snapshot.cash,
       positionsValue,
       markPrices: relevantMarkPrices,
       timestamp: now,
     };
-  }
-
-  /** Simple promise-based sleep helper. */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 

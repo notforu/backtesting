@@ -417,15 +417,8 @@ export class SessionManager {
           };
           // Forward directly to SSE listeners (not persisted, not sent to Telegram)
           const listeners = this.eventListeners.get(sessionId);
-          const listenerCount = listeners?.size ?? 0;
-          // One-time diagnostic log per session
-          if (!(this as any)._loggedRtSession?.[sessionId]) {
-            if (!(this as any)._loggedRtSession) (this as any)._loggedRtSession = {};
-            (this as any)._loggedRtSession[sessionId] = true;
-            console.log(`[SessionManager] RT callback fired for ${sessionId.substring(0, 8)}: equity=${update.equity.toFixed(2)}, listeners=${listenerCount}`);
-          }
-          if (listenerCount > 0) {
-            for (const listener of listeners!) {
+          if (listeners && listeners.size > 0) {
+            for (const listener of listeners) {
               try {
                 listener(event);
               } catch {
