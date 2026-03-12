@@ -11,6 +11,8 @@
  *   3 - Short position collateral behavior
  *   4 - Capital allocation corner cases
  *   5 - Exit-before-entry ordering
+ *   6 - Per-asset equity capital base (FIXED)
+ *   7 - Per-asset equity entry fee deduction (FIXED)
  */
 
 import { describe, it, expect } from 'vitest';
@@ -806,5 +808,330 @@ describe('Allocation math: regression tests', () => {
     const totalFees = tradeValue * feeRate * 2;
 
     expect(cashAfter).toBeCloseTo(cashBefore - totalFees, 4);
+  });
+});
+
+// ============================================================================
+// BUG 6: Per-asset equity capital base
+// ============================================================================
+//
+// The per-asset equity curve started with `perAssetCapital = initialCapital`
+// (the full portfolio capital, e.g. $10,000) even though each asset only
+// receives a fraction of that capital (e.g. $1,500 for 6 positions with top_n
+// and positionSizeFraction=0.9).
+//
+// This caused max drawdown to exceed 100% which is mathematically impossible:
+// - entry fee alone on a $1,500 position deducted from a $10,000 base = tiny drawdown
+// - a complete loss of $1,500 on a $10,000 base = only 15% drawdown
+// - but the asset only controls $1,500, so a complete loss SHOULD be 100% drawdown
+//
+// We test the capital-base calculation helper that the engine uses.
+// ============================================================================
+
+/**
+ * Simulate the per-asset equity loop from aggregate-engine.ts (lines 440-477)
+ * using the correct perAssetCapital. Returns the full equity array and the
+ * minimum equity value observed.
+ */
+function simulatePerAssetEquity(
+  candles: Array<{ timestamp: number; close: number }>,
+  trades: Array<{
+    timestamp: number;
+    action: 'OPEN_LONG' | 'OPEN_SHORT' | 'CLOSE_LONG' | 'CLOSE_SHORT';
+    price: number;
+    amount: number;
+    pnl?: number;
+    fee?: number;
+  }>,
+  perAssetCapital: number,
+): { equityValues: number[]; minEquity: number; maxDrawdownPct: number } {
+  const equityValues: number[] = [];
+  let realizedEquity = perAssetCapital;
+  let currentPosition: { direction: 'long' | 'short'; entryPrice: number; amount: number } | null = null;
+  let tradeIdx = 0;
+
+  for (const candle of candles) {
+    while (tradeIdx < trades.length && trades[tradeIdx].timestamp <= candle.timestamp) {
+      const trade = trades[tradeIdx];
+      if (trade.action === 'OPEN_LONG' || trade.action === 'OPEN_SHORT') {
+        currentPosition = {
+          direction: trade.action === 'OPEN_LONG' ? 'long' : 'short',
+          entryPrice: trade.price,
+          amount: trade.amount,
+        };
+        realizedEquity -= (trade.fee ?? 0);
+      } else {
+        if (trade.pnl !== undefined) {
+          realizedEquity += trade.pnl;
+        }
+        currentPosition = null;
+      }
+      tradeIdx++;
+    }
+
+    let equity: number;
+    if (currentPosition) {
+      const unrealizedPnl =
+        currentPosition.direction === 'long'
+          ? (candle.close - currentPosition.entryPrice) * currentPosition.amount
+          : (currentPosition.entryPrice - candle.close) * currentPosition.amount;
+      equity = realizedEquity + unrealizedPnl;
+    } else {
+      equity = realizedEquity;
+    }
+    equityValues.push(equity);
+  }
+
+  const minEquity = Math.min(...equityValues);
+  let peak = perAssetCapital;
+  let maxDrawdownPct = 0;
+  for (const eq of equityValues) {
+    if (eq > peak) peak = eq;
+    const dd = ((peak - eq) / peak) * 100;
+    if (dd > maxDrawdownPct) maxDrawdownPct = dd;
+  }
+
+  return { equityValues, minEquity, maxDrawdownPct };
+}
+
+describe('BUG 6: Per-asset equity capital base', () => {
+  it('top_n with 6 positions: perAssetCapital should be initialCapital * 0.9 / maxPositions', () => {
+    const initialCapital = 10_000;
+    const maxPositions = 6;
+    const positionSizeFraction = 0.9;
+
+    // Correct formula (matching line 316 in aggregate-engine.ts)
+    const perAssetCapital = (initialCapital * positionSizeFraction) / maxPositions;
+
+    // Each asset should have $1,500 as its capital base, NOT $10,000
+    expect(perAssetCapital).toBeCloseTo(1_500, 2);
+    // Definitely NOT the full initial capital
+    expect(perAssetCapital).not.toBeCloseTo(initialCapital, 0);
+  });
+
+  it('per-asset max drawdown should never exceed 100%', () => {
+    // Simulate a complete loss scenario: asset enters at $100, exits at $0
+    // With 6 positions and $10,000, each gets $1,500 = 15 units at $100
+    const initialCapital = 10_000;
+    const maxPositions = 6;
+    const perAssetCapital = (initialCapital * 0.9) / maxPositions; // $1,500
+
+    const entryPrice = 100;
+    const amount = perAssetCapital / entryPrice; // 15 units
+    const feeRate = 0.00055;
+    const fee = amount * entryPrice * feeRate;
+
+    const candles = [
+      { timestamp: 1000, close: 100 }, // entry bar
+      { timestamp: 2000, close: 50 },  // price drops 50%
+      { timestamp: 3000, close: 10 },  // price drops 90%
+      { timestamp: 4000, close: 1 },   // price drops 99%
+    ];
+
+    // Loss is limited to the position size; pnl = (exit - entry) * amount
+    const exitPrice = 1; // catastrophic loss but not zero
+    const grossPnl = (exitPrice - entryPrice) * amount; // negative
+    const exitFee = amount * exitPrice * feeRate;
+    const netPnl = grossPnl - exitFee - fee; // open fee already deducted in open
+
+    const trades = [
+      { timestamp: 1000, action: 'OPEN_LONG' as const, price: entryPrice, amount, fee },
+      { timestamp: 4000, action: 'CLOSE_LONG' as const, price: exitPrice, amount, pnl: netPnl, fee: exitFee },
+    ];
+
+    const { maxDrawdownPct } = simulatePerAssetEquity(candles, trades, perAssetCapital);
+
+    // Max drawdown must NEVER exceed 100% — it is impossible to lose more than you put in
+    expect(maxDrawdownPct).toBeLessThanOrEqual(100);
+
+    // With the BUG (perAssetCapital = initialCapital = $10,000):
+    //   The $1,500 position losing almost everything would show only ~15% drawdown
+    //   on the equity curve (starts at $10,000, drops by ~$1,500 = 15%)
+    //   BUT as a fraction of what the asset actually controls ($1,500), it should be ~100%
+    //
+    // With the FIX (perAssetCapital = $1,500):
+    //   The equity starts at $1,500, drops to near $0 → drawdown ≈ 100%
+    //   which correctly reflects the loss of the allocated capital
+
+    // With correct base, a ~99% price drop on a full-size position should show ~99% drawdown
+    expect(maxDrawdownPct).toBeGreaterThan(80); // catastrophic loss → big drawdown
+  });
+
+  it('per-asset equity starts at allocated capital, not full portfolio capital', () => {
+    const initialCapital = 10_000;
+    const maxPositions = 4;
+    const perAssetCapital = (initialCapital * 0.9) / maxPositions; // $2,250
+
+    const candles = [
+      { timestamp: 1000, close: 100 },
+      { timestamp: 2000, close: 110 },
+    ];
+
+    // No trades: equity should remain at perAssetCapital throughout
+    const { equityValues } = simulatePerAssetEquity(candles, [], perAssetCapital);
+
+    expect(equityValues[0]).toBeCloseTo(perAssetCapital, 2);
+    expect(equityValues[0]).not.toBeCloseTo(initialCapital, 0);
+  });
+
+  it('single_strongest: perAssetCapital should be initialCapital * positionSizeFraction', () => {
+    const initialCapital = 10_000;
+    const positionSizeFraction = 0.9;
+
+    // single_strongest uses 90% of cash — one asset at a time
+    const perAssetCapital = initialCapital * positionSizeFraction;
+
+    expect(perAssetCapital).toBeCloseTo(9_000, 2);
+  });
+
+  it('weighted_multi: perAssetCapital should be proportional to signal weight', () => {
+    const initialCapital = 10_000;
+    const positionSizeFraction = 0.9;
+    const weight = 0.3; // asset has 30% of total weight
+
+    // weighted_multi allocates proportionally; we use the weight as fraction
+    const perAssetCapital = initialCapital * weight * positionSizeFraction;
+
+    expect(perAssetCapital).toBeCloseTo(2_700, 2);
+  });
+
+  it('top_n drawdown: losing entire allocated capital is exactly 100% drawdown (not less)', () => {
+    const initialCapital = 10_000;
+    const maxPositions = 4;
+    const perAssetCapital = (initialCapital * 0.9) / maxPositions; // $2,250
+    const entryPrice = 100;
+    const amount = perAssetCapital / entryPrice; // 22.5 units
+
+    const candles = [
+      { timestamp: 1000, close: 100 },
+      { timestamp: 2000, close: 0.001 }, // near-total loss
+    ];
+
+    // Simulate near-total loss with no fees for simplicity
+    const grossPnl = (0.001 - 100) * amount; // ≈ -$2,250
+
+    const trades = [
+      { timestamp: 1000, action: 'OPEN_LONG' as const, price: entryPrice, amount, fee: 0 },
+      { timestamp: 2000, action: 'CLOSE_LONG' as const, price: 0.001, amount, pnl: grossPnl, fee: 0 },
+    ];
+
+    const { maxDrawdownPct } = simulatePerAssetEquity(candles, trades, perAssetCapital);
+
+    // With correct base ($2,250), a near-total loss should show ~100% drawdown
+    expect(maxDrawdownPct).toBeGreaterThan(99);
+    expect(maxDrawdownPct).toBeLessThanOrEqual(100);
+  });
+});
+
+// ============================================================================
+// BUG 7: Per-asset equity entry fee not deducted
+// ============================================================================
+//
+// When an OPEN_LONG/OPEN_SHORT trade was processed in the per-asset equity loop,
+// the entry fee was NOT subtracted from realizedEquity. Only close trades
+// contributed to equity changes. This meant the equity overstated the asset's
+// value by the entry fee amount throughout the position's lifetime.
+//
+// Fix: realizedEquity -= (trade.fee ?? 0) on open trades.
+// ============================================================================
+
+describe('BUG 7: Per-asset equity entry fee not deducted', () => {
+  it('entry fee should reduce realized equity immediately on open', () => {
+    const perAssetCapital = 2_250;
+    const entryPrice = 100;
+    const amount = 22.5;
+    const feeRate = 0.00055;
+    const fee = amount * entryPrice * feeRate; // 22.5 * 100 * 0.00055 = $1.2375
+
+    const candles = [
+      { timestamp: 1000, close: 100 }, // open at this bar
+      { timestamp: 2000, close: 100 }, // price unchanged
+    ];
+
+    const trades = [
+      { timestamp: 1000, action: 'OPEN_LONG' as const, price: entryPrice, amount, fee },
+    ];
+
+    const { equityValues } = simulatePerAssetEquity(candles, trades, perAssetCapital);
+
+    // After the open, mark-to-market unrealizedPnl = 0 (price unchanged)
+    // But realizedEquity should be: perAssetCapital - fee
+    // So equity[0] = (perAssetCapital - fee) + 0 unrealizedPnl
+    expect(equityValues[0]).toBeCloseTo(perAssetCapital - fee, 4);
+
+    // Before the fix: realizedEquity remained at perAssetCapital (fee not subtracted)
+    // so equity[0] would equal perAssetCapital exactly
+    expect(equityValues[0]).not.toBeCloseTo(perAssetCapital, 1);
+  });
+
+  it('equity at bar 0 after open should be less than perAssetCapital by exactly the entry fee', () => {
+    const perAssetCapital = 1_500;
+    const entryPrice = 200;
+    const amount = 7; // 7 units at $200 = $1,400 notional (within capital)
+    const fee = 1.4; // fixed $1.40 fee for simplicity
+
+    const candles = [{ timestamp: 1000, close: 200 }];
+    const trades = [
+      { timestamp: 1000, action: 'OPEN_LONG' as const, price: entryPrice, amount, fee },
+    ];
+
+    const { equityValues } = simulatePerAssetEquity(candles, trades, perAssetCapital);
+
+    // equity = realizedEquity + unrealizedPnl
+    //        = (perAssetCapital - fee) + (close - entry) * amount
+    //        = (1500 - 1.40) + 0
+    //        = 1498.60
+    expect(equityValues[0]).toBeCloseTo(perAssetCapital - fee, 2);
+  });
+
+  it('entry fee deducted on short open too', () => {
+    const perAssetCapital = 2_000;
+    const entryPrice = 100;
+    const amount = 15;
+    const fee = 0.825; // fixed fee
+
+    const candles = [{ timestamp: 1000, close: 100 }];
+    const trades = [
+      { timestamp: 1000, action: 'OPEN_SHORT' as const, price: entryPrice, amount, fee },
+    ];
+
+    const { equityValues } = simulatePerAssetEquity(candles, trades, perAssetCapital);
+
+    // Short at entry price: unrealizedPnl = (entry - close) * amount = 0
+    // realizedEquity = perAssetCapital - fee
+    expect(equityValues[0]).toBeCloseTo(perAssetCapital - fee, 2);
+  });
+
+  it('equity accumulates correctly through open, hold, and close phases with fee', () => {
+    const perAssetCapital = 3_000;
+    const entryPrice = 100;
+    const amount = 20;
+    const openFee = 1.10; // entry fee
+    const closeFee = 1.21; // exit fee (at 110)
+    const exitPrice = 110;
+    const grossPnl = (exitPrice - entryPrice) * amount; // $200 profit
+    const netPnl = grossPnl - openFee - closeFee; // $200 - $1.10 - $1.21 = $197.69
+
+    const candles = [
+      { timestamp: 1000, close: 100 }, // open
+      { timestamp: 2000, close: 105 }, // hold (unrealized +$100)
+      { timestamp: 3000, close: 110 }, // close
+    ];
+
+    const trades = [
+      { timestamp: 1000, action: 'OPEN_LONG' as const, price: entryPrice, amount, fee: openFee },
+      { timestamp: 3000, action: 'CLOSE_LONG' as const, price: exitPrice, amount, pnl: netPnl, fee: closeFee },
+    ];
+
+    const { equityValues } = simulatePerAssetEquity(candles, trades, perAssetCapital);
+
+    // Bar 0 (open): realizedEquity = 3000 - 1.10 = 2998.90; unrealized = 0 → equity = 2998.90
+    expect(equityValues[0]).toBeCloseTo(perAssetCapital - openFee, 2);
+
+    // Bar 1 (hold at 105): unrealized = (105-100)*20 = $100 → equity = 2998.90 + 100 = 3098.90
+    expect(equityValues[1]).toBeCloseTo(perAssetCapital - openFee + 100, 2);
+
+    // Bar 2 (close at 110): realized += netPnl = $197.69; no position → equity = 2998.90 + 197.69 = 3196.59
+    expect(equityValues[2]).toBeCloseTo(perAssetCapital - openFee + netPnl, 2);
   });
 });

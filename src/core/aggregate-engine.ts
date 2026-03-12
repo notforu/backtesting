@@ -157,6 +157,10 @@ export async function runAggregateBacktest(
   let totalFundingIncome = 0;
   const perSymbolFunding = new Map<string, number>();
 
+  // Track the capital allocated to each symbol (used as the per-asset equity base).
+  // Populated when each trade is first opened so the base matches the actual allocation.
+  const perSymbolAllocatedCapital = new Map<string, number>();
+
   // 4. Main loop over unified timeline
   for (let ti = 0; ti < timeline.length; ti++) {
     const timestamp = timeline[ti];
@@ -330,6 +334,12 @@ export async function runAggregateBacktest(
           trade = portfolio.openShort(awd.config.symbol, amount, entryPrice, timestamp, feeRate);
         }
 
+        // Record the capital allocated to this symbol for per-asset equity base calculation.
+        // Only set on the FIRST trade so re-entries don't override the original allocation.
+        if (!perSymbolAllocatedCapital.has(awd.config.symbol)) {
+          perSymbolAllocatedCapital.set(awd.config.symbol, capitalForTrade);
+        }
+
         // Attach the nearest funding rate to the open trade (futures mode)
         if (awd.fundingRates.length > 0) {
           const nearestFR = awd.fundingRates.reduce((prev, curr) =>
@@ -430,7 +440,16 @@ export async function runAggregateBacktest(
     // Build a dense bar-by-bar equity curve for this asset.
     // Iterating candle-by-candle (instead of trade-by-trade) gives a continuous
     // equity series so that max drawdown and Sharpe are computed correctly.
-    const perAssetCapital = initialCapital;
+    //
+    // BUG 6 FIX: Use the actual capital allocated to this asset, not the full portfolio
+    // capital. This prevents per-asset drawdown from being artificially small (e.g.
+    // showing 15% drawdown when the asset lost 100% of its allocated capital).
+    //
+    // Priority: use tracked allocation from signal execution; fall back to
+    // a proportional share of initial capital if the symbol had no trades.
+    const fallbackPerAssetCapital = initialCapital / adaptersWithData.length;
+    const perAssetCapital = perSymbolAllocatedCapital.get(symbol) ?? fallbackPerAssetCapital;
+
     const assetEquityTimestamps: number[] = [];
     const assetEquityValues: number[] = [];
     let realizedEquity = perAssetCapital;
@@ -447,6 +466,10 @@ export async function runAggregateBacktest(
             entryPrice: trade.price,
             amount: trade.amount,
           };
+          // BUG 7 FIX: Deduct the entry fee immediately when the position is opened.
+          // Previously, only close trades updated realizedEquity, so the entry fee
+          // was never reflected in the per-asset equity curve.
+          realizedEquity -= (trade.fee ?? 0);
         } else {
           // Close trade — realize price PnL and funding income earned during the position
           if (trade.pnl !== undefined) {
