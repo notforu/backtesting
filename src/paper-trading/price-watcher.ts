@@ -63,6 +63,9 @@ export class PriceWatcher {
   private loopIterations = 0;
   private lastHeartbeat = 0;
 
+  /** Persistent mark price cache — accumulates prices across watchTickers ticks. */
+  private priceCache: Record<string, number> = {};
+
   /** Resolves when watchLoop() should stop (set by stop()). */
   private stopSignal: (() => void) | null = null;
 
@@ -239,8 +242,9 @@ export class PriceWatcher {
 
         this.loopIterations++;
 
-        // Extract mark prices from the returned ticker map
-        const markPrices: Record<string, number> = {};
+        // Update persistent price cache with new ticker data.
+        // watchTickers returns only the symbol(s) that just updated,
+        // so we accumulate prices across ticks in priceCache.
         for (const [symbol, ticker] of Object.entries(tickers)) {
           // CCXT normalises the mark price onto ticker.markPrice (number | undefined)
           // Fall back to ticker.info.markPrice (string from raw Bybit response)
@@ -254,12 +258,12 @@ export class PriceWatcher {
                 : undefined;
 
           if (mark !== undefined && !isNaN(mark) && mark > 0) {
-            markPrices[symbol] = mark;
+            this.priceCache[symbol] = mark;
           }
         }
 
-        if (!this.loggedFirstTick && Object.keys(markPrices).length > 0) {
-          console.log(`[PriceWatcher] Receiving prices for ${Object.keys(markPrices).length} symbols`);
+        if (!this.loggedFirstTick && Object.keys(this.priceCache).length > 0) {
+          console.log(`[PriceWatcher] Receiving prices — cache has ${Object.keys(this.priceCache).length} symbols`);
           this.loggedFirstTick = true;
         }
 
@@ -268,7 +272,7 @@ export class PriceWatcher {
         if (now - this.lastHeartbeat > 30_000) {
           this.lastHeartbeat = now;
           console.log(
-            `[PriceWatcher] heartbeat: ${this.loopIterations} ticks, ${Object.keys(markPrices).length} prices, ${this.sessions.size} sessions`,
+            `[PriceWatcher] heartbeat: ${this.loopIterations} ticks, ${Object.keys(this.priceCache).length} cached prices, ${this.sessions.size} sessions`,
           );
         }
 
@@ -279,12 +283,12 @@ export class PriceWatcher {
 
           // Check that we have mark prices for at least one of the session symbols
           const hasAnyPrice = snapshot.positions.some(
-            p => markPrices[p.symbol] !== undefined,
+            p => this.priceCache[p.symbol] !== undefined,
           );
           // Allow emission even with no positions (equity = cash)
           if (!hasAnyPrice && snapshot.positions.length > 0) continue;
 
-          const update = this.computeEquity(snapshot, markPrices, now);
+          const update = this.computeEquity(snapshot, this.priceCache, now);
           if (update) {
             snapshot.lastEmittedAt = now;
             try {
