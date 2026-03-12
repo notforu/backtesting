@@ -17,6 +17,8 @@ import type { PaperEquitySnapshot } from '../../types';
 interface PaperEquityChartProps {
   snapshots: PaperEquitySnapshot[];
   height?: number;
+  /** Optional real-time equity point to append as the latest value between ticks */
+  realtimePoint?: { equity: number; timestamp: number } | null;
 }
 
 // Convert millisecond timestamp to TradingView time format
@@ -30,7 +32,7 @@ const chartColors = {
   gridColor: '#1F2937',  // gray-800
 };
 
-export function PaperEquityChart({ snapshots, height = 250 }: PaperEquityChartProps) {
+export function PaperEquityChart({ snapshots, height = 250, realtimePoint }: PaperEquityChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -121,20 +123,36 @@ export function PaperEquityChart({ snapshots, height = 250 }: PaperEquityChartPr
     }
   }, [height]);
 
-  // Update data when snapshots change
+  // Update data when snapshots or real-time point changes
   useEffect(() => {
-    if (!seriesRef.current || snapshots.length === 0) return;
+    if (!seriesRef.current) return;
 
     const data = snapshots.map((s) => ({
       time: toChartTime(s.timestamp),
       value: s.equity,
     }));
+
+    // Append the real-time point as the latest data point if it is newer
+    // than the last snapshot (i.e. between ticks).
+    if (realtimePoint) {
+      const lastTs = snapshots.length > 0 ? snapshots[snapshots.length - 1].timestamp : 0;
+      if (realtimePoint.timestamp >= lastTs) {
+        // Use a slightly newer timestamp when equal to ensure chart ordering
+        const rtTime = toChartTime(
+          realtimePoint.timestamp > lastTs ? realtimePoint.timestamp : realtimePoint.timestamp + 1000,
+        );
+        data.push({ time: rtTime, value: realtimePoint.equity });
+      }
+    }
+
+    if (data.length === 0) return;
+
     seriesRef.current.setData(data);
 
     if (chartRef.current) {
       chartRef.current.timeScale().fitContent();
     }
-  }, [snapshots]);
+  }, [snapshots, realtimePoint]);
 
   return (
     <div className="relative rounded-lg bg-gray-900 border border-gray-700 overflow-hidden">

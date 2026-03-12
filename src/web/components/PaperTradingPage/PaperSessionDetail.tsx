@@ -16,6 +16,7 @@ import {
   usePaperSessionControl,
   usePaperSessionSSE,
   usePaperSessionEvents,
+  useSessionEquity,
 } from '../../hooks/usePaperTrading';
 import { useCandles } from '../../hooks/useBacktest';
 import { usePriceStream } from '../../hooks/usePriceStream';
@@ -240,12 +241,15 @@ export function PaperSessionDetail({ sessionId }: PaperSessionDetailProps) {
     setEquityResolution('All');
   }, [sessionId]);
 
+  const liveEquity = useSessionEquity(sessionId);
+
   const snapshots: PaperEquitySnapshot[] = equitySnapshots ?? [];
 
   const metrics = useMemo(() => {
     if (!session) return null;
-    return computePaperMetrics(displayedPaperTrades, session.initialCapital, session.currentEquity, snapshots);
-  }, [session, displayedPaperTrades, snapshots]);
+    const equityForMetrics = liveEquity?.equity ?? session.currentEquity;
+    return computePaperMetrics(displayedPaperTrades, session.initialCapital, equityForMetrics, snapshots);
+  }, [session, liveEquity, displayedPaperTrades, snapshots]);
 
   const sessionEvents = useMemo(() => {
     if (!activeAsset || !session) return undefined;
@@ -291,7 +295,10 @@ export function PaperSessionDetail({ sessionId }: PaperSessionDetailProps) {
 
   if (!session) return null;
 
-  const ret = returnPercent(session.currentEquity, session.initialCapital);
+  const displayEquity = liveEquity?.equity ?? session.currentEquity;
+  const displayCash = liveEquity?.cash ?? session.currentCash;
+  const displayPositionsValue = liveEquity?.positionsValue ?? (session.currentEquity - session.currentCash);
+  const ret = liveEquity?.returnPct ?? returnPercent(session.currentEquity, session.initialCapital);
   const isPositive = ret >= 0;
   const status = session.status;
   const isPending =
@@ -440,10 +447,10 @@ export function PaperSessionDetail({ sessionId }: PaperSessionDetailProps) {
 
       {/* Key metrics grid */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-        <MetricBox label="Equity" value={fmtUsd(session.currentEquity)} />
+        <MetricBox label="Equity" value={fmtUsd(displayEquity)} />
         <MetricBox label="Return" value={fmtPct(ret)} className={isPositive ? 'text-green-400' : 'text-red-400'} />
-        <MetricBox label="Cash" value={fmtUsd(session.currentCash)} />
-        <MetricBox label="Positions Value" value={fmtUsd(session.currentEquity - session.currentCash)} />
+        <MetricBox label="Cash" value={fmtUsd(displayCash)} />
+        <MetricBox label="Positions Value" value={fmtUsd(displayPositionsValue)} />
         <MetricBox label="Ticks" value={session.tickCount.toLocaleString()} />
         <MetricBox label="Next Tick">
           <NextTickCountdown nextTickAt={session.nextTickAt} />
@@ -508,6 +515,11 @@ export function PaperSessionDetail({ sessionId }: PaperSessionDetailProps) {
         sessionEvents={sessionEvents}
         frThresholds={frThresholds}
         activeLevels={activeLevels}
+        realtimePoint={
+          liveEquity?.realtimeTimestamp != null
+            ? { equity: liveEquity.equity, timestamp: liveEquity.realtimeTimestamp }
+            : null
+        }
       />
 
       {/* Positions & Orders */}

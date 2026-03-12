@@ -117,6 +117,8 @@ interface PaperChartSectionProps {
   sessionEvents: SessionEvent[] | undefined;
   frThresholds: { short: number | undefined; long: number | undefined };
   activeLevels: ActiveLevel[];
+  /** Optional real-time equity point to show as the latest value on the equity chart */
+  realtimePoint?: { equity: number; timestamp: number } | null;
 }
 
 const PORTFOLIO_TABS: { id: PortfolioChartTab; label: string }[] = [
@@ -142,6 +144,7 @@ export function PaperChartSection({
   sessionEvents,
   frThresholds,
   activeLevels,
+  realtimePoint,
 }: PaperChartSectionProps) {
   const sectionTitle = isAssetView
     ? `${activeAsset!.label} (${activeAsset!.timeframe})`
@@ -208,6 +211,7 @@ export function PaperChartSection({
             <PaperEquityChart
               snapshots={resampleSnapshots(snapshots, equityResolution)}
               height={450}
+              realtimePoint={realtimePoint}
             />
           )}
           {portfolioChartTab === 'drawdown' && (

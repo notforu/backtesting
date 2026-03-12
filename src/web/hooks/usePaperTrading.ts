@@ -3,7 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   listPaperSessions,
   getPaperSession,
@@ -19,7 +19,8 @@ import {
   subscribePaperSession,
   getPaperSessionEvents,
 } from '../api/client';
-import type { PaperTradingEvent, CreatePaperSessionRequest } from '../types';
+import type { PaperTradingEvent, CreatePaperSessionRequest, PaperSessionDetail } from '../types';
+import { useRealtimeEquityStore } from '../stores/realtimeEquityStore';
 
 // Query key factories
 const SESSIONS_KEY = ['paper-sessions'] as const;
@@ -134,6 +135,7 @@ export function usePaperSessionControl(sessionId: string | null) {
 
 export function usePaperSessionSSE(sessionId: string | null) {
   const queryClient = useQueryClient();
+  const setEquity = useRealtimeEquityStore((s) => s.setEquity);
   const unsubRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -163,27 +165,32 @@ export function usePaperSessionSSE(sessionId: string | null) {
           queryClient.invalidateQueries({ queryKey: eventsKey(sessionId) });
           break;
         case 'realtime_equity_update': {
-          // Directly update the cache — no network refetch needed for real-time prices
+          // Write to the Zustand store — this is the single source of truth for
+          // real-time equity across all components (sidebar, detail header, chart).
+          setEquity(sessionId, {
+            equity: event.equity,
+            cash: event.cash,
+            positionsValue: event.positionsValue,
+            markPrices: event.markPrices ?? {},
+            timestamp: event.timestamp,
+          });
+
+          // Also keep positions' unrealizedPnl in sync for the detail view
           queryClient.setQueryData(sessionKey(sessionId), (old: unknown) => {
             if (!old || typeof old !== 'object') return old;
-            const session = old as Record<string, unknown>;
+            const session = old as PaperSessionDetail;
             const updatedPositions = Array.isArray(session.positions)
-              ? session.positions.map((pos: Record<string, unknown>) => {
-                  const mark = event.markPrices?.[pos.symbol as string];
+              ? session.positions.map((pos) => {
+                  const mark = event.markPrices?.[pos.symbol];
                   if (mark === undefined) return pos;
                   const pnl =
                     pos.direction === 'long'
-                      ? (mark - (pos.entryPrice as number)) * (pos.amount as number)
-                      : ((pos.entryPrice as number) - mark) * (pos.amount as number);
+                      ? (mark - pos.entryPrice) * pos.amount
+                      : (pos.entryPrice - mark) * pos.amount;
                   return { ...pos, unrealizedPnl: pnl };
                 })
               : session.positions;
-            return {
-              ...session,
-              currentEquity: event.equity,
-              currentCash: event.cash,
-              positions: updatedPositions,
-            };
+            return { ...session, positions: updatedPositions };
           });
           break;
         }
@@ -198,5 +205,45 @@ export function usePaperSessionSSE(sessionId: string | null) {
       unsubRef.current?.();
       unsubRef.current = null;
     };
-  }, [sessionId, queryClient]);
+  }, [sessionId, queryClient, setEquity]);
+}
+
+// ============================================================================
+// useSessionEquity — single source of truth for equity across all components
+// ============================================================================
+
+export interface SessionEquityValues {
+  equity: number;
+  cash: number;
+  positionsValue: number;
+  returnPct: number;
+  /** The timestamp of the real-time update, if one exists. Null when falling back to DB data. */
+  realtimeTimestamp: number | null;
+}
+
+/**
+ * Returns the most up-to-date equity for a session.
+ * Real-time values from the SSE store take precedence over DB-backed React Query data.
+ * Falls back to the React Query session data when no real-time update exists yet.
+ */
+export function useSessionEquity(sessionId: string | null): SessionEquityValues | null {
+  const realtimeEquity = useRealtimeEquityStore((s) =>
+    sessionId ? s.realtimeEquity[sessionId] : undefined,
+  );
+  const { data: session } = usePaperSession(sessionId);
+
+  return useMemo(() => {
+    if (!session) return null;
+
+    const equity = realtimeEquity?.equity ?? session.currentEquity;
+    const cash = realtimeEquity?.cash ?? session.currentCash;
+    const positionsValue = realtimeEquity?.positionsValue ?? (session.currentEquity - session.currentCash);
+    const returnPct =
+      session.initialCapital > 0
+        ? ((equity - session.initialCapital) / session.initialCapital) * 100
+        : 0;
+    const realtimeTimestamp = realtimeEquity?.timestamp ?? null;
+
+    return { equity, cash, positionsValue, returnPct, realtimeTimestamp };
+  }, [realtimeEquity, session]);
 }

@@ -14,6 +14,7 @@ import {
   useDeletePaperSession,
   usePaperSessionControl,
   usePaperSessionSSE,
+  useSessionEquity,
 } from '../../hooks/usePaperTrading';
 import { CreatePaperSessionModal } from './CreatePaperSessionModal';
 import { PaperEquityChart } from './PaperEquityChart';
@@ -156,7 +157,9 @@ export interface SessionCardProps {
 }
 
 export function SessionCard({ session, isSelected, onSelect }: SessionCardProps) {
-  const ret = returnPercent(session.currentEquity, session.initialCapital);
+  const liveEquity = useSessionEquity(session.id);
+  const equity = liveEquity?.equity ?? session.currentEquity;
+  const ret = liveEquity?.returnPct ?? returnPercent(session.currentEquity, session.initialCapital);
   const isPositive = ret >= 0;
 
   return (
@@ -178,7 +181,7 @@ export function SessionCard({ session, isSelected, onSelect }: SessionCardProps)
         <StatusBadge status={session.status} />
       </div>
       <div className="flex items-center justify-between mt-2">
-        <span className="text-sm text-gray-300">{fmtUsd(session.currentEquity)}</span>
+        <span className="text-sm text-gray-300">{fmtUsd(equity)}</span>
         <span className={`text-sm font-medium ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
           {fmtPct(ret)}
         </span>
