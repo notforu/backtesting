@@ -258,7 +258,7 @@ describe('POST /api/aggregations', () => {
     expect(mockSaveAggregationConfig).not.toHaveBeenCalled();
   });
 
-  it('returns 500 when findOrCreateStrategyConfig throws', async () => {
+  it('returns 500 when findOrCreateStrategyConfig throws a non-validation error', async () => {
     mockFindOrCreateStrategyConfig.mockRejectedValue(new Error('DB connection refused'));
 
     const response = await app.inject({
@@ -271,6 +271,31 @@ describe('POST /api/aggregations', () => {
     });
 
     expect(response.statusCode).toBe(500);
+    expect(mockSaveAggregationConfig).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when findOrCreateStrategyConfig throws empty params error', async () => {
+    mockFindOrCreateStrategyConfig.mockRejectedValue(
+      new Error(
+        'Cannot create strategy config for "unknown-strategy" with empty params. ' +
+        'Either provide params explicitly or ensure the strategy defines default parameters.'
+      )
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/aggregations',
+      payload: {
+        name: 'Empty Params Test',
+        subStrategies: [
+          { strategyName: 'unknown-strategy', symbol: 'BTC/USDT', timeframe: '4h' },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain('Cannot create strategy config');
+    expect(response.json().error).toContain('empty params');
     expect(mockSaveAggregationConfig).not.toHaveBeenCalled();
   });
 

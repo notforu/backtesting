@@ -464,7 +464,30 @@ describe('POST /api/strategy-configs', () => {
     expect(response.json().error).toBe('Validation error');
   });
 
-  it('returns 500 when service throws', async () => {
+  it('returns 400 when service throws empty params error', async () => {
+    mockFindOrCreateStrategyConfig.mockRejectedValueOnce(
+      new Error(
+        'Cannot create strategy config for "unknown-strategy" with empty params. ' +
+        'Either provide params explicitly or ensure the strategy defines default parameters.'
+      )
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/strategy-configs',
+      payload: {
+        strategyName: 'unknown-strategy',
+        symbol: 'BTC/USDT',
+        timeframe: '4h',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain('Cannot create strategy config');
+    expect(response.json().error).toContain('empty params');
+  });
+
+  it('returns 500 when service throws a non-validation error', async () => {
     mockFindOrCreateStrategyConfig.mockRejectedValueOnce(new Error('Insert failed'));
 
     const response = await app.inject({

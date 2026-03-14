@@ -34,6 +34,21 @@ vi.mock('../db.js', () => ({
   }),
 }));
 
+// ============================================================================
+// Mock the strategy loader and base helpers used by findOrCreateStrategyConfig
+// ============================================================================
+
+const mockLoadStrategy = vi.fn();
+const mockGetDefaultParams = vi.fn();
+
+vi.mock('../../strategy/loader.js', () => ({
+  loadStrategy: (...args: unknown[]) => mockLoadStrategy(...args),
+}));
+
+vi.mock('../../strategy/base.js', () => ({
+  getDefaultParams: (...args: unknown[]) => mockGetDefaultParams(...args),
+}));
+
 // Import module under test AFTER mock setup (Vitest hoists vi.mock calls)
 import {
   findOrCreateStrategyConfig,
@@ -198,7 +213,7 @@ describe('findOrCreateStrategyConfig', () => {
       strategyName: 'funding-rate-v2',
       symbol: 'BTC/USDT',
       timeframe: '4h',
-      params: {},
+      params: { threshold: 0.0002 },
     });
 
     expect(typeof config.createdAt).toBe('number');
@@ -256,7 +271,7 @@ describe('findOrCreateStrategyConfig', () => {
       strategyName: 'funding-rate-v2',
       symbol: 'BTC/USDT',
       timeframe: '4h',
-      params: {},
+      params: { threshold: 0.0002 },
       // userId intentionally omitted
     });
   });
@@ -274,9 +289,88 @@ describe('findOrCreateStrategyConfig', () => {
       strategyName: 'funding-rate-v2',
       symbol: 'BTC/USDT',
       timeframe: '4h',
-      params: {},
+      params: { threshold: 0.0002 },
       userId: 'user-xyz',
     });
+  });
+
+  // --------------------------------------------------------------------------
+  // Empty params validation
+  // --------------------------------------------------------------------------
+
+  it('succeeds with empty params when strategy defines default parameters', async () => {
+    const fakeStrategy = { name: 'funding-rate-v2', params: [] };
+    const defaults = { threshold: 0.0001, period: 14 };
+    mockLoadStrategy.mockResolvedValueOnce(fakeStrategy);
+    mockGetDefaultParams.mockReturnValueOnce(defaults);
+
+    const insertedRow = makeConfigRow({ params: defaults });
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })         // SELECT: no match
+      .mockResolvedValueOnce({ rows: [insertedRow] }); // INSERT
+
+    const result = await findOrCreateStrategyConfig({
+      strategyName: 'funding-rate-v2',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: {},
+    });
+
+    expect(result.config.params).toEqual(defaults);
+    expect(mockLoadStrategy).toHaveBeenCalledWith('funding-rate-v2');
+  });
+
+  it('throws when params are empty and strategy is not found', async () => {
+    mockLoadStrategy.mockRejectedValueOnce(new Error('Strategy not found: unknown-strategy'));
+
+    await expect(
+      findOrCreateStrategyConfig({
+        strategyName: 'unknown-strategy',
+        symbol: 'BTC/USDT',
+        timeframe: '4h',
+        params: {},
+      })
+    ).rejects.toThrow(
+      'Cannot create strategy config for "unknown-strategy" with empty params.'
+    );
+
+    // No DB queries should have been issued
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it('throws when params are empty and strategy has no default parameters', async () => {
+    const fakeStrategy = { name: 'paramless-strategy', params: [] };
+    mockLoadStrategy.mockResolvedValueOnce(fakeStrategy);
+    // getDefaultParams returns empty object — strategy has no declared params
+    mockGetDefaultParams.mockReturnValueOnce({});
+
+    await expect(
+      findOrCreateStrategyConfig({
+        strategyName: 'paramless-strategy',
+        symbol: 'BTC/USDT',
+        timeframe: '4h',
+        params: {},
+      })
+    ).rejects.toThrow(
+      'Cannot create strategy config for "paramless-strategy" with empty params.'
+    );
+
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it('succeeds with explicit params without invoking loadStrategy', async () => {
+    const row = makeConfigRow({ params: { threshold: 0.0005 } });
+    mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+    await findOrCreateStrategyConfig({
+      strategyName: 'totally-unknown-strategy',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: { threshold: 0.0005 },
+    });
+
+    // loadStrategy must NOT have been called when params are non-empty
+    expect(mockLoadStrategy).not.toHaveBeenCalled();
   });
 });
 

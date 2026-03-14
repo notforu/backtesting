@@ -113,6 +113,13 @@ export async function aggregationRoutes(fastify: FastifyInstance) {
       if (error instanceof ZodError) {
         return reply.status(400).send({ error: 'Validation error', details: error.issues });
       }
+      if (
+        error instanceof Error &&
+        error.message.includes('Cannot create strategy config') &&
+        error.message.includes('empty params')
+      ) {
+        return reply.status(400).send({ error: error.message });
+      }
       fastify.log.error({ err: error, msg: 'Error creating aggregation' });
       return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
     }

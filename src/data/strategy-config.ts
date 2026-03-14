@@ -126,7 +126,13 @@ export async function findOrCreateStrategyConfig(config: {
       const strategy = await loadStrategy(config.strategyName);
       finalParams = getDefaultParams(strategy);
     } catch {
-      // Strategy not found — keep empty params
+      // Strategy not found
+    }
+    if (Object.keys(finalParams).length === 0) {
+      throw new Error(
+        `Cannot create strategy config for "${config.strategyName}" with empty params. ` +
+        `Either provide params explicitly or ensure the strategy defines default parameters.`
+      );
     }
   }
 
