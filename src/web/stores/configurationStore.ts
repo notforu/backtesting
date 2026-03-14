@@ -28,7 +28,7 @@ interface ConfigurationStore {
 
 export const useConfigurationStore = create<ConfigurationStore>((set) => ({
   activeConfigTab: 'strategies',
-  setActiveConfigTab: (tab) => set({ activeConfigTab: tab, selectedConfigId: null }),
+  setActiveConfigTab: (tab) => set({ activeConfigTab: tab }),
   selectedConfigId: null,
   setSelectedConfigId: (id) => set({ selectedConfigId: id }),
   activeDetailTab: 'runs',
