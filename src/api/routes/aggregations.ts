@@ -9,6 +9,8 @@ import {
   deleteAggregationConfig,
   type AggregationConfig,
 } from '../../data/db.js';
+import { findOrCreateStrategyConfig } from '../../data/strategy-config.js';
+import { computeAggregationConfigHash } from '../../utils/content-hash.js';
 import type { Timeframe } from '../../core/types.js';
 import type { AllocationMode } from '../../core/signal-types.js';
 
@@ -70,13 +72,35 @@ export async function aggregationRoutes(fastify: FastifyInstance) {
     try {
       const parsed = CreateAggregationSchema.parse(request.body);
       const now = Date.now();
+
+      // Find or create a strategy_config record for each sub-strategy so the UI
+      // can navigate to individual sub-strategy configs.
+      const subStrategyConfigIds: string[] = await Promise.all(
+        parsed.subStrategies.map(async (sub) => {
+          const { config: strategyConfig } = await findOrCreateStrategyConfig({
+            strategyName: sub.strategyName,
+            symbol: sub.symbol,
+            timeframe: sub.timeframe,
+            params: sub.params ?? {},
+          });
+          return strategyConfig.id;
+        })
+      );
+
+      const contentHash = computeAggregationConfigHash({
+        allocationMode: parsed.allocationMode,
+        maxPositions: parsed.maxPositions,
+        strategyConfigIds: subStrategyConfigIds,
+      });
+
       const config: AggregationConfig = {
         id: uuidv4(),
         name: parsed.name,
         allocationMode: parsed.allocationMode,
         maxPositions: parsed.maxPositions,
         subStrategies: parsed.subStrategies,
-        subStrategyConfigIds: [],
+        subStrategyConfigIds,
+        contentHash,
         initialCapital: parsed.initialCapital,
         exchange: parsed.exchange,
         mode: parsed.mode,

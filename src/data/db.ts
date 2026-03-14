@@ -1261,6 +1261,7 @@ export interface AggregationConfig {
   maxPositions: number;
   subStrategies: SubStrategyConfigDB[];
   subStrategyConfigIds: string[];  // FKs to strategy_configs for each sub-strategy
+  contentHash?: string;  // SHA256 of sorted sub_strategy_config_ids
   initialCapital: number;
   exchange: string;
   mode: string;  // 'spot' | 'futures'
@@ -1283,6 +1284,7 @@ interface AggregationConfigRow {
   max_positions: number;
   sub_strategies: SubStrategyConfigDB[] | string;
   sub_strategy_config_ids: string[] | null;
+  content_hash: string | null;
   initial_capital: number | string;
   exchange: string;
   mode: string;
@@ -1300,6 +1302,7 @@ function rowToAggregationConfig(row: AggregationConfigRow): AggregationConfig {
       ? JSON.parse(row.sub_strategies)
       : row.sub_strategies) as SubStrategyConfigDB[],
     subStrategyConfigIds: row.sub_strategy_config_ids ?? [],
+    contentHash: row.content_hash ?? undefined,
     initialCapital: Number(row.initial_capital),
     exchange: row.exchange,
     mode: row.mode,
@@ -1315,23 +1318,27 @@ export async function saveAggregationConfig(config: AggregationConfig): Promise<
   const p = getPool();
   await p.query(
     `INSERT INTO aggregation_configs
-     (id, name, allocation_mode, max_positions, sub_strategies, initial_capital, exchange, mode, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     (id, name, allocation_mode, max_positions, sub_strategies, sub_strategy_config_ids, content_hash, initial_capital, exchange, mode, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (id) DO UPDATE SET
        name = $2,
        allocation_mode = $3,
        max_positions = $4,
        sub_strategies = $5,
-       initial_capital = $6,
-       exchange = $7,
-       mode = $8,
-       updated_at = $10`,
+       sub_strategy_config_ids = $6,
+       content_hash = $7,
+       initial_capital = $8,
+       exchange = $9,
+       mode = $10,
+       updated_at = $12`,
     [
       config.id,
       config.name,
       config.allocationMode,
       config.maxPositions,
       JSON.stringify(config.subStrategies),
+      config.subStrategyConfigIds.length > 0 ? config.subStrategyConfigIds : null,
+      config.contentHash ?? null,
       config.initialCapital,
       config.exchange,
       config.mode,
@@ -1347,7 +1354,7 @@ export async function saveAggregationConfig(config: AggregationConfig): Promise<
 export async function getAggregationConfig(id: string): Promise<AggregationConfig | null> {
   const p = getPool();
   const { rows } = await p.query<AggregationConfigRow>(
-    `SELECT id, name, allocation_mode, max_positions, sub_strategies, sub_strategy_config_ids, initial_capital, exchange, mode, created_at, updated_at
+    `SELECT id, name, allocation_mode, max_positions, sub_strategies, sub_strategy_config_ids, content_hash, initial_capital, exchange, mode, created_at, updated_at
      FROM aggregation_configs
      WHERE id = $1`,
     [id]
@@ -1362,7 +1369,7 @@ export async function getAggregationConfig(id: string): Promise<AggregationConfi
 export async function getAggregationConfigs(): Promise<AggregationConfig[]> {
   const p = getPool();
   const { rows } = await p.query<AggregationConfigRow>(
-    `SELECT id, name, allocation_mode, max_positions, sub_strategies, sub_strategy_config_ids, initial_capital, exchange, mode, created_at, updated_at
+    `SELECT id, name, allocation_mode, max_positions, sub_strategies, sub_strategy_config_ids, content_hash, initial_capital, exchange, mode, created_at, updated_at
      FROM aggregation_configs
      ORDER BY updated_at DESC`
   );
@@ -1375,7 +1382,7 @@ export async function getAggregationConfigs(): Promise<AggregationConfig[]> {
  */
 export async function updateAggregationConfig(
   id: string,
-  updates: Partial<Pick<AggregationConfig, 'name' | 'allocationMode' | 'maxPositions' | 'subStrategies' | 'initialCapital' | 'exchange' | 'mode'>>
+  updates: Partial<Pick<AggregationConfig, 'name' | 'allocationMode' | 'maxPositions' | 'subStrategies' | 'subStrategyConfigIds' | 'contentHash' | 'initialCapital' | 'exchange' | 'mode'>>
 ): Promise<AggregationConfig | null> {
   const p = getPool();
 
@@ -1397,6 +1404,14 @@ export async function updateAggregationConfig(
   if (updates.subStrategies !== undefined) {
     params.push(JSON.stringify(updates.subStrategies));
     setClauses.push(`sub_strategies = $${params.length}`);
+  }
+  if (updates.subStrategyConfigIds !== undefined) {
+    params.push(updates.subStrategyConfigIds.length > 0 ? updates.subStrategyConfigIds : null);
+    setClauses.push(`sub_strategy_config_ids = $${params.length}`);
+  }
+  if (updates.contentHash !== undefined) {
+    params.push(updates.contentHash ?? null);
+    setClauses.push(`content_hash = $${params.length}`);
   }
   if (updates.initialCapital !== undefined) {
     params.push(updates.initialCapital);
@@ -1427,7 +1442,7 @@ export async function updateAggregationConfig(
     `UPDATE aggregation_configs
      SET ${setClauses.join(', ')}
      WHERE id = $${params.length}
-     RETURNING id, name, allocation_mode, max_positions, sub_strategies, sub_strategy_config_ids, initial_capital, exchange, mode, created_at, updated_at`,
+     RETURNING id, name, allocation_mode, max_positions, sub_strategies, sub_strategy_config_ids, content_hash, initial_capital, exchange, mode, created_at, updated_at`,
     params
   );
 
