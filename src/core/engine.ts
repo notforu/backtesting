@@ -25,6 +25,7 @@ import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '
 import { getProvider } from '../data/providers/index.js';
 import { getCandles, saveCandles, saveBacktestRun, getCandleDateRange, getFundingRates } from '../data/db.js';
 import { DEFAULT_TAKER_FEE_RATE, DEFAULT_FUTURES_SLIPPAGE_PERCENT } from './constants.js';
+import { validateFundingRateCoverage, validateCandleCoverage } from './funding-rate-validation.js';
 
 /**
  * Engine configuration options
@@ -85,6 +86,19 @@ export interface EngineConfig {
    * When provided, the run is saved with this ID in strategy_config_id.
    */
   strategyConfigId?: string;
+
+  /**
+   * Skip funding rate coverage validation.
+   * Use when running tests or scripts that operate on synthetic or partial data.
+   * Defaults to false (validation is enforced).
+   */
+  skipFundingRateValidation?: boolean;
+  /**
+   * Skip candle coverage validation.
+   * Use when running tests or scripts that operate on synthetic or partial data.
+   * Defaults to false (validation is enforced).
+   */
+  skipCandleValidation?: boolean;
 }
 
 /**
@@ -191,6 +205,17 @@ export async function runBacktest(
     );
   }
 
+  // Validate that we have sufficient candle coverage for the date range
+  validateCandleCoverage(
+    candles.length,
+    validatedConfig.symbol,
+    validatedConfig.exchange,
+    validatedConfig.timeframe,
+    validatedConfig.startDate,
+    validatedConfig.endDate,
+    options.skipCandleValidation,
+  );
+
   log(`Loaded ${candles.length} candles`, Date.now());
 
   // Load funding rates for futures mode (use pre-loaded if provided)
@@ -215,6 +240,16 @@ export async function runBacktest(
       );
       log(`Loaded ${allFundingRates.length} funding rates`, Date.now());
     }
+
+    // Validate that we have sufficient funding rate coverage (throws if < 80%)
+    validateFundingRateCoverage(
+      allFundingRates,
+      validatedConfig.symbol,
+      validatedConfig.exchange,
+      validatedConfig.startDate,
+      validatedConfig.endDate,
+      options.skipFundingRateValidation,
+    );
 
     // Build map for O(1) lookup by timestamp
     fundingRateMap = new Map();

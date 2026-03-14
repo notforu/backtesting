@@ -12,6 +12,7 @@ import { loadStrategy } from '../strategy/loader.js';
 import { getCandles, getFundingRates, saveBacktestRun } from '../data/db.js';
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
 import { DEFAULT_BYBIT_TAKER_FEE_RATE } from './constants.js';
+import { validateFundingRateCoverage, validateCandleCoverage } from './funding-rate-validation.js';
 
 interface AdapterWithData {
   adapter: SignalAdapter;
@@ -30,6 +31,18 @@ export interface AggregateEngineConfig {
   /** Override fee rate (default 0.00055 for Bybit taker) */
   feeRate?: number;
   onProgress?: (progress: { current: number; total: number; percent: number }) => void;
+  /**
+   * Skip funding rate coverage validation per sub-strategy.
+   * Use when running tests or scripts that operate on synthetic or partial data.
+   * Defaults to false (validation is enforced).
+   */
+  skipFundingRateValidation?: boolean;
+  /**
+   * Skip candle coverage validation per sub-strategy.
+   * Use when running tests or scripts that operate on synthetic or partial data.
+   * Defaults to false (validation is enforced).
+   */
+  skipCandleValidation?: boolean;
 }
 
 /**
@@ -82,9 +95,22 @@ export async function runAggregateBacktest(
     );
 
     if (candles.length === 0) {
-      log(`Warning: No candles for ${subConfig.symbol} ${subConfig.timeframe}, skipping`);
-      continue;
+      throw new Error(
+        `No candle data for ${subConfig.symbol} (${subConfig.timeframe}) on ${subConfig.exchange || exchange}. ` +
+        `Cache candles first using: npx tsx scripts/cache-candles.ts --exchange=${subConfig.exchange || exchange} --symbols=${subConfig.symbol} --timeframes=${subConfig.timeframe} --from=YYYY-MM-DD --to=YYYY-MM-DD`,
+      );
     }
+
+    // Validate that we have sufficient candle coverage for the date range
+    validateCandleCoverage(
+      candles.length,
+      subConfig.symbol,
+      subConfig.exchange || exchange,
+      subConfig.timeframe,
+      startDate,
+      endDate,
+      engineConfig.skipCandleValidation,
+    );
 
     // Load funding rates for futures mode
     let fundingRates: FundingRate[] = [];
@@ -94,6 +120,16 @@ export async function runAggregateBacktest(
         subConfig.symbol,
         startDate,
         endDate,
+      );
+
+      // Validate that we have sufficient funding rate coverage (throws if < 80%)
+      validateFundingRateCoverage(
+        fundingRates,
+        subConfig.symbol,
+        subConfig.exchange || exchange,
+        startDate,
+        endDate,
+        engineConfig.skipFundingRateValidation,
       );
     }
 
