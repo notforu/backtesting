@@ -7,6 +7,8 @@
 
 import { getPool } from './db.js';
 import { computeStrategyConfigHash } from '../utils/content-hash.js';
+import { loadStrategy } from '../strategy/loader.js';
+import { getDefaultParams } from '../strategy/base.js';
 
 // ============================================================================
 // Types
@@ -115,11 +117,24 @@ export async function findOrCreateStrategyConfig(config: {
   userId?: string;
 }): Promise<{ config: StrategyConfigRecord; created: boolean }> {
   const pool = getPool();
+
+  // Fill in default params from the strategy definition when params is empty.
+  // This ensures strategy configs always have complete parameter values.
+  let finalParams = config.params;
+  if (Object.keys(finalParams).length === 0) {
+    try {
+      const strategy = await loadStrategy(config.strategyName);
+      finalParams = getDefaultParams(strategy);
+    } catch {
+      // Strategy not found — keep empty params
+    }
+  }
+
   const hash = computeStrategyConfigHash({
     strategyName: config.strategyName,
     symbol: config.symbol,
     timeframe: config.timeframe,
-    params: config.params,
+    params: finalParams,
   });
 
   // Try to find existing
@@ -152,7 +167,7 @@ export async function findOrCreateStrategyConfig(config: {
       config.strategyName,
       config.symbol,
       config.timeframe,
-      JSON.stringify(config.params),
+      JSON.stringify(finalParams),
       hash,
       autoName,
       config.userId ?? null,
