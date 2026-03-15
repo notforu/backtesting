@@ -405,6 +405,243 @@ describe('PUT /api/aggregations/:id', () => {
 
     expect(response.statusCode).toBe(404);
   });
+
+  it('regenerates subStrategyConfigIds and contentHash when subStrategies is updated', async () => {
+    // Return the existing config when loading for fallback values
+    mockGetAggregationConfig.mockResolvedValue(makeAggregationConfig());
+    mockFindOrCreateStrategyConfig
+      .mockResolvedValueOnce(makeStrategyConfigResult('new-cfg-id-1', false))
+      .mockResolvedValueOnce(makeStrategyConfigResult('new-cfg-id-2', true));
+
+    const updated = makeAggregationConfig({
+      subStrategies: [sampleSubStrategy, sampleSubStrategy2],
+      subStrategyConfigIds: ['new-cfg-id-1', 'new-cfg-id-2'],
+    });
+    mockUpdateAggregationConfig.mockResolvedValue(updated);
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/aggregations/agg-id-1',
+      payload: { subStrategies: [sampleSubStrategy, sampleSubStrategy2] },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    // findOrCreateStrategyConfig called once per sub-strategy
+    expect(mockFindOrCreateStrategyConfig).toHaveBeenCalledTimes(2);
+
+    // updateAggregationConfig called with regenerated IDs and hash
+    expect(mockUpdateAggregationConfig).toHaveBeenCalledTimes(1);
+    const updateArgs = mockUpdateAggregationConfig.mock.calls[0][1];
+    expect(updateArgs.subStrategyConfigIds).toEqual(['new-cfg-id-1', 'new-cfg-id-2']);
+    expect(updateArgs.contentHash).toBeDefined();
+    expect(typeof updateArgs.contentHash).toBe('string');
+    expect(updateArgs.contentHash.length).toBe(64); // SHA256 hex
+  });
+
+  it('uses existing allocationMode and maxPositions for hash when not in update payload', async () => {
+    const existingConfig = makeAggregationConfig({
+      allocationMode: 'top_n',
+      maxPositions: 5,
+    });
+    mockGetAggregationConfig.mockResolvedValue(existingConfig);
+    mockFindOrCreateStrategyConfig.mockResolvedValue(makeStrategyConfigResult('cfg-id-x', false));
+
+    const updated = makeAggregationConfig({ subStrategies: [sampleSubStrategy] });
+    mockUpdateAggregationConfig.mockResolvedValue(updated);
+
+    await app.inject({
+      method: 'PUT',
+      url: '/api/aggregations/agg-id-1',
+      payload: { subStrategies: [sampleSubStrategy] },
+    });
+
+    const expectedHash = computeAggregationConfigHash({
+      allocationMode: 'top_n',
+      maxPositions: 5,
+      strategyConfigIds: ['cfg-id-x'],
+    });
+
+    const updateArgs = mockUpdateAggregationConfig.mock.calls[0][1];
+    expect(updateArgs.contentHash).toBe(expectedHash);
+  });
+
+  it('returns 404 early when subStrategies update targets a non-existent config', async () => {
+    // getAggregationConfig returns null (not found)
+    mockGetAggregationConfig.mockResolvedValue(null);
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/aggregations/nonexistent',
+      payload: { subStrategies: [sampleSubStrategy] },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(mockFindOrCreateStrategyConfig).not.toHaveBeenCalled();
+    expect(mockUpdateAggregationConfig).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when findOrCreateStrategyConfig throws empty params error during PUT', async () => {
+    mockGetAggregationConfig.mockResolvedValue(makeAggregationConfig());
+    mockFindOrCreateStrategyConfig.mockRejectedValue(
+      new Error(
+        'Cannot create strategy config for "bad-strat" with empty params. ' +
+        'Either provide params explicitly or ensure the strategy defines default parameters.'
+      )
+    );
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/aggregations/agg-id-1',
+      payload: {
+        subStrategies: [
+          { strategyName: 'bad-strat', symbol: 'BTC/USDT', timeframe: '1h' },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain('Cannot create strategy config');
+    expect(mockUpdateAggregationConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not call findOrCreateStrategyConfig when subStrategies is not in update payload', async () => {
+    const updated = makeAggregationConfig({ name: 'Name Only Update' });
+    mockUpdateAggregationConfig.mockResolvedValue(updated);
+
+    await app.inject({
+      method: 'PUT',
+      url: '/api/aggregations/agg-id-1',
+      payload: { name: 'Name Only Update' },
+    });
+
+    expect(mockFindOrCreateStrategyConfig).not.toHaveBeenCalled();
+    // getAggregationConfig should NOT be called (no need to fetch existing config)
+    expect(mockGetAggregationConfig).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+// POST /api/aggregations/:id/regenerate-ids
+// ============================================================================
+
+describe('POST /api/aggregations/:id/regenerate-ids', () => {
+  it('regenerates subStrategyConfigIds for all sub-strategies and returns updated config', async () => {
+    const existingConfig = makeAggregationConfig({
+      subStrategies: [sampleSubStrategy, sampleSubStrategy2],
+      subStrategyConfigIds: ['old-id-1'], // stale — only 1 entry for 2 sub-strategies
+    });
+    mockGetAggregationConfig.mockResolvedValue(existingConfig);
+    mockFindOrCreateStrategyConfig
+      .mockResolvedValueOnce(makeStrategyConfigResult('repaired-id-1', false))
+      .mockResolvedValueOnce(makeStrategyConfigResult('repaired-id-2', true));
+
+    const repairedConfig = makeAggregationConfig({
+      subStrategies: [sampleSubStrategy, sampleSubStrategy2],
+      subStrategyConfigIds: ['repaired-id-1', 'repaired-id-2'],
+    });
+    mockUpdateAggregationConfig.mockResolvedValue(repairedConfig);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/aggregations/agg-id-1/regenerate-ids',
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    // findOrCreateStrategyConfig called once per sub-strategy in the config
+    expect(mockFindOrCreateStrategyConfig).toHaveBeenCalledTimes(2);
+    expect(mockFindOrCreateStrategyConfig).toHaveBeenCalledWith({
+      strategyName: sampleSubStrategy.strategyName,
+      symbol: sampleSubStrategy.symbol,
+      timeframe: sampleSubStrategy.timeframe,
+      params: sampleSubStrategy.params,
+    });
+
+    // updateAggregationConfig called with the regenerated IDs and hash
+    expect(mockUpdateAggregationConfig).toHaveBeenCalledTimes(1);
+    const updateArgs = mockUpdateAggregationConfig.mock.calls[0][1];
+    expect(updateArgs.subStrategyConfigIds).toEqual(['repaired-id-1', 'repaired-id-2']);
+    expect(typeof updateArgs.contentHash).toBe('string');
+    expect(updateArgs.contentHash.length).toBe(64);
+
+    // Response body is the updated config
+    const body = JSON.parse(response.body);
+    expect(body.subStrategyConfigIds).toEqual(['repaired-id-1', 'repaired-id-2']);
+  });
+
+  it('returns 404 when aggregation config not found', async () => {
+    mockGetAggregationConfig.mockResolvedValue(null);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/aggregations/nonexistent/regenerate-ids',
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(mockFindOrCreateStrategyConfig).not.toHaveBeenCalled();
+    expect(mockUpdateAggregationConfig).not.toHaveBeenCalled();
+  });
+
+  it('computes correct contentHash using existing allocationMode and maxPositions', async () => {
+    const existingConfig = makeAggregationConfig({
+      allocationMode: 'weighted_multi',
+      maxPositions: 4,
+      subStrategies: [sampleSubStrategy],
+      subStrategyConfigIds: [],
+    });
+    mockGetAggregationConfig.mockResolvedValue(existingConfig);
+    mockFindOrCreateStrategyConfig.mockResolvedValue(
+      makeStrategyConfigResult('hash-check-id', false)
+    );
+    mockUpdateAggregationConfig.mockResolvedValue(existingConfig);
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/aggregations/agg-id-1/regenerate-ids',
+    });
+
+    const expectedHash = computeAggregationConfigHash({
+      allocationMode: 'weighted_multi',
+      maxPositions: 4,
+      strategyConfigIds: ['hash-check-id'],
+    });
+
+    const updateArgs = mockUpdateAggregationConfig.mock.calls[0][1];
+    expect(updateArgs.contentHash).toBe(expectedHash);
+  });
+
+  it('returns 400 when findOrCreateStrategyConfig throws empty params error', async () => {
+    mockGetAggregationConfig.mockResolvedValue(makeAggregationConfig());
+    mockFindOrCreateStrategyConfig.mockRejectedValue(
+      new Error(
+        'Cannot create strategy config for "unknown" with empty params. ' +
+        'Either provide params explicitly or ensure the strategy defines default parameters.'
+      )
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/aggregations/agg-id-1/regenerate-ids',
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain('Cannot create strategy config');
+    expect(mockUpdateAggregationConfig).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 when findOrCreateStrategyConfig throws a generic error', async () => {
+    mockGetAggregationConfig.mockResolvedValue(makeAggregationConfig());
+    mockFindOrCreateStrategyConfig.mockRejectedValue(new Error('DB connection refused'));
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/aggregations/agg-id-1/regenerate-ids',
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(mockUpdateAggregationConfig).not.toHaveBeenCalled();
+  });
 });
 
 // ============================================================================

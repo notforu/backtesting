@@ -148,7 +148,42 @@ export async function aggregationRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       try {
         const parsed = UpdateAggregationSchema.parse(request.body);
-        const updated = await updateAggregationConfig(request.params.id, parsed);
+
+        // When subStrategies is being updated, regenerate subStrategyConfigIds and contentHash
+        // so the stored IDs stay in sync with the current sub-strategy list.
+        let extraFields: { subStrategyConfigIds?: string[]; contentHash?: string } = {};
+        if (parsed.subStrategies) {
+          // Load existing config to resolve allocationMode/maxPositions when not included in update.
+          const existing = await getAggregationConfig(request.params.id);
+          if (!existing) {
+            return reply.status(404).send({ error: `Aggregation "${request.params.id}" not found` });
+          }
+
+          const subStrategyConfigIds: string[] = await Promise.all(
+            parsed.subStrategies.map(async (sub) => {
+              const { config: strategyConfig } = await findOrCreateStrategyConfig({
+                strategyName: sub.strategyName,
+                symbol: sub.symbol,
+                timeframe: sub.timeframe,
+                params: sub.params ?? {},
+              });
+              return strategyConfig.id;
+            })
+          );
+
+          const contentHash = computeAggregationConfigHash({
+            allocationMode: parsed.allocationMode ?? existing.allocationMode,
+            maxPositions: parsed.maxPositions ?? existing.maxPositions,
+            strategyConfigIds: subStrategyConfigIds,
+          });
+
+          extraFields = { subStrategyConfigIds, contentHash };
+        }
+
+        const updated = await updateAggregationConfig(request.params.id, {
+          ...parsed,
+          ...extraFields,
+        });
         if (!updated) {
           return reply.status(404).send({ error: `Aggregation "${request.params.id}" not found` });
         }
@@ -157,7 +192,62 @@ export async function aggregationRoutes(fastify: FastifyInstance) {
         if (error instanceof ZodError) {
           return reply.status(400).send({ error: 'Validation error', details: error.issues });
         }
+        if (
+          error instanceof Error &&
+          error.message.includes('Cannot create strategy config') &&
+          error.message.includes('empty params')
+        ) {
+          return reply.status(400).send({ error: error.message });
+        }
         fastify.log.error({ err: error, msg: 'Error updating aggregation' });
+        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+  );
+
+  // POST /api/aggregations/:id/regenerate-ids - repair stale subStrategyConfigIds
+  fastify.post(
+    '/api/aggregations/:id/regenerate-ids',
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const config = await getAggregationConfig(request.params.id);
+        if (!config) {
+          return reply.status(404).send({ error: `Aggregation "${request.params.id}" not found` });
+        }
+
+        const subStrategyConfigIds: string[] = await Promise.all(
+          config.subStrategies.map(async (sub) => {
+            const { config: strategyConfig } = await findOrCreateStrategyConfig({
+              strategyName: sub.strategyName,
+              symbol: sub.symbol,
+              timeframe: sub.timeframe,
+              params: sub.params ?? {},
+            });
+            return strategyConfig.id;
+          })
+        );
+
+        const contentHash = computeAggregationConfigHash({
+          allocationMode: config.allocationMode,
+          maxPositions: config.maxPositions,
+          strategyConfigIds: subStrategyConfigIds,
+        });
+
+        const updated = await updateAggregationConfig(request.params.id, {
+          subStrategyConfigIds,
+          contentHash,
+        });
+
+        return reply.status(200).send(updated);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes('Cannot create strategy config') &&
+          error.message.includes('empty params')
+        ) {
+          return reply.status(400).send({ error: error.message });
+        }
+        fastify.log.error({ err: error, msg: 'Error regenerating sub-strategy config IDs' });
         return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
       }
     }
