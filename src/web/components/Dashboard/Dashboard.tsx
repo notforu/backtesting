@@ -111,6 +111,15 @@ export function Dashboard({ metrics }: DashboardProps) {
           colorize="profit"
           isPositive={metrics.totalReturn >= 0}
         />
+        {metrics.longTrades !== undefined && (
+          <MetricCard
+            label="Long / Short PnL"
+            value={`${formatCurrency(metrics.longPnl)} / ${formatCurrency(metrics.shortPnl)}`}
+            subValue={`${metrics.longTrades ?? 0}L / ${metrics.shortTrades ?? 0}S trades`}
+            colorize="profit"
+            isPositive={(metrics.totalReturn ?? 0) >= 0}
+          />
+        )}
         <MetricCard
           label="Max Drawdown"
           value={formatPercent(-Math.abs(metrics.maxDrawdownPercent))}
@@ -127,7 +136,9 @@ export function Dashboard({ metrics }: DashboardProps) {
         <MetricCard
           label="Win Rate"
           value={metrics.winRate !== undefined ? `${metrics.winRate.toFixed(1)}%` : 'N/A'}
-          subValue={`${metrics.winningTrades ?? 0}W / ${metrics.losingTrades ?? 0}L`}
+          subValue={metrics.longTrades !== undefined
+            ? `${metrics.winningTrades ?? 0}W / ${metrics.losingTrades ?? 0}L · L:${(metrics.longWinRate ?? 0).toFixed(0)}% / S:${(metrics.shortWinRate ?? 0).toFixed(0)}%`
+            : `${metrics.winningTrades ?? 0}W / ${metrics.losingTrades ?? 0}L`}
           colorize="profit"
           isPositive={(metrics.winRate ?? 0) >= 50}
         />
@@ -211,50 +222,6 @@ export function Dashboard({ metrics }: DashboardProps) {
         />
       </div>
 
-      {/* Long/Short breakdown - only shown when data is present */}
-      {metrics.longTrades !== undefined && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider">
-            Long / Short Breakdown
-          </h3>
-          <div className="grid grid-cols-2 gap-3">
-            <MetricCard
-              label="Long PnL"
-              value={formatCurrency(metrics.longPnl)}
-              subValue={`${metrics.longTrades ?? 0} trade${(metrics.longTrades ?? 0) !== 1 ? 's' : ''}`}
-              colorize="profit"
-              isPositive={(metrics.longPnl ?? 0) >= 0}
-            />
-            <MetricCard
-              label="Short PnL"
-              value={formatCurrency(metrics.shortPnl)}
-              subValue={`${metrics.shortTrades ?? 0} trade${(metrics.shortTrades ?? 0) !== 1 ? 's' : ''}`}
-              colorize="profit"
-              isPositive={(metrics.shortPnl ?? 0) >= 0}
-            />
-            <MetricCard
-              label="Long Win Rate"
-              value={
-                metrics.longWinRate !== undefined
-                  ? `${metrics.longWinRate.toFixed(1)}%`
-                  : 'N/A'
-              }
-              colorize="profit"
-              isPositive={(metrics.longWinRate ?? 0) >= 50}
-            />
-            <MetricCard
-              label="Short Win Rate"
-              value={
-                metrics.shortWinRate !== undefined
-                  ? `${metrics.shortWinRate.toFixed(1)}%`
-                  : 'N/A'
-              }
-              colorize="profit"
-              isPositive={(metrics.shortWinRate ?? 0) >= 50}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
