@@ -992,21 +992,10 @@ export class PaperTradingEngine extends EventEmitter {
         this.lastProcessedCandleTs.set(cacheKey, lastCandle.timestamp);
       }
 
-      // Also advance FR timestamps for any remaining funding rates not covered
-      // by the bar-level loop (non-futures mode skips the inner loop entirely).
-      if (this.config.mode === 'futures') {
-        for (const awd of this.adapters) {
-          const symbol = awd.config.symbol;
-          const fundingRates = frCache.get(symbol) ?? [];
-          if (fundingRates.length > 0) {
-            const lastFrTs = fundingRates[fundingRates.length - 1].timestamp;
-            const currentMax = this.lastProcessedFRTimestamps.get(symbol) ?? 0;
-            if (lastFrTs > currentMax) {
-              this.lastProcessedFRTimestamps.set(symbol, lastFrTs);
-            }
-          }
-        }
-      }
+      // FR timestamps are advanced inside the bar loop (Step 4, lines 767-775)
+      // only up to the last bar's timestamp. Do NOT advance beyond the last
+      // processed bar here — that would skip FR events whose bar hasn't closed
+      // yet, causing them to never be applied.
 
       // ------------------------------------------------------------------
       // Step 9: Save equity snapshot and update session.
