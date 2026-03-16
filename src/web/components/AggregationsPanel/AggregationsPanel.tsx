@@ -1,5 +1,5 @@
 import { useLoadBacktest } from '../../hooks/useBacktest';
-import { useConfigStore } from '../../stores/backtestStore';
+import { useBacktestStore, useConfigStore } from '../../stores/backtestStore';
 import { useRunBacktestModalStore } from '../../stores/runBacktestModalStore';
 import type { BacktestSummary } from '../../types';
 import { HistoryExplorerContent } from '../HistoryExplorer/HistoryExplorer';
@@ -8,6 +8,7 @@ export function AggregationsPanel() {
   const openRunBacktestModal = useRunBacktestModalStore((s) => s.open);
   const { applyHistoryParams } = useConfigStore();
   const { loadBacktest } = useLoadBacktest();
+  const selectedBacktestId = useBacktestStore((s) => s.selectedBacktestId);
 
   const handleSelectHistoryRun = async (run: BacktestSummary) => {
     const result = await loadBacktest(run.id);
@@ -35,6 +36,7 @@ export function AggregationsPanel() {
           showFilters={false}
           showGroupToggle={false}
           maxHeight="320px"
+          selectedId={selectedBacktestId}
           onSelectRun={handleSelectHistoryRun}
         />
       </div>
