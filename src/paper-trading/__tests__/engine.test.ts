@@ -1601,6 +1601,348 @@ describe('PaperTradingEngine', () => {
   });
 
   // ==========================================================================
+  // M4-FR1: FR beyond last bar is NOT marked as processed and IS applied on next tick
+  // Regression test for the bug where post-loop FR advancement caused FRs that
+  // fell beyond the last closed bar to be marked as processed before their bar
+  // closed, so they were never applied.
+  // ==========================================================================
+
+  it('M4-FR1: FR beyond last closed bar is not marked processed and IS applied on next tick', async () => {
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    // latestTs = the most recent closed 4h bar's timestamp
+    const latestTs = Math.floor(now / tfMs) * tfMs - tfMs;
+
+    // Candles: 200 bars, last bar at latestTs (which corresponds to 12:00 in the scenario)
+    const candles = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(50_000, latestTs - (199 - i) * tfMs)
+    );
+
+    // FR at 08:00: within the last bar (latestTs - tfMs < frEarly <= latestTs)
+    const frEarlyTs = latestTs; // exactly at the last bar's timestamp (within bar)
+    // FR at 16:00: BEYOND the last closed bar (latestTs + tfMs)
+    const frLateTs = latestTs + tfMs;
+
+    const fundingRate = 0.0001; // 0.01%
+
+    // First tick: return both FRs, but candles only go up to latestTs
+    const mockFundingRatesFirstTick = [
+      { timestamp: frEarlyTs, fundingRate, markPrice: 50_000 },
+      { timestamp: frLateTs, fundingRate, markPrice: 50_000 },
+    ];
+
+    mockFetchLatestCandles.mockResolvedValue(candles);
+    mockFetchLatestFundingRates.mockResolvedValue(mockFundingRatesFirstTick);
+
+    // Existing long position
+    const existingPosition: PaperPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'long' as const,
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice: 50_000,
+      amount: 0.1,
+      entryTime: latestTs - tfMs * 10,
+      unrealizedPnl: 0,
+      fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
+    };
+
+    const futuresConfig = {
+      subStrategies: [
+        {
+          strategyName: 'mock-strategy',
+          symbol: 'BTC/USDT',
+          timeframe: '4h' as const,
+          params: {},
+          exchange: 'bybit',
+        },
+      ],
+      allocationMode: 'single_strongest' as const,
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: now - 86400000,
+      endDate: now,
+      exchange: 'bybit',
+      mode: 'futures' as const,
+    };
+
+    const sessionWithPosition = makePaperSession({
+      aggregationConfig: futuresConfig,
+      currentCash: 5_000,
+      currentEquity: 10_000,
+    });
+
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(sessionWithPosition);
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([existingPosition]);
+
+    // Strategy does nothing (holds position)
+    mockStrategy.onBar = (_ctx: StrategyContext) => { /* no-op */ };
+
+    const engine = new PaperTradingEngine(sessionWithPosition);
+    await engine.start();
+
+    // ------ Tick 1 ------
+    // Only the early FR (at latestTs) should be applied — it falls within the last closed bar.
+    // The late FR (at frLateTs = latestTs + tfMs) is BEYOND the last bar and must NOT be applied.
+
+    await engine.forceTick();
+
+    const tick1SavePosCalls = vi.mocked(paperDb.savePaperPosition).mock.calls.filter(
+      c => c[0].fundingAccumulated !== 0
+    );
+    expect(tick1SavePosCalls.length).toBeGreaterThan(0);
+
+    // Early FR payment = -0.1 * 50000 * 0.0001 = -0.5 (long pays when rate > 0)
+    const tick1Funding = tick1SavePosCalls[tick1SavePosCalls.length - 1][0].fundingAccumulated;
+    expect(tick1Funding).toBeCloseTo(-0.5, 4);
+
+    // ------ Tick 2 ------
+    // Now the 16:00 bar has closed: add it to the candle array.
+    const candlesWithNewBar = [
+      ...candles,
+      makeCandle(50_000, frLateTs), // the bar that contains the late FR
+    ];
+
+    vi.mocked(paperDb.savePaperPosition).mockClear();
+
+    // Return position with tick 1's accumulated funding so the engine reloads it
+    const positionAfterTick1: PaperPosition = {
+      ...existingPosition,
+      fundingAccumulated: tick1Funding,
+    };
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([positionAfterTick1]);
+    mockFetchLatestCandles.mockResolvedValue(candlesWithNewBar);
+    // Same FRs — the late one should now be applied on tick 2
+    mockFetchLatestFundingRates.mockResolvedValue(mockFundingRatesFirstTick);
+
+    await engine.forceTick();
+
+    const tick2SavePosCalls = vi.mocked(paperDb.savePaperPosition).mock.calls.filter(
+      c => c[0].fundingAccumulated !== 0
+    );
+    expect(tick2SavePosCalls.length).toBeGreaterThan(0);
+
+    // After tick 2, the accumulated funding should include BOTH FR payments.
+    // The engine loads persistedFunding from DB (tick1Funding = -0.5), then applies the late FR.
+    // Late FR payment = -0.1 * 50000 * 0.0001 = -0.5
+    // Total = -0.5 (persisted) + -0.5 (new) = -1.0
+    const tick2Funding = tick2SavePosCalls[tick2SavePosCalls.length - 1][0].fundingAccumulated;
+    expect(tick2Funding).toBeCloseTo(-1.0, 4);
+  });
+
+  // ==========================================================================
+  // M4-FR2: FR at exact bar boundary timestamp is correctly processed
+  // Edge case: fr.timestamp === currentBar.timestamp  (condition is <=, must pass)
+  // ==========================================================================
+
+  it('M4-FR2: FR at exact bar boundary timestamp is processed', async () => {
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latestTs = Math.floor(now / tfMs) * tfMs - tfMs;
+
+    const candles = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(50_000, latestTs - (199 - i) * tfMs)
+    );
+
+    // FR timestamp exactly equals the last bar's close timestamp
+    const frTs = latestTs; // exactly at bar boundary
+    const fundingRate = 0.0002;
+
+    mockFetchLatestCandles.mockResolvedValue(candles);
+    mockFetchLatestFundingRates.mockResolvedValue([
+      { timestamp: frTs, fundingRate, markPrice: 50_000 },
+    ]);
+
+    const existingPosition: PaperPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'long' as const,
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice: 50_000,
+      amount: 0.2,
+      entryTime: latestTs - tfMs * 5,
+      unrealizedPnl: 0,
+      fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
+    };
+
+    const futuresConfig = {
+      subStrategies: [
+        {
+          strategyName: 'mock-strategy',
+          symbol: 'BTC/USDT',
+          timeframe: '4h' as const,
+          params: {},
+          exchange: 'bybit',
+        },
+      ],
+      allocationMode: 'single_strongest' as const,
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: now - 86400000,
+      endDate: now,
+      exchange: 'bybit',
+      mode: 'futures' as const,
+    };
+
+    const sessionWithPosition = makePaperSession({
+      aggregationConfig: futuresConfig,
+      currentCash: 5_000,
+      currentEquity: 10_000,
+    });
+
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(sessionWithPosition);
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([existingPosition]);
+
+    mockStrategy.onBar = (_ctx: StrategyContext) => { /* no-op */ };
+
+    const engine = new PaperTradingEngine(sessionWithPosition);
+    await engine.start();
+
+    await engine.forceTick();
+
+    // FR at exact bar boundary must be applied: payment = -0.2 * 50000 * 0.0002 = -2.0
+    const savePosCallsWithFunding = vi.mocked(paperDb.savePaperPosition).mock.calls.filter(
+      c => c[0].fundingAccumulated !== 0
+    );
+    expect(savePosCallsWithFunding.length).toBeGreaterThan(0);
+    const funding = savePosCallsWithFunding[savePosCallsWithFunding.length - 1][0].fundingAccumulated;
+    expect(funding).toBeCloseTo(-2.0, 4);
+  });
+
+  // ==========================================================================
+  // M4-FR3: Closing a position records accumulated cross-tick funding in the trade
+  // ==========================================================================
+
+  it('M4-FR3: closing a position records accumulated cross-tick funding in savePaperTrade', async () => {
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latestTs = Math.floor(now / tfMs) * tfMs - tfMs;
+
+    // Tick 1 candles: last bar at latestTs
+    const tick1Candles = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(50_000, latestTs - (199 - i) * tfMs)
+    );
+
+    // Tick 2 candles: one new bar appended
+    const tick2Candles = [
+      ...tick1Candles,
+      makeCandle(50_000, latestTs + tfMs),
+    ];
+
+    const fundingRate = 0.0001;
+    // Tick 1: FR at the last candle's timestamp
+    const fr1Ts = latestTs;
+    // Tick 2: FR at the new bar's timestamp
+    const fr2Ts = latestTs + tfMs;
+
+    const existingPosition: PaperPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'long' as const,
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice: 50_000,
+      amount: 0.1,
+      entryTime: latestTs - tfMs * 10,
+      unrealizedPnl: 0,
+      fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
+    };
+
+    const futuresConfig = {
+      subStrategies: [
+        {
+          strategyName: 'mock-strategy',
+          symbol: 'BTC/USDT',
+          timeframe: '4h' as const,
+          params: {},
+          exchange: 'bybit',
+        },
+      ],
+      allocationMode: 'single_strongest' as const,
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: now - 86400000,
+      endDate: now,
+      exchange: 'bybit',
+      mode: 'futures' as const,
+    };
+
+    const sessionWithPosition = makePaperSession({
+      aggregationConfig: futuresConfig,
+      currentCash: 5_000,
+      currentEquity: 10_000,
+    });
+
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(sessionWithPosition);
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([existingPosition]);
+
+    // Strategy: hold during tick 1, then close during tick 2
+    let tick1Done = false;
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!tick1Done) return; // hold during tick 1
+      if (ctx.longPosition) ctx.closeLong();
+    };
+
+    mockFetchLatestCandles.mockResolvedValue(tick1Candles);
+    mockFetchLatestFundingRates.mockResolvedValue([
+      { timestamp: fr1Ts, fundingRate, markPrice: 50_000 },
+    ]);
+
+    const engine = new PaperTradingEngine(sessionWithPosition);
+    await engine.start();
+
+    // ------ Tick 1: position stays open, FR at fr1Ts is applied ------
+    await engine.forceTick();
+    tick1Done = true;
+
+    // Funding from tick 1: -0.1 * 50000 * 0.0001 = -0.5
+    const tick1SavePosCalls = vi.mocked(paperDb.savePaperPosition).mock.calls.filter(
+      c => c[0].fundingAccumulated !== 0
+    );
+    expect(tick1SavePosCalls.length).toBeGreaterThan(0);
+    const tick1Funding = tick1SavePosCalls[tick1SavePosCalls.length - 1][0].fundingAccumulated;
+    expect(tick1Funding).toBeCloseTo(-0.5, 4);
+
+    // ------ Tick 2: new bar closes, second FR applied, then position is closed ------
+    vi.mocked(paperDb.savePaperPosition).mockClear();
+    vi.mocked(paperDb.savePaperTrade).mockClear();
+
+    // The DB position now has tick1's accumulated funding persisted
+    const positionAfterTick1: PaperPosition = {
+      ...existingPosition,
+      fundingAccumulated: tick1Funding,
+    };
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([positionAfterTick1]);
+
+    mockFetchLatestCandles.mockResolvedValue(tick2Candles);
+    mockFetchLatestFundingRates.mockResolvedValue([
+      { timestamp: fr1Ts, fundingRate, markPrice: 50_000 },
+      { timestamp: fr2Ts, fundingRate, markPrice: 50_000 },
+    ]);
+
+    await engine.forceTick();
+
+    // The close_long trade in savePaperTrade should carry fundingIncome from BOTH ticks.
+    // Tick 1 funding (persisted): -0.5
+    // Tick 2 funding (new):       -0.5
+    // Total fundingIncome passed to saveTrade: -0.5 + -0.5 = -1.0
+    const closeTradeCalls = vi.mocked(paperDb.savePaperTrade).mock.calls.filter(
+      c => c[0].action === 'close_long'
+    );
+    expect(closeTradeCalls.length).toBeGreaterThan(0);
+    const closeTrade = closeTradeCalls[0][0];
+    expect(closeTrade.fundingIncome).toBeCloseTo(-1.0, 4);
+  });
+
+  // ==========================================================================
   // M5. Candles fetched once per symbol:timeframe, not redundantly
   // ==========================================================================
 
