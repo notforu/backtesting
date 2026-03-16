@@ -7,6 +7,7 @@ import {
   getAggregationConfigs,
   updateAggregationConfig,
   deleteAggregationConfig,
+  getPool,
   type AggregationConfig,
 } from '../../data/db.js';
 import { findOrCreateStrategyConfig } from '../../data/strategy-config.js';
@@ -248,6 +249,54 @@ export async function aggregationRoutes(fastify: FastifyInstance) {
           return reply.status(400).send({ error: error.message });
         }
         fastify.log.error({ err: error, msg: 'Error regenerating sub-strategy config IDs' });
+        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+  );
+
+  // GET /api/aggregations/:id/paper-sessions
+  fastify.get(
+    '/api/aggregations/:id/paper-sessions',
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const { id } = request.params;
+
+        const config = await getAggregationConfig(id);
+        if (!config) {
+          return reply.status(404).send({ error: `Aggregation "${id}" not found` });
+        }
+
+        const pool = getPool();
+
+        const { rows } = await pool.query<{
+          id: string;
+          name: string;
+          status: string;
+          initial_capital: string;
+          current_equity: string;
+          created_at: string;
+          updated_at: string;
+        }>(
+          `SELECT id, name, status, initial_capital, current_equity, created_at, updated_at
+           FROM paper_sessions
+           WHERE aggregation_config_id = $1
+           ORDER BY created_at DESC`,
+          [id]
+        );
+
+        const sessions = rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          status: row.status,
+          initialCapital: Number(row.initial_capital),
+          currentEquity: Number(row.current_equity),
+          createdAt: Number(row.created_at),
+          updatedAt: Number(row.updated_at),
+        }));
+
+        return reply.status(200).send(sessions);
+      } catch (error) {
+        fastify.log.error({ err: error, msg: 'Error fetching paper sessions for aggregation' });
         return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
       }
     }

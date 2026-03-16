@@ -11,6 +11,7 @@ import {
   getStrategyConfigRuns,
   getStrategyConfigVersions,
   getConfigPaperSessions,
+  getAggregationPaperSessions,
 } from '../api/client.js';
 
 export function useStrategyConfigs(filters?: { strategy?: string; symbol?: string; timeframe?: string }) {
@@ -50,6 +51,15 @@ export function useConfigPaperSessions(configId: string | null) {
     queryKey: ['config-paper-sessions', configId],
     queryFn: () => getConfigPaperSessions(configId!),
     enabled: !!configId,
+    refetchInterval: 15000,
+  });
+}
+
+export function useAggregationPaperSessions(aggregationId: string | null) {
+  return useQuery({
+    queryKey: ['aggregation-paper-sessions', aggregationId],
+    queryFn: () => getAggregationPaperSessions(aggregationId!),
+    enabled: !!aggregationId,
     refetchInterval: 15000,
   });
 }

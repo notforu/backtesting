@@ -1,3 +1,4 @@
+[2026-03-16 00:00] be-dev (sonnet) - Add GET /api/aggregations/:id/paper-sessions endpoint to aggregations route
 [2026-03-13 00:10] be-dev (sonnet) - Create scripts/import-and-backtest-pruned.ts to select 5 diverse pruned configs, import to prod via API, run backtests
 [2026-03-12 23:55] be-dev (sonnet) - Create scripts/create-configs-from-standalone.ts to build aggregation configs from best standalone runs
 [2026-03-12 23:45] be-dev (sonnet) - Create scripts/prune-aggregations.ts to run saved configs, identify poor performers, create pruned clones, and print comparison table
@@ -53,3 +54,6 @@
 [2026-03-16 04:57] fe-dev (sonnet) - Implement ConfigPaperTab component with API client function and React Query hook
 [2026-03-16 04:58] fe-dev (sonnet) - Implement ConfigPaperTab with session cards, API client, and hook
 [2026-03-16 14:30] docs-writer (haiku) - Create changelog for config paper trading sessions tab
+[2026-03-16 05:11] fe-dev (sonnet) - Add paper trading session display to aggregation config detail page
+[2026-03-16 05:11] be-dev (sonnet) - Add GET /api/aggregations/:id/paper-sessions endpoint
+[2026-03-16 05:11] fe-dev (sonnet) - Add paper sessions section to AggregationConfigDetail

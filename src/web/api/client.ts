@@ -897,6 +897,18 @@ export async function getConfigPaperSessions(configId: string): Promise<ConfigPa
   return apiFetch<ConfigPaperSessionSummary[]>(`/strategy-configs/${encodeURIComponent(configId)}/paper-sessions`);
 }
 
+export async function getAggregationPaperSessions(aggregationId: string): Promise<ConfigPaperSessionSummary[]> {
+  const res = await fetch(`${API_BASE}/aggregations/${encodeURIComponent(aggregationId)}/paper-sessions`, {
+    headers: {
+      ...(localStorage.getItem('auth_token')
+        ? { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
+        : {}),
+    },
+  });
+  if (!res.ok) throw new Error(`Failed to fetch paper sessions: ${res.statusText}`);
+  return res.json();
+}
+
 /**
  * Subscribe to SSE stream for a paper trading session.
  * Returns an unsubscribe function.
