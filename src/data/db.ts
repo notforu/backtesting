@@ -541,6 +541,7 @@ export interface HistoryFilters {
   sortDir?: 'asc' | 'desc';
   runType?: 'strategies' | 'aggregations';
   strategyConfigId?: string;
+  aggregationId?: string;
 }
 
 /**
@@ -623,6 +624,11 @@ export async function getBacktestSummaries(
   if (filters.strategyConfigId) {
     params.push(filters.strategyConfigId);
     conditions.push(`br.strategy_config_id = $${params.length}`);
+  }
+
+  if (filters.aggregationId) {
+    params.push(filters.aggregationId);
+    conditions.push(`br.aggregation_id = $${params.length}`);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

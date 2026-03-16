@@ -3,11 +3,15 @@
  * Uses the existing AggregationStore for selection state.
  */
 
+import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useAggregationStore } from '../../stores/aggregationStore.js';
 import { useAggregations } from '../../hooks/useBacktest.js';
 import { useConfigurationStore } from '../../stores/configurationStore.js';
 import { usePaperTradingStore } from '../../stores/paperTradingStore.js';
-import { useAggregationPaperSessions, useStrategyConfigBestRuns } from '../../hooks/useConfigurations.js';
+import { useAggregationPaperSessions, useStrategyConfigBestRuns, useAggregationRuns } from '../../hooks/useConfigurations.js';
+import { useBacktestStore } from '../../stores/backtestStore.js';
+import { deleteBacktest } from '../../api/client.js';
+import type { BacktestSummary } from '../../types.js';
 
 function EmptyState() {
   return (
@@ -36,6 +40,123 @@ function EmptyState() {
   );
 }
 
+function formatDateRange(startDate?: number | null, endDate?: number | null): string {
+  if (!startDate || !endDate) return '';
+  const fmt = (ts: number) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+  return `${fmt(startDate)} – ${fmt(endDate)}`;
+}
+
+interface AggRunCardProps {
+  run: BacktestSummary;
+  onNavigate: (id: string) => void;
+  onDelete: (id: string) => void;
+  isDeleting: boolean;
+}
+
+function AggRunCard({ run, onNavigate, onDelete, isDeleting }: AggRunCardProps) {
+  const returnPct = run.totalReturnPercent;
+  const sharpe = run.sharpeRatio;
+  const maxDD = run.maxDrawdownPercent;
+
+  return (
+    <div
+      style={{
+        border: '1px solid #333',
+        borderRadius: 8,
+        padding: '14px 16px',
+        marginBottom: 10,
+        background: '#252525',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+        <div>
+          <div style={{ fontSize: 13, color: '#e0e0e0' }}>
+            {new Date(run.runAt).toLocaleString()}
+          </div>
+          <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+            {formatDateRange(run.startDate, run.endDate)}
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            if (window.confirm('Delete this run?')) onDelete(run.id);
+          }}
+          disabled={isDeleting}
+          title="Delete run"
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: isDeleting ? 'not-allowed' : 'pointer',
+            color: '#666',
+            padding: '2px 4px',
+            borderRadius: 4,
+            fontSize: 14,
+            opacity: isDeleting ? 0.5 : 1,
+          }}
+          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = '#f44336')}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = '#666')}
+        >
+          ×
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 20, marginTop: 4, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Return</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: returnPct != null ? (returnPct > 0 ? '#4caf50' : '#f44336') : '#aaa' }}>
+            {returnPct != null ? `${returnPct > 0 ? '+' : ''}${returnPct.toFixed(1)}%` : '—'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sharpe</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: sharpe != null ? (sharpe > 0 ? '#4caf50' : '#f44336') : '#aaa' }}>
+            {sharpe != null ? sharpe.toFixed(2) : '—'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Max DD</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#f44336' }}>
+            {maxDD != null ? `${maxDD.toFixed(1)}%` : '—'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Trades</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#aaa' }}>
+            {run.totalTrades ?? '—'}
+          </span>
+        </div>
+      </div>
+
+      <button
+        onClick={() => onNavigate(run.id)}
+        style={{
+          marginTop: 10,
+          padding: '6px 12px',
+          background: '#1e1e1e',
+          border: '1px solid #444',
+          borderRadius: 6,
+          color: '#aaa',
+          fontSize: 12,
+          cursor: 'pointer',
+          transition: 'all 0.1s',
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.background = '#2e3a4e';
+          (e.currentTarget as HTMLButtonElement).style.color = '#e0e0e0';
+          (e.currentTarget as HTMLButtonElement).style.borderColor = '#4a7aa8';
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.background = '#1e1e1e';
+          (e.currentTarget as HTMLButtonElement).style.color = '#aaa';
+          (e.currentTarget as HTMLButtonElement).style.borderColor = '#444';
+        }}
+      >
+        Open in Backtesting
+      </button>
+    </div>
+  );
+}
+
 export function AggregationConfigDetail() {
   const { selectedAggregationId: selectedAggregation } = useAggregationStore();
   const { data: aggregations } = useAggregations();
@@ -43,6 +164,16 @@ export function AggregationConfigDetail() {
   const { setActivePage } = usePaperTradingStore();
   const setSelectedSession = usePaperTradingStore((s) => s.setSelectedSession);
   const { data: paperSessions } = useAggregationPaperSessions(selectedAggregation);
+  const { data: aggRuns } = useAggregationRuns(selectedAggregation);
+  const setSelectedBacktestId = useBacktestStore((s) => s.setSelectedBacktestId);
+  const queryClient = useQueryClient();
+  const deleteRunMutation = useMutation({
+    mutationFn: (id: string) => deleteBacktest(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['aggregation-runs', selectedAggregation] });
+      queryClient.invalidateQueries({ queryKey: ['history'] });
+    },
+  });
   const agg = aggregations?.find((a) => a.id === selectedAggregation);
   const subStrategyConfigIds = agg?.subStrategyConfigIds;
   const { data: bestRuns } = useStrategyConfigBestRuns(subStrategyConfigIds ?? undefined);
@@ -165,6 +296,40 @@ export function AggregationConfigDetail() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Backtest Runs */}
+      {aggRuns && aggRuns.length > 0 && (
+        <div style={{
+          background: '#1e1e1e',
+          border: '1px solid #2a2a2a',
+          borderRadius: 8,
+          padding: '16px 20px',
+          marginBottom: 16,
+        }}>
+          <h3 style={{
+            margin: '0 0 12px',
+            fontSize: 12,
+            fontWeight: 600,
+            color: '#666',
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+          }}>
+            Backtest Runs ({aggRuns.length})
+          </h3>
+          {aggRuns.map((run) => (
+            <AggRunCard
+              key={run.id}
+              run={run}
+              onNavigate={(id) => {
+                setSelectedBacktestId(id);
+                setActivePage('backtesting');
+              }}
+              onDelete={(id) => deleteRunMutation.mutate(id)}
+              isDeleting={deleteRunMutation.isPending && deleteRunMutation.variables === run.id}
+            />
+          ))}
         </div>
       )}
 

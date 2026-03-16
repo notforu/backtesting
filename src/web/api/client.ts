@@ -637,6 +637,14 @@ export async function deleteAggregation(id: string): Promise<void> {
 }
 
 /**
+ * Get backtest runs for a specific aggregation config
+ */
+export async function getAggregationRuns(aggregationId: string): Promise<BacktestSummary[]> {
+  const data = await apiFetch<{ results: BacktestSummary[]; total: number }>(`/aggregations/${encodeURIComponent(aggregationId)}/runs`);
+  return data.results;
+}
+
+/**
  * Run an aggregation backtest
  */
 export async function runAggregation(id: string, request: RunAggregationRequest): Promise<AggregateBacktestResult> {

@@ -8,7 +8,9 @@ import {
   updateAggregationConfig,
   deleteAggregationConfig,
   getPool,
+  getBacktestSummaries,
   type AggregationConfig,
+  type HistoryFilters,
 } from '../../data/db.js';
 import { findOrCreateStrategyConfig } from '../../data/strategy-config.js';
 import { computeAggregationConfigHash } from '../../utils/content-hash.js';
@@ -297,6 +299,51 @@ export async function aggregationRoutes(fastify: FastifyInstance) {
         return reply.status(200).send(sessions);
       } catch (error) {
         fastify.log.error({ err: error, msg: 'Error fetching paper sessions for aggregation' });
+        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+  );
+
+  // GET /api/aggregations/:id/runs
+  fastify.get(
+    '/api/aggregations/:id/runs',
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      try {
+        const { id } = request.params;
+
+        const config = await getAggregationConfig(id);
+        if (!config) {
+          return reply.status(404).send({ error: `Aggregation "${id}" not found` });
+        }
+
+        const filters: HistoryFilters = { aggregationId: id };
+        const { summaries, total } = await getBacktestSummaries(1000, 0, filters);
+
+        const results = summaries.map((summary) => ({
+          id: summary.id,
+          strategyName: summary.config.strategyName,
+          symbol: summary.config.symbol,
+          timeframe: summary.config.timeframe,
+          totalReturnPercent: summary.metrics.totalReturnPercent,
+          sharpeRatio: summary.metrics.sharpeRatio,
+          runAt: new Date(summary.createdAt).toISOString(),
+          exchange: summary.config.exchange,
+          startDate: summary.config.startDate,
+          endDate: summary.config.endDate,
+          params: summary.config.params,
+          mode: summary.config.mode,
+          maxDrawdownPercent: summary.metrics.maxDrawdownPercent,
+          winRate: summary.metrics.winRate,
+          profitFactor: summary.metrics.profitFactor,
+          totalTrades: summary.metrics.totalTrades,
+          totalFees: summary.metrics.totalFees,
+          aggregationId: summary.aggregationId,
+          aggregationName: summary.aggregationName,
+        }));
+
+        return reply.status(200).send({ results, total });
+      } catch (error) {
+        fastify.log.error({ err: error, msg: 'Error fetching runs for aggregation' });
         return reply.status(500).send({ error: error instanceof Error ? error.message : 'Unknown error' });
       }
     }

@@ -61,3 +61,7 @@
 [2026-03-16 05:40] fe-dev (sonnet) - Add BestRunSummary client type, getStrategyConfigBestRuns API fn, useStrategyConfigBestRuns hook, and best run stats display in AggregationConfigDetail sub-strategy cards
 [2026-03-16 05:41] be-dev (sonnet) - Add POST /api/strategy-configs/best-runs bulk endpoint
 [2026-03-16 05:41] fe-dev (sonnet) - Add best runs display to aggregation sub-strategy cards
+[2026-03-16 06:24] be-dev (sonnet) - Add aggregationId filter to HistoryFilters and GET /api/aggregations/:id/runs endpoint
+[2026-03-16 06:25] fe-dev (sonnet) - Add backtest runs list to aggregation config detail page
+[2026-03-16 06:26] be-dev (sonnet) - Add GET /api/aggregations/:id/runs endpoint with aggregationId filter
+[2026-03-16 06:26] fe-dev (sonnet) - Add backtest runs list to aggregation config detail page
