@@ -96,13 +96,13 @@ export function PaperTradesTable({
                     </td>
                     {isFutures && (
                       <td className={`py-2 pr-4 ${
-                        trade.fundingIncome
+                        trade.fundingIncome != null && trade.fundingIncome !== 0
                           ? trade.fundingIncome >= 0 ? 'text-green-400' : 'text-red-400'
                           : 'text-gray-600'
                       }`}>
-                        {trade.fundingIncome
+                        {trade.fundingIncome != null && trade.fundingIncome !== 0
                           ? `${trade.fundingIncome >= 0 ? '+' : ''}${fmtUsd(trade.fundingIncome)}`
-                          : '-'}
+                          : isClose ? '$0.00' : '-'}
                       </td>
                     )}
                     <td className="py-2 pr-4 text-gray-300">{fmtUsd(trade.balanceAfter)}</td>

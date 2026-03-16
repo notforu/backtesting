@@ -31,7 +31,7 @@ export function mapPaperTrades(trades: PaperTrade[]): Trade[] {
     pnlPercent: t.pnlPercent ?? undefined,
     balanceAfter: t.balanceAfter,
     fee: t.fee,
-    fundingIncome: t.fundingIncome || undefined,
+    fundingIncome: t.fundingIncome ?? undefined,
   }));
 }
 
