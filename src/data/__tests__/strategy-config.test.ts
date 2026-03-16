@@ -101,6 +101,11 @@ beforeEach(() => {
     query: mockClientQuery,
     release: mockClientRelease,
   });
+  // findOrCreateStrategyConfig always calls loadStrategy to merge defaults.
+  // Default to: strategy found but has no declared params → nothing is merged.
+  // Tests that need specific defaults can override these per-test.
+  mockLoadStrategy.mockResolvedValue({ name: 'stub-strategy', params: [] });
+  mockGetDefaultParams.mockReturnValue({});
 });
 
 // ============================================================================
@@ -358,19 +363,72 @@ describe('findOrCreateStrategyConfig', () => {
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
-  it('succeeds with explicit params without invoking loadStrategy', async () => {
+  it('succeeds with explicit params even when loadStrategy throws (unknown strategy)', async () => {
+    // loadStrategy is always called to merge defaults, but its failure must be swallowed.
+    mockLoadStrategy.mockRejectedValueOnce(new Error('Strategy not found: totally-unknown-strategy'));
+
     const row = makeConfigRow({ params: { threshold: 0.0005 } });
     mockQuery.mockResolvedValueOnce({ rows: [row] });
 
-    await findOrCreateStrategyConfig({
-      strategyName: 'totally-unknown-strategy',
+    await expect(
+      findOrCreateStrategyConfig({
+        strategyName: 'totally-unknown-strategy',
+        symbol: 'BTC/USDT',
+        timeframe: '4h',
+        params: { threshold: 0.0005 },
+      })
+    ).resolves.toBeDefined();
+  });
+
+  it('merges sparse params with strategy defaults for consistent hashing', async () => {
+    // Sparse caller params: only longPct is overridden.
+    // Defaults have longPct + shortPct + period.
+    const defaults = { longPct: 50, shortPct: 50, period: 14 };
+    const fakeStrategy = { name: 'funding-rate-v2', params: [] };
+    mockLoadStrategy.mockResolvedValueOnce(fakeStrategy);
+    mockGetDefaultParams.mockReturnValueOnce(defaults);
+
+    // Intercept the INSERT to verify finalParams contains full merged object.
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // SELECT: no match
+      .mockImplementationOnce((_sql: string, params: unknown[]) => {
+        // $5 (index 4) is the params JSON passed to the INSERT
+        const insertedParams = JSON.parse(params[4] as string) as Record<string, unknown>;
+        expect(insertedParams).toEqual({ longPct: 2, shortPct: 50, period: 14 });
+        return Promise.resolve({
+          rows: [makeConfigRow({ params: insertedParams, id: 'cfg-merged' })],
+        });
+      });
+
+    const result = await findOrCreateStrategyConfig({
+      strategyName: 'funding-rate-v2',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: { longPct: 2 }, // sparse — only overrides longPct
+    });
+
+    expect(result.config.params).toEqual({ longPct: 2, shortPct: 50, period: 14 });
+  });
+
+  it('does not alter params when strategy has no defaults', async () => {
+    // Strategy exists but declares no params — defaults is {}, so no merging happens.
+    // The SELECT mock returns an existing row — params are read from that row.
+    const fakeStrategy = { name: 'paramless-strategy', params: [] };
+    mockLoadStrategy.mockResolvedValueOnce(fakeStrategy);
+    mockGetDefaultParams.mockReturnValueOnce({});
+
+    const row = makeConfigRow({ params: { threshold: 0.0005 } });
+    mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+    const result = await findOrCreateStrategyConfig({
+      strategyName: 'paramless-strategy',
       symbol: 'BTC/USDT',
       timeframe: '4h',
       params: { threshold: 0.0005 },
     });
 
-    // loadStrategy must NOT have been called when params are non-empty
-    expect(mockLoadStrategy).not.toHaveBeenCalled();
+    // Caller params passed through unchanged — row.params is returned as-is
+    expect(result.config.params).toEqual({ threshold: 0.0005 });
   });
 });
 

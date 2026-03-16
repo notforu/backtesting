@@ -118,22 +118,31 @@ export async function findOrCreateStrategyConfig(config: {
 }): Promise<{ config: StrategyConfigRecord; created: boolean }> {
   const pool = getPool();
 
-  // Fill in default params from the strategy definition when params is empty.
-  // This ensures strategy configs always have complete parameter values.
+  // Always merge provided params with strategy defaults to normalise params for
+  // consistent hashing.  Without this, sparse params like {longPct: 2} produce
+  // a different hash than the full params the engine uses after filling defaults,
+  // which causes duplicate config rows and broken lookups.
+  //
+  // Algorithm:
+  //   1. Load strategy defaults (best-effort — ignore if strategy not found).
+  //   2. Spread defaults first, then override with caller-supplied params.
+  //   3. If the result is still empty, throw — we cannot hash an empty config.
   let finalParams = config.params;
+  try {
+    const strategy = await loadStrategy(config.strategyName);
+    const defaults = getDefaultParams(strategy);
+    if (Object.keys(defaults).length > 0) {
+      finalParams = { ...defaults, ...config.params };
+    }
+  } catch {
+    // Strategy not found — use params as-is
+  }
+
   if (Object.keys(finalParams).length === 0) {
-    try {
-      const strategy = await loadStrategy(config.strategyName);
-      finalParams = getDefaultParams(strategy);
-    } catch {
-      // Strategy not found
-    }
-    if (Object.keys(finalParams).length === 0) {
-      throw new Error(
-        `Cannot create strategy config for "${config.strategyName}" with empty params. ` +
-        `Either provide params explicitly or ensure the strategy defines default parameters.`
-      );
-    }
+    throw new Error(
+      `Cannot create strategy config for "${config.strategyName}" with empty params. ` +
+      `Either provide params explicitly or ensure the strategy defines default parameters.`
+    );
   }
 
   const hash = computeStrategyConfigHash({
