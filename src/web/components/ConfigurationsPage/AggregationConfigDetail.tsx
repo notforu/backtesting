@@ -193,22 +193,25 @@ export function AggregationConfigDetail() {
             const hasConfigId = !!subStrategyConfigIds?.[i];
             const configId = subStrategyConfigIds?.[i];
             const bestRun = configId && bestRuns ? bestRuns[configId] : null;
-            const paramEntries = ss.params ? Object.entries(ss.params) : [];
+
+            const sharpeColor = bestRun ? (bestRun.sharpeRatio >= 1 ? '#4ade80' : bestRun.sharpeRatio >= 0 ? '#facc15' : '#f87171') : '#888';
+            const returnColor = bestRun ? (bestRun.totalReturnPercent >= 0 ? '#4caf50' : '#f44336') : '#888';
+            const fmtDate = (ts: number) => new Date(ts).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 
             return (
               <div
                 key={i}
                 onClick={hasConfigId ? () => handleSubStrategyClick(i) : undefined}
                 style={{
-                  padding: '12px 14px',
+                  padding: '8px 12px',
                   background: '#252525',
                   borderRadius: 6,
                   border: '1px solid #333',
                   cursor: hasConfigId ? 'pointer' : 'default',
                   transition: 'background 0.15s, border-color 0.15s',
                   display: 'flex',
-                  flexDirection: 'column',
-                  gap: 6,
+                  alignItems: 'center',
+                  gap: 12,
                 }}
                 onMouseEnter={(e) => {
                   if (!hasConfigId) return;
@@ -220,106 +223,36 @@ export function AggregationConfigDetail() {
                   (e.currentTarget as HTMLDivElement).style.borderColor = '#333';
                 }}
               >
-                {/* Header row */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 14, color: '#e0e0e0', fontWeight: 500 }}>{ss.strategyName}</div>
-                    <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
-                      {ss.symbol} · {ss.timeframe}{ss.exchange ? ` · ${ss.exchange}` : ''}
-                    </div>
+                {/* Name + symbol */}
+                <div style={{ minWidth: 0, flex: '0 0 auto', maxWidth: 200 }}>
+                  <div style={{ fontSize: 13, color: '#e0e0e0', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ss.strategyName}</div>
+                  <div style={{ fontSize: 11, color: '#666' }}>
+                    {ss.symbol} · {ss.timeframe}
                   </div>
-                  {hasConfigId && (
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      fontSize: 11,
-                      color: '#555',
-                      flexShrink: 0,
-                    }}>
-                      {bestRun && (
-                        <span style={{ color: '#666' }}>({bestRun.totalRuns} run{bestRun.totalRuns !== 1 ? 's' : ''})</span>
-                      )}
-                      <span>View config</span>
-                      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                  )}
                 </div>
 
-                {/* Params grid */}
-                {paramEntries.length > 0 && (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(2, 1fr)',
-                      gap: '3px 12px',
-                      paddingTop: 6,
-                      borderTop: '1px solid #2e2e2e',
-                    }}
-                  >
-                    {paramEntries.map(([k, v]) => (
-                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-                        <span style={{ fontSize: 11, color: '#555' }}>{k}</span>
-                        <span style={{ fontSize: 11, color: '#888', fontVariantNumeric: 'tabular-nums' }}>
-                          {String(v)}
-                        </span>
-                      </div>
-                    ))}
+                {/* Best run stats — inline */}
+                {bestRun ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0, fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ color: sharpeColor, fontWeight: 600 }} title="Sharpe">{bestRun.sharpeRatio.toFixed(2)}</span>
+                    <span style={{ color: returnColor, fontWeight: 600 }} title="Return">{bestRun.totalReturnPercent >= 0 ? '+' : ''}{bestRun.totalReturnPercent.toFixed(1)}%</span>
+                    <span style={{ color: '#999' }} title="Max Drawdown">DD {bestRun.maxDrawdownPercent.toFixed(1)}%</span>
+                    <span style={{ color: '#999' }} title="Win Rate">WR {bestRun.winRate.toFixed(0)}%</span>
+                    <span style={{ color: '#999' }} title="Trades">{bestRun.totalTrades}t</span>
+                    {bestRun.startDate && bestRun.endDate && (
+                      <span style={{ color: '#666' }} title="Period">{fmtDate(bestRun.startDate)}–{fmtDate(bestRun.endDate)}</span>
+                    )}
+                    <span style={{ color: '#555' }}>({bestRun.totalRuns})</span>
                   </div>
+                ) : (
+                  <div style={{ flex: 1, fontSize: 11, color: '#555' }}>No runs</div>
                 )}
 
-                {/* Best run stats */}
-                {bestRun && (
-                  <div style={{
-                    display: 'flex',
-                    gap: 16,
-                    flexWrap: 'wrap',
-                    paddingTop: 6,
-                    borderTop: '1px solid #2e2e2e',
-                  }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Sharpe</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: bestRun.sharpeRatio >= 1 ? '#4ade80' : bestRun.sharpeRatio >= 0 ? '#facc15' : '#f87171', fontVariantNumeric: 'tabular-nums' }}>
-                        {bestRun.sharpeRatio.toFixed(2)}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Return</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: bestRun.totalReturnPercent >= 0 ? '#4caf50' : '#f44336', fontVariantNumeric: 'tabular-nums' }}>
-                        {bestRun.totalReturnPercent >= 0 ? '+' : ''}{bestRun.totalReturnPercent.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Max DD</span>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: '#e0e0e0', fontVariantNumeric: 'tabular-nums' }}>
-                        {bestRun.maxDrawdownPercent.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Win Rate</span>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: '#e0e0e0', fontVariantNumeric: 'tabular-nums' }}>
-                        {bestRun.winRate.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Trades</span>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: '#e0e0e0', fontVariantNumeric: 'tabular-nums' }}>
-                        {bestRun.totalTrades}
-                      </span>
-                    </div>
-                    {bestRun.startDate && bestRun.endDate && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Period</span>
-                        <span style={{ fontSize: 13, fontWeight: 500, color: '#e0e0e0', fontVariantNumeric: 'tabular-nums' }}>
-                          {new Date(bestRun.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
-                          {' – '}
-                          {new Date(bestRun.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                {/* Arrow */}
+                {hasConfigId && (
+                  <svg width="12" height="12" fill="none" stroke="#555" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
                 )}
               </div>
             );
