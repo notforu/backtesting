@@ -237,6 +237,14 @@ export const PerformanceMetricsSchema = z.object({
   // Futures mode: breakdown of returns by source
   totalFundingIncome: z.number().optional(),
   tradingPnl: z.number().optional(),
+
+  // Long/Short breakdown
+  longPnl: z.number().optional(),
+  shortPnl: z.number().optional(),
+  longTrades: z.number().optional(),
+  shortTrades: z.number().optional(),
+  longWinRate: z.number().optional(),
+  shortWinRate: z.number().optional(),
 });
 
 export type PerformanceMetrics = z.infer<typeof PerformanceMetricsSchema>;

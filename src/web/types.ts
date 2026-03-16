@@ -181,6 +181,14 @@ export interface PerformanceMetrics {
   // Futures mode: breakdown of returns by source
   totalFundingIncome?: number;
   tradingPnl?: number;
+
+  // Long/Short breakdown
+  longPnl?: number;
+  shortPnl?: number;
+  longTrades?: number;
+  shortTrades?: number;
+  longWinRate?: number;
+  shortWinRate?: number;
 }
 
 export interface BacktestResult {

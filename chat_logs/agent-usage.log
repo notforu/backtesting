@@ -65,3 +65,7 @@
 [2026-03-16 06:25] fe-dev (sonnet) - Add backtest runs list to aggregation config detail page
 [2026-03-16 06:26] be-dev (sonnet) - Add GET /api/aggregations/:id/runs endpoint with aggregationId filter
 [2026-03-16 06:26] fe-dev (sonnet) - Add backtest runs list to aggregation config detail page
+[2026-03-16 06:48] be-dev (sonnet) - Add long/short PnL breakdown fields to backtesting metrics
+[2026-03-16 06:49] fe-dev (sonnet) - Add long/short PnL breakdown to Dashboard metrics component
+[2026-03-16 14:52] be-dev (sonnet) - Add long/short PnL breakdown to PerformanceMetrics schema and calculateMetrics
+[2026-03-16 14:52] fe-dev (sonnet) - Add long/short PnL breakdown display to Dashboard component

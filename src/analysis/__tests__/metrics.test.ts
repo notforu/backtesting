@@ -882,6 +882,121 @@ describe('calculateRiskMetrics', () => {
 });
 
 // ---------------------------------------------------------------------------
+// calculateMetrics — long/short PnL breakdown
+// ---------------------------------------------------------------------------
+
+describe('calculateMetrics — long/short PnL breakdown', () => {
+  beforeEach(() => resetCounters());
+
+  it('all zero when no trades', () => {
+    const metrics = calculateMetrics([], [], 10_000);
+    expect(metrics.longPnl).toBe(0);
+    expect(metrics.shortPnl).toBe(0);
+    expect(metrics.longTrades).toBe(0);
+    expect(metrics.shortTrades).toBe(0);
+    expect(metrics.longWinRate).toBe(0);
+    expect(metrics.shortWinRate).toBe(0);
+  });
+
+  it('only long trades — short fields are zero', () => {
+    // Two winning long trades: +20 and +10
+    const trades = [
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 120, entryTime: 1000, exitTime: 2000 }),
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 110, entryTime: 3000, exitTime: 4000 }),
+    ];
+    const equity = makeEquity([[1000, 10_000], [2000, 10_020], [3000, 10_020], [4000, 10_030]]);
+    const metrics = calculateMetrics(trades, equity, 10_000);
+
+    expect(metrics.longPnl).toBeCloseTo(30, 6);
+    expect(metrics.longTrades).toBe(2);
+    expect(metrics.longWinRate).toBeCloseTo(100, 6);
+
+    expect(metrics.shortPnl).toBe(0);
+    expect(metrics.shortTrades).toBe(0);
+    expect(metrics.shortWinRate).toBe(0);
+  });
+
+  it('only short trades — long fields are zero', () => {
+    // Two winning short trades: entry 100, exit 80 → +20 each
+    const trades = [
+      ...makeTradePair({ side: 'short', amount: 1, entryPrice: 100, exitPrice: 80, entryTime: 1000, exitTime: 2000 }),
+      ...makeTradePair({ side: 'short', amount: 1, entryPrice: 100, exitPrice: 85, entryTime: 3000, exitTime: 4000 }),
+    ];
+    const equity = makeEquity([[1000, 10_000], [2000, 10_020], [3000, 10_020], [4000, 10_035]]);
+    const metrics = calculateMetrics(trades, equity, 10_000);
+
+    expect(metrics.shortPnl).toBeCloseTo(35, 6);
+    expect(metrics.shortTrades).toBe(2);
+    expect(metrics.shortWinRate).toBeCloseTo(100, 6);
+
+    expect(metrics.longPnl).toBe(0);
+    expect(metrics.longTrades).toBe(0);
+    expect(metrics.longWinRate).toBe(0);
+  });
+
+  it('mixed long and short — both sides calculated independently', () => {
+    // Long win: +20, Short win: +15
+    const trades = [
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 120, entryTime: 1000, exitTime: 2000 }),
+      ...makeTradePair({ side: 'short', amount: 1, entryPrice: 100, exitPrice: 85, entryTime: 3000, exitTime: 4000 }),
+    ];
+    const equity = makeEquity([[1000, 10_000], [2000, 10_020], [3000, 10_020], [4000, 10_035]]);
+    const metrics = calculateMetrics(trades, equity, 10_000);
+
+    expect(metrics.longPnl).toBeCloseTo(20, 6);
+    expect(metrics.longTrades).toBe(1);
+    expect(metrics.longWinRate).toBeCloseTo(100, 6);
+
+    expect(metrics.shortPnl).toBeCloseTo(15, 6);
+    expect(metrics.shortTrades).toBe(1);
+    expect(metrics.shortWinRate).toBeCloseTo(100, 6);
+  });
+
+  it('all winning longs, all losing shorts — longWinRate=100, shortWinRate=0', () => {
+    // Long win: +20, Short loss: -10 (entry 100, exit 110 on short = loss)
+    const trades = [
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 120, entryTime: 1000, exitTime: 2000 }),
+      ...makeTradePair({ side: 'short', amount: 1, entryPrice: 100, exitPrice: 110, entryTime: 3000, exitTime: 4000 }),
+    ];
+    const equity = makeEquity([[1000, 10_000], [2000, 10_020], [3000, 10_020], [4000, 10_010]]);
+    const metrics = calculateMetrics(trades, equity, 10_000);
+
+    expect(metrics.longWinRate).toBeCloseTo(100, 6);
+    expect(metrics.longTrades).toBe(1);
+    expect(metrics.longPnl).toBeCloseTo(20, 6);
+
+    expect(metrics.shortWinRate).toBeCloseTo(0, 6);
+    expect(metrics.shortTrades).toBe(1);
+    expect(metrics.shortPnl).toBeCloseTo(-10, 6);
+  });
+
+  it('mixed win/loss on both sides — calculates partial win rates correctly', () => {
+    // 2 longs: win +20, loss -10 → longWinRate = 50%, longPnl = 10
+    // 2 shorts: win +15, loss -5 → shortWinRate = 50%, shortPnl = 10
+    const trades = [
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 120, entryTime: 1000, exitTime: 2000 }),
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 90, entryTime: 3000, exitTime: 4000 }),
+      ...makeTradePair({ side: 'short', amount: 1, entryPrice: 100, exitPrice: 85, entryTime: 5000, exitTime: 6000 }),
+      ...makeTradePair({ side: 'short', amount: 1, entryPrice: 100, exitPrice: 105, entryTime: 7000, exitTime: 8000 }),
+    ];
+    const equity = makeEquity([
+      [1000, 10_000], [2000, 10_020], [3000, 10_020],
+      [4000, 10_010], [5000, 10_010], [6000, 10_025],
+      [7000, 10_025], [8000, 10_020],
+    ]);
+    const metrics = calculateMetrics(trades, equity, 10_000);
+
+    expect(metrics.longTrades).toBe(2);
+    expect(metrics.longPnl).toBeCloseTo(10, 6);
+    expect(metrics.longWinRate).toBeCloseTo(50, 6);
+
+    expect(metrics.shortTrades).toBe(2);
+    expect(metrics.shortPnl).toBeCloseTo(10, 6);
+    expect(metrics.shortWinRate).toBeCloseTo(50, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Edge cases — very large/small values
 // ---------------------------------------------------------------------------
 

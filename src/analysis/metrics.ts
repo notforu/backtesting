@@ -57,6 +57,12 @@ export function calculateMetrics(
       exposureTime: 0,
       totalFees: 0,
       totalSlippage: 0,
+      longPnl: 0,
+      shortPnl: 0,
+      longTrades: 0,
+      shortTrades: 0,
+      longWinRate: 0,
+      shortWinRate: 0,
     };
   }
 
@@ -134,6 +140,19 @@ export function calculateMetrics(
   // Total slippage cost across all trades
   const totalSlippage = trades.reduce((sum, t) => sum + (t.slippage ?? 0), 0);
 
+  // Long/Short PnL breakdown
+  const longCloseTrades = closeTrades.filter(t => t.action === 'CLOSE_LONG');
+  const shortCloseTrades = closeTrades.filter(t => t.action === 'CLOSE_SHORT');
+
+  const longPnl = longCloseTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+  const shortPnl = shortCloseTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+
+  const longWinCount = longCloseTrades.filter(t => (t.pnl ?? 0) > 0).length;
+  const shortWinCount = shortCloseTrades.filter(t => (t.pnl ?? 0) > 0).length;
+
+  const longWinRate = longCloseTrades.length > 0 ? (longWinCount / longCloseTrades.length) * 100 : 0;
+  const shortWinRate = shortCloseTrades.length > 0 ? (shortWinCount / shortCloseTrades.length) * 100 : 0;
+
   return {
     totalReturn,
     totalReturnPercent,
@@ -158,6 +177,12 @@ export function calculateMetrics(
     exposureTime,
     totalFees,
     totalSlippage,
+    longPnl,
+    shortPnl,
+    longTrades: longCloseTrades.length,
+    shortTrades: shortCloseTrades.length,
+    longWinRate,
+    shortWinRate,
   };
 }
 
