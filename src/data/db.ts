@@ -427,6 +427,35 @@ export async function saveBacktestRun(
 }
 
 /**
+ * Enriches metrics with long/short breakdown computed from trades.
+ * If metrics already have longPnl defined (new results), returns metrics as-is.
+ * This allows old backtest results to display the same long/short breakdown UI
+ * as new results without requiring a DB migration.
+ */
+function enrichMetricsWithLongShort(metrics: PerformanceMetrics, trades: Trade[]): PerformanceMetrics {
+  if (metrics.longPnl !== undefined) return metrics;
+
+  const closeLongs = trades.filter(t => t.action === 'CLOSE_LONG');
+  const closeShorts = trades.filter(t => t.action === 'CLOSE_SHORT');
+
+  const longPnl = closeLongs.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+  const shortPnl = closeShorts.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+
+  const longWinCount = closeLongs.filter(t => (t.pnl ?? 0) > 0).length;
+  const shortWinCount = closeShorts.filter(t => (t.pnl ?? 0) > 0).length;
+
+  return {
+    ...metrics,
+    longPnl,
+    shortPnl,
+    longTrades: closeLongs.length,
+    shortTrades: closeShorts.length,
+    longWinRate: closeLongs.length > 0 ? (longWinCount / closeLongs.length) * 100 : 0,
+    shortWinRate: closeShorts.length > 0 ? (shortWinCount / closeShorts.length) * 100 : 0,
+  };
+}
+
+/**
  * Get a backtest run by ID.
  * Returns AggregateBacktestResult when the run has per-asset results, BacktestResult otherwise.
  */
@@ -472,11 +501,21 @@ export async function getBacktestRun(id: string): Promise<AnyBacktestResult | nu
     indicators: parsedIndicators,
   };
 
+  baseResult.metrics = enrichMetricsWithLongShort(baseResult.metrics, trades);
+
   // If aggregate-specific fields exist, return as AggregateBacktestResult
   if (row.per_asset_results != null) {
+    const par = row.per_asset_results as AggregateBacktestResult['perAssetResults'];
+    // Enrich per-asset metrics with long/short breakdown for old results
+    for (const symbol of Object.keys(par)) {
+      const asset = par[symbol];
+      if (asset.trades && asset.metrics) {
+        asset.metrics = enrichMetricsWithLongShort(asset.metrics, asset.trades);
+      }
+    }
     const aggregateResult: AggregateBacktestResult & { aggregationId?: string } = {
       ...baseResult,
-      perAssetResults: row.per_asset_results as AggregateBacktestResult['perAssetResults'],
+      perAssetResults: par,
       signalHistory: (row.signal_history ?? []) as AggregateBacktestResult['signalHistory'],
       ...(row.aggregation_id != null ? { aggregationId: row.aggregation_id } : {}),
     };

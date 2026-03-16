@@ -80,6 +80,19 @@ export function computePaperMetrics(
     if (ddPct > maxDrawdownPercent) maxDrawdownPercent = ddPct;
   }
 
+  // Long/Short PnL breakdown
+  const longCloseTrades = closeTrades.filter(t => t.action === 'close_long');
+  const shortCloseTrades = closeTrades.filter(t => t.action === 'close_short');
+
+  const longPnl = longCloseTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const shortPnl = shortCloseTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+
+  const longWins = longCloseTrades.filter(t => (t.pnl ?? 0) > 0).length;
+  const shortWins = shortCloseTrades.filter(t => (t.pnl ?? 0) > 0).length;
+
+  const longWinRate = longCloseTrades.length > 0 ? (longWins / longCloseTrades.length) * 100 : 0;
+  const shortWinRate = shortCloseTrades.length > 0 ? (shortWins / shortCloseTrades.length) * 100 : 0;
+
   return {
     totalReturn,
     totalReturnPercent,
@@ -103,6 +116,12 @@ export function computePaperMetrics(
     avgTradeDuration: 0,
     exposureTime: 0,
     totalFees,
+    longPnl,
+    shortPnl,
+    longTrades: longCloseTrades.length,
+    shortTrades: shortCloseTrades.length,
+    longWinRate,
+    shortWinRate,
     ...(totalFunding !== 0 ? { totalFundingIncome: totalFunding, tradingPnl: totalPnl - totalFunding } : {}),
   };
 }
