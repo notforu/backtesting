@@ -309,6 +309,16 @@ export function AggregationConfigDetail() {
                         {bestRun.totalTrades}
                       </span>
                     </div>
+                    {bestRun.startDate && bestRun.endDate && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Period</span>
+                        <span style={{ fontSize: 13, fontWeight: 500, color: '#e0e0e0', fontVariantNumeric: 'tabular-nums' }}>
+                          {new Date(bestRun.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                          {' – '}
+                          {new Date(bestRun.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

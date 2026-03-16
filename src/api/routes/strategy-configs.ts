@@ -129,6 +129,8 @@ export async function strategyConfigRoutes(fastify: FastifyInstance) {
           max_drawdown_percent: string | null;
           total_trades: string | null;
           win_rate: string | null;
+          start_date: string | null;
+          end_date: string | null;
           run_at: string;
           total_runs: string;
         }>(
@@ -141,6 +143,8 @@ export async function strategyConfigRoutes(fastify: FastifyInstance) {
               (br.metrics->>'maxDrawdownPercent')::numeric AS max_drawdown_percent,
               (br.metrics->>'totalTrades')::int            AS total_trades,
               (br.metrics->>'winRate')::numeric            AS win_rate,
+              (br.config->>'startDate')::bigint             AS start_date,
+              (br.config->>'endDate')::bigint               AS end_date,
               br.created_at                               AS run_at,
               ROW_NUMBER() OVER (
                 PARTITION BY br.strategy_config_id
@@ -167,6 +171,8 @@ export async function strategyConfigRoutes(fastify: FastifyInstance) {
             maxDrawdownPercent: number;
             totalTrades: number;
             winRate: number;
+            startDate: number | null;
+            endDate: number | null;
             runAt: string;
             totalRuns: number;
           } | null
@@ -186,6 +192,8 @@ export async function strategyConfigRoutes(fastify: FastifyInstance) {
                 row.max_drawdown_percent !== null ? Number(row.max_drawdown_percent) : 0,
               totalTrades: row.total_trades !== null ? Number(row.total_trades) : 0,
               winRate: row.win_rate !== null ? Number(row.win_rate) : 0,
+              startDate: row.start_date !== null ? Number(row.start_date) : null,
+              endDate: row.end_date !== null ? Number(row.end_date) : null,
               runAt: new Date(Number(row.run_at)).toISOString(),
               totalRuns: Number(row.total_runs),
             };

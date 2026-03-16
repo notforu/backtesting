@@ -880,6 +880,8 @@ export interface BestRunSummary {
   maxDrawdownPercent: number;
   totalTrades: number;
   winRate: number;
+  startDate: number | null;
+  endDate: number | null;
   runAt: string;
   totalRuns: number;
 }
