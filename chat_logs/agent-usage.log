@@ -1,141 +1,55 @@
+[2026-03-13 00:10] be-dev (sonnet) - Create scripts/import-and-backtest-pruned.ts to select 5 diverse pruned configs, import to prod via API, run backtests
+[2026-03-12 23:55] be-dev (sonnet) - Create scripts/create-configs-from-standalone.ts to build aggregation configs from best standalone runs
+[2026-03-12 23:45] be-dev (sonnet) - Create scripts/prune-aggregations.ts to run saved configs, identify poor performers, create pruned clones, and print comparison table
+[2026-03-12 23:30] be-dev (sonnet) - Create scripts/analyze-aggregations.ts one-time CLI analysis script
+[2026-03-12 22:43] be-dev (sonnet) - Fix per-asset equity capital base and entry fee deduction bugs in aggregate-engine.ts (TDD)
+[2026-03-12 10:00] quant-lead (opus) - Investigate >10000% ROI bug in aggregation backtests
 [2026-03-11 10:15] be-dev (sonnet) - Remove custom data upload section from master plan, update capabilities matrix, roadmap, and decision matrix
 [2026-03-10 14:30] be-dev (sonnet) - Update AI strategy assistant master plan: code generation as primary approach, custom data upload section, roadmap additions, decision matrix updates
 [2026-03-10 15:00] be-dev (sonnet) - Insert new Section 2 "Возможности и ограничения для пользователя" into master plan doc and renumber all subsequent sections
 [2026-03-10 13:40] qa (sonnet) - Write unit tests for strategy-configs API routes with mocked service layer
 [2026-03-09 09:50] fe-dev (sonnet) - Verify FR threshold extraction and trades display for simple backtests
-[2026-03-09 11:49] Explore (sonnet) - Explore trades & FR display code
-[2026-03-09 11:49] be-dev (sonnet) - Fix walk-forward trades persistence in WalkForwardResult
-[2026-03-09 11:49] fe-dev (sonnet) - Fix FR threshold lines in backtesting view + remove last FR value line
-[2026-03-09 11:49] ui-tester (sonnet) - Verify UI fixes for trades, FR thresholds, last value line
-[2026-03-10 09:00] docs-writer (haiku) - Create changelog for funding rate histogram gap fix
-[2026-03-06 23:00] quant-lead (opus) - Critical assessment of paper trading results, drawdown probability math, portfolio expansion analysis, validation timeline
-[2026-03-06 07:32] fullstack-dev (sonnet) - Implement bidirectional navigation between paper trading sessions and aggregation configs
-[2026-03-05 19:30] docs-writer (haiku) - Create comprehensive HF scalping investigation changelog with all backtest results, fee-to-move analysis, and strategic conclusions
-[2026-03-05 22:00] quant-lead (opus) - Design 3 OI/liquidation/CVD scalping strategies with leverage on 15m: OI-Delta Regime Scalper, CVD Divergence Scalper, OI Liquidation Cascade Bounce
-[2026-03-06 08:28] be-dev (sonnet) - Fix top_n capital allocation bug in aggregate-engine + paper-trading engine
-[2026-03-06 08:28] ui-tester (sonnet) - Test FR threshold lines, strategy loading, SL/TP via Playwright
-[2026-03-06 08:28] quant (sonnet) - Backtest top_n vs single_strongest allocation comparison
-[2026-03-06 08:28] be-dev (sonnet) - Fix top_n capital allocation bug in aggregate-engine.ts and paper-trading/engine.ts
-[2026-03-06 09:24] quant (sonnet) - Walk-forward validate FR V2 on 6 production symbols: LDO, DOGE, IMX, ICP, XLM, NEAR
-[2026-03-06 09:25] be-dev (sonnet) - Fix top_n capital allocation bug (re-run after Docker crash)
-[2026-03-06 09:25] quant (sonnet) - Walk-forward FR V2 on 6 production symbols (re-run after Docker crash)
-[2026-03-06 09:25] be-dev (sonnet) - Verified top_n capital allocation fix already applied in aggregate-engine.ts and paper-trading/engine.ts
-[2026-03-06 09:26] quant (sonnet) - Backtest top_n vs single_strongest comparison (re-run)
-[2026-03-06 09:26] ui-tester (sonnet) - Verify FR threshold lines + technicalindicators fix
-[2026-03-06 22:30] quant (sonnet) - Compare top_n vs single_strongest allocation modes for FR V2 (6 symbols, 2024-2026)
-[2026-03-06 12:53] main (opus) - Create 10-symbol expanded paper trading config on prod via API
-[2026-03-06 10:02] quant (sonnet) - Walk-forward validation for 6 production symbols: LDO, DOGE, IMX, ICP, XLM, NEAR
-[2026-03-06 13:00] quant (sonnet) - Run FR V2 symbol scan on 25 new symbols to find portfolio candidates
-[2026-03-06 13:00] main (opus) - Run symbol scan (50 symbols for FR V2 viability)
-[2026-03-06 13:30] main (opus) - Walk-forward validate LDO, DOGE, IMX (batch 2a)
-[2026-03-06 14:30] main (opus) - Walk-forward validate ICP, XLM, NEAR (batch 2b)
-[2026-03-06 15:00] docs-writer (haiku) - Save WF validation + scan results docs
-[2026-03-06 15:00] main (opus) - Create WF-validated 7-symbol paper trading session on prod
-[2026-03-08 23:47] be-dev (sonnet) - Fix walk-forward script to include actual trades/equity/rollingMetrics in saved test-period results
-[2026-03-08 23:47] fe-dev (sonnet) - Fix FR threshold lines in backtesting/multi-asset views and hide FR histogram price line
-[2026-03-09 00:00] fe-dev (sonnet) - Fix FR threshold lines not showing for aggregation backtests in App.tsx
-[2026-03-09 09:55] fe-dev (sonnet) - Enhance FR threshold extraction in PaperTradingPage to fall back to strategy default values
-[2026-03-09 09:57] fe-dev (sonnet) - Add strategy default parameter fallback for FR thresholds in aggregation backtesting view (App.tsx)
-[2026-03-09 18:30] Explore (sonnet) - Investigate FR thresholds & trades display issues
-[2026-03-09 18:35] Explore (sonnet) - Investigate simple backtest trades data flow
-[2026-03-09 18:45] fe-dev (sonnet) - Fix FR thresholds for aggregation backtesting (App.tsx)
-[2026-03-09 18:45] fe-dev (sonnet) - Verify paper trading FR thresholds & trades display
-[2026-03-09 18:55] fe-dev (sonnet) - Add strategy defaults fallback for paper trading FR thresholds
-[2026-03-09 19:05] fe-dev (sonnet) - Add strategy defaults fallback for App.tsx aggregation FR thresholds
-[2026-03-09 11:25] fe-dev (sonnet) - Simplify FR threshold extraction: remove useStrategy API fallback from App.tsx and PaperTradingPage.tsx
-[2026-03-09 19:30] docs-writer (haiku) - Create changelog for resolved params & trades fixes (engine now stores fully resolved params, FR thresholds direct from config)
-[2026-03-09 19:30] commit (haiku) - Store fully resolved params in backtest results and simplify FR threshold display
-[2026-03-09 14:25] fe-dev (sonnet) - Add collapsible strategy configuration widget to paper trading session detail view
-[2026-03-09 14:25] fullstack-dev (sonnet) - Added mandatory Playwright MCP instruction block to ui-tester agent
-[2026-03-09 14:25] fe-dev (sonnet) - Fix maxDrawdownPercent always being 0% in paper trading metrics
-[2026-03-09 00:00] fe-dev (sonnet) - Enhance paper trading session view with exchange-style positions and orders widget
-[2026-03-09 00:00] fullstack-dev (sonnet) - Fix TypeScript build errors: move metrics useMemo after snapshots declaration, add stopLoss/takeProfit to PaperPosition mocks
-[2026-03-10 01:35] fe-dev (sonnet) - Add dynamic per-bar indicator line series (FR thresholds) to Chart component
-[2026-03-10 01:35] be-dev (sonnet) - Add per-bar indicator output mechanism (setIndicator) to strategy context and engine
-[2026-03-10 01:38] be-dev (sonnet) - Add setIndicator mechanism to engine, types, strategy context, and FR V2 strategy
-[2026-03-10 01:38] fe-dev (sonnet) - Display dynamic FR threshold lines on chart instead of static price lines
-[2026-03-10 00:00] qa (sonnet) - write unit tests for FR V2 dynamic indicators via context.setIndicator() in SignalAdapter
-[2026-03-10 02:51] be-dev (sonnet) - Add indicators column to backtest_runs table and persist/restore from DB
-[2026-03-10 10:50] be-dev (sonnet) - Add indicators column to DB, persist and restore indicators in saveBacktestRun/getBacktestRun
-[2026-03-10 04:53] be-dev (sonnet) - Remove Polymarket, Pairs Trading, and result-storage from backend (large refactor)
-[2026-03-10 04:53] fe-dev (sonnet) - Remove Polymarket and Pairs Trading references from frontend code
-[2026-03-10 04:54] fullstack-dev (sonnet) - deleted pm/pairs strategy files, pm/dex script files, and pairs optimization data files
-[2026-03-10 04:59] fe-dev (sonnet) - Remove Polymarket and Pairs Trading references from frontend code
-[2026-03-10 05:08] be-dev (sonnet) - Clean up Polymarket/Pairs module references across 7 files
-[2026-03-10 12:00] Explore (sonnet) - Find all Polymarket files and references
-[2026-03-10 12:00] Explore (sonnet) - Find all Pairs Trading files and references
-[2026-03-10 12:00] Explore (sonnet) - Find result-storage, funding-rate-spike refs
-[2026-03-10 12:05] be-dev (sonnet) - Delete PM/Pairs/result-storage backend files + clean imports
-[2026-03-10 12:05] fe-dev (sonnet) - Delete PM/Pairs frontend components + clean imports
-[2026-03-10 12:05] fullstack-dev (sonnet) - Delete strategy/script/data files
-[2026-03-10 12:15] be-dev (sonnet) - Fix remaining pairs/PM references in 7 files
-[2026-03-10 12:20] docs-writer (haiku) - Create SYSTEM_INVENTORY.md
-[2026-03-10 12:20] docs-writer (haiku) - Create changelog for refactoring
-[2026-03-10 12:00] docs-writer (haiku) - Create major cleanup changelog: remove Polymarket, Pairs Trading, result storage
-[2026-03-10 12:30] docs-writer (haiku) - Create comprehensive system inventory at /docs/SYSTEM_INVENTORY.md
-[2026-03-10 05:39] fe-dev (sonnet) - Fix all frontend critical and medium severity issues: ErrorBoundary, TradesTable extraction, Spinner component, store splitting, App.tsx reduction
-[2026-03-10 05:40] be-dev (sonnet) - Fix all backend critical and medium severity architecture issues
-[2026-03-10 05:40] qa (sonnet) - Write comprehensive unit tests for portfolio.ts, broker.ts, and metrics.ts; also add vitest coverage config
-[2026-03-10 14:30] docs-writer (haiku) - Comprehensive documentation refresh: update ARCHITECTURE.md, PROJECT_GOALS.md, CLAUDE.md, WORKFLOWS.md, and 8 agent configs to reflect current Phase 4 system state
-[2026-03-10 06:27] builder (haiku) - Fix vitest Bus error in Docker
-[2026-03-10 06:38] fe-dev (sonnet) - Reduce App.tsx from 542 to under 400 lines by extracting components and hooks
-[2026-03-10 06:38] fe-dev (sonnet) - Decompose PaperTradingPage.tsx (1421 lines) into focused sub-components
-[2026-03-10 06:38] qa (sonnet) - Write unit tests for optimizer grid generation, walk-forward split/degradation, and engine createBacktestConfig
-[2026-03-10 06:49] fe-dev (sonnet) - Completed PaperTradingPage decomposition: 1421 lines → 66 lines orchestrator + 7 sub-components
-[2026-03-10 06:56] be-dev (sonnet) - Fix close+open priority bugs in signal-adapter.ts getSignal()
-[2026-03-10 00:00] be-dev (sonnet) - Fix shutdownAll() bug in session-manager.ts to call pause() on running engines
-[2026-03-10 07:14] fe-dev (sonnet) - Fix funding rate histogram gaps on 4h chart by forward-filling FR values to candle timestamps
-[2026-03-10 07:15] fe-dev (sonnet) - Fix FR histogram gaps on 4h chart by forward-filling
-[2026-03-10 07:16] commit (haiku) - Fix FR histogram gaps on sub-8h timeframes with forward-filling
-[2026-03-10 12:31] be-dev (sonnet) - Create migration 015_strategy_configs.sql for strategy configs restructuring
-[2026-03-10 12:30] be-dev (sonnet) - Create DB migration 015_strategy_configs.sql
-[2026-03-10 12:30] be-dev (sonnet) - Create content hash utility + strategy config service + type updates
-[2026-03-10 12:32] be-dev (sonnet) - Create content-hash utility and strategy-config service
-[2026-03-10 12:37] be-dev (sonnet) - Create strategy-config API routes, update saveBacktestRun/getBacktestSummaries, modify backtest.ts to auto-create configs
-[2026-03-10 12:40] be-dev (sonnet) - Create strategy config API routes + modify backtest/aggregation routes
-[2026-03-10 12:40] fe-dev (sonnet) - Build ConfigurationsPage with sidebar/detail/tabs
-[2026-03-10 12:38] fe-dev (sonnet) - Build Configurations page: types, API client, store, hooks, components, App.tsx/AppHeader/URL sync updates
-[2026-03-10 19:40] architect (opus) - AI/LLM strategy generation pipeline design
-[2026-03-10 19:40] architect (opus) - Payment gateway and monetization model design
-[2026-03-10 19:40] architect (opus) - Frontend/UX chat interface design
-[2026-03-10 19:40] architect (opus) - Security, sandboxing and infrastructure design
-[2026-03-10 12:42] docs-writer (haiku) - Changelog for strategy-config API routes
-[2026-03-10 12:50] fe-dev (sonnet) - Create RunBacktestModal + wire buttons
-[2026-03-10 12:50] fe-dev (sonnet) - Wire delete config confirmation + cross-page navigation
-[2026-03-10 12:45] fe-dev (sonnet) - Create RunBacktestModal component, store, wire into App and AppHeader
-[2026-03-10 19:46] docs-writer (haiku) - Create AI Strategy Assistant master plan doc
-[2026-03-10 12:58] docs-writer (haiku) - Create changelog + update ARCHITECTURE.md for strategy configs
-[2026-03-10 20:15] docs-writer (haiku) - Create strategy configurations changelog and update architecture documentation
-[2026-03-10 13:37] qa (sonnet) - Write comprehensive unit tests for content-hash utility
-[2026-03-10 13:45] qa (sonnet) - Write comprehensive unit tests for strategy-config CRUD service with mocked DB
-[2026-03-10 13:40] qa (sonnet) - Write content-hash unit tests (29 tests)
-[2026-03-10 13:40] qa (sonnet) - Write strategy-config service tests (44 tests)
-[2026-03-10 13:40] qa (sonnet) - Write strategy-configs API route tests (44 tests)
-[2026-03-10 13:45] docs-writer (haiku) - Create changelog for 117 new strategy configuration tests (content-hash, service, API)
-[2026-03-10 21:20] Explore (sonnet) - Comprehensive strategy system capabilities audit
-[2026-03-10 21:38] be-dev (sonnet) - Update master plan: code generation, LLM strategy, custom data upload
-[2026-03-10 21:57] be-dev (sonnet) - Add user capabilities matrix to master plan
-[2026-03-11 06:55] fe-dev (sonnet) - Replace StrategyConfig form sidebar with compact list linking to Configurations page
-[2026-03-11 00:15] fe-dev (sonnet) - Replace strategy form sidebar with compact config list
-[2026-03-11 13:58] be-dev (sonnet) - Remove custom data upload from master plan, update capabilities matrix
-[2026-03-11 08:23] fe-dev (sonnet) - Rewrite RunBacktestModal to use configuration dropdown
-[2026-03-11 08:23] fe-dev (sonnet) - Add strategy configs list to StrategyConfig sidebar panel
-[2026-03-11 08:25] fe-dev (sonnet) - Add Create Configuration button and inline form to StrategyConfigSidebar
-[2026-03-11 01:00] fe-dev (sonnet) - Add strategy config list to backtesting sidebar
-[2026-03-11 01:00] fe-dev (sonnet) - Revamp RunBacktestModal with config dropdown
-[2026-03-11 01:00] fe-dev (sonnet) - Add create config form to Configurations page sidebar
-[2026-03-11 11:13] fe-dev (sonnet) - Make aggregation sub-strategy cards clickable, add params detail; update PaperSessionDetail view config link to configurations page; update types
-[2026-03-11 11:13] be-dev (sonnet) - Add strategyConfigId to paper session API responses and subStrategyConfigIds to aggregation config API responses
-[2026-03-11 11:00] be-dev (sonnet) - Expose strategyConfigId and subStrategyConfigIds in API responses
-[2026-03-11 11:00] fe-dev (sonnet) - Clickable sub-strategies in AggregationConfigDetail + config link in PaperSessionDetail
-[2026-03-11 00:00] fe-dev (sonnet) - Simplify StrategyConfig and AggregationsPanel sidebar widgets, remove config lists
-[2026-03-11 14:03] fe-dev (sonnet) - Fix Configurations page: scrolling, URL routing, auto-scroll, and type safety
-[2026-03-11 12:05] fe-dev (sonnet) - Revamp RunBacktestModal with strategy/aggregation tab toggle, searchable card list, remove mode/runImmediately
-[2026-03-11 14:00] fe-dev (sonnet) - Simplify backtesting sidebar (remove config lists)
-[2026-03-11 14:00] fe-dev (sonnet) - Revamp RunBacktestModal with strategy/aggregation tabs + search
-[2026-03-11 14:00] fe-dev (sonnet) - Fix Configurations page scroll, routing, auto-scroll
-[2026-03-11 14:20] main (opus) - Prod deployment: fix Dockerfile x64 compat, fix missing frThresholds.ts, fix strategy-configs auth
-[2026-03-11 14:30] main (opus) - Playwright MCP prod validation of all pages (backtesting, configs, paper trading)
-[2026-03-11 14:35] fe-dev (sonnet) - Fix funding_payment events not showing in paper trading event log
-[2026-03-11 14:38] be-dev (sonnet) - Implement real-time equity updates via CCXT Pro watchTickers WebSocket for paper trading
-[2026-03-11 14:44] docs-writer (haiku) - Changelog for real-time equity updates via CCXT Pro watchTickers
+[2026-03-12 16:30] fe-dev (sonnet) - Unified equity display with Zustand store + useSessionEquity hook
+[2026-03-12 16:30] fe-dev (sonnet) - Fix configurations page scrolling (h-screen, independent scrolls)
+[2026-03-12 16:30] Explore (sonnet) - Investigate SL/TP display in paper trading positions/orders/chart
+[2026-03-12 16:45] docs-writer (haiku) - Changelog for unified equity + scroll fixes
+[2026-03-12 22:37] architect (opus) - Investigate suspicious >10000% ROI and drawdown >100% bug
+[2026-03-12 22:37] quant-lead (opus) - Analyze strategy results and ROI plausibility
+[2026-03-12 22:37] Explore (sonnet) - Explore aggregation code, drawdown calculation, per-asset metrics
+[2026-03-12 22:44] be-dev (sonnet) - Fix per-asset drawdown >100% bug and entry fee bug in aggregate-engine.ts
+[2026-03-12 22:44] Explore (sonnet) - Explore aggregation DB schema and query patterns for pruning analysis
+[2026-03-12 22:49] be-dev (sonnet) - Create analyze-aggregations.ts script for pruning analysis
+[2026-03-12 15:57] be-dev (sonnet) - Fix price-watcher equity updates stopping when all positions closed
+[2026-03-12 22:58] be-dev (sonnet) - Create create-configs-from-standalone.ts script
+[2026-03-12 23:00] docs-writer (haiku) - Create changelog for aggregate engine fixes
+[2026-03-12 16:40] commit (haiku) - Fix aggregate engine per-asset equity bugs + add analysis scripts
+[2026-03-12 19:30] be-dev (sonnet) - Fix PriceWatcher symbol clearing bug
+[2026-03-12 19:45] be-dev (sonnet) - Refactor PriceWatcher from CCXT Pro WebSocket to REST polling
+[2026-03-12 17:52] be-dev (sonnet) - Create import-and-backtest-pruned.ts script
+[2026-03-14 10:00] be-dev (sonnet) - Add funding rate validation to backtest engine (single + aggregate)
+[2026-03-14 10:15] docs-writer (haiku) - Changelog for funding rate validation feature
+[2026-03-14 10:30] be-dev (sonnet) - Add candle coverage validation (validateCandleCoverage) + throw on empty candles in aggregate-engine
+[2026-03-14 10:45] docs-writer (haiku) - Changelog for candle coverage validation feature
+[2026-03-14 14:50] commit (haiku) - data validation: funding rate and candle coverage checks for backtesting engine
+[2026-03-14 10:30] be-dev (sonnet) - Fix aggregation config creation to populate subStrategyConfigIds, fix saveAggregationConfig to persist sub_strategy_config_ids, add backfill script
+[2026-03-14 10:45] docs-writer (haiku) - Changelog for aggregation subStrategyConfigIds fix
+[2026-03-14 16:03] commit (haiku) - fix aggregation subStrategyConfigIds population
+[2026-03-14 16:39] be-dev (sonnet) - Add validation to prevent saving strategy config with empty params
+[2026-03-14 16:43] docs-writer (haiku) - Changelog for empty params validation in findOrCreateStrategyConfig
+[2026-03-14 16:57] commit (haiku) - add validation to prevent saving strategy configs with empty params
+[2026-03-14 17:00] be-dev (sonnet) - Add empty params validation to findOrCreateStrategyConfig + API routes
+[2026-03-14 17:00] Explore (sonnet) - Research prod aggregation API endpoints for re-running backtests
+[2026-03-14 17:05] commit (sonnet) - Commit empty params validation
+[2026-03-14 17:00] docs-writer (haiku) - Create changelog for empty params validation and backtest rerun session
+[2026-03-15 11:26] be-dev (sonnet) - Fix PUT aggregation config to regenerate subStrategyConfigIds and add regenerate-ids endpoint with tests
+[2026-03-15 11:29] docs-writer (haiku) - changelog for PUT aggregation fix and regenerate-ids endpoint
+[2026-03-15 11:20] Explore (sonnet) - Research frontend View Config button rendering logic
+[2026-03-15 11:30] be-dev (sonnet) - Fix PUT aggregation handler + add regenerate-ids endpoint
+[2026-03-15 11:40] docs-writer (haiku) - Create changelog for subStrategyConfigIds fix
+[2026-03-16 04:36] be-dev (sonnet) - Fix sparse params normalization bug in findOrCreateStrategyConfig: always merge with strategy defaults before hashing
+[2026-03-16 04:43] commit (haiku) - fix strategy config param normalization for dedup
+[2026-03-16 04:44] be-dev (sonnet) - Add comprehensive tests for strategy config params normalization/dedup fix
+[2026-03-16 04:46] commit (haiku) - test coverage for params normalization and dedup
+[2026-03-16 04:57] fe-dev (sonnet) - Implement ConfigPaperTab component with API client function and React Query hook
+[2026-03-16 04:58] fe-dev (sonnet) - Implement ConfigPaperTab with session cards, API client, and hook
+[2026-03-16 14:30] docs-writer (haiku) - Create changelog for config paper trading sessions tab

@@ -10,6 +10,7 @@ import {
   deleteStrategyConfig,
   getStrategyConfigRuns,
   getStrategyConfigVersions,
+  getConfigPaperSessions,
 } from '../api/client.js';
 
 export function useStrategyConfigs(filters?: { strategy?: string; symbol?: string; timeframe?: string }) {
@@ -41,6 +42,15 @@ export function useStrategyConfigVersions(strategy: string, symbol: string, time
     queryKey: ['strategy-config-versions', strategy, symbol, timeframe],
     queryFn: () => getStrategyConfigVersions(strategy, symbol, timeframe),
     enabled: !!strategy && !!symbol && !!timeframe,
+  });
+}
+
+export function useConfigPaperSessions(configId: string | null) {
+  return useQuery({
+    queryKey: ['config-paper-sessions', configId],
+    queryFn: () => getConfigPaperSessions(configId!),
+    enabled: !!configId,
+    refetchInterval: 15000,
   });
 }
 

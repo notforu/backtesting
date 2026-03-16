@@ -882,6 +882,21 @@ export async function getStrategyConfigVersions(
   return apiFetch<StrategyConfigEntity[]>(`/strategy-configs/versions?${params}`);
 }
 
+export interface ConfigPaperSessionSummary {
+  id: string;
+  name: string;
+  status: 'running' | 'paused' | 'stopped' | 'error';
+  initialCapital: number;
+  currentEquity: number;
+  createdAt: number;
+  updatedAt: number;
+  aggregationConfigId?: string;
+}
+
+export async function getConfigPaperSessions(configId: string): Promise<ConfigPaperSessionSummary[]> {
+  return apiFetch<ConfigPaperSessionSummary[]>(`/strategy-configs/${encodeURIComponent(configId)}/paper-sessions`);
+}
+
 /**
  * Subscribe to SSE stream for a paper trading session.
  * Returns an unsubscribe function.

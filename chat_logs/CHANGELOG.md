@@ -2,6 +2,21 @@
 
 All significant changes to the backtesting platform are documented here. See individual files in `/docs/changelogs/` for detailed information on each change.
 
+## 2026-03-12: Unified Equity Display and Scroll Fix
+
+**File**: `/docs/changelogs/2026-03-12-163000-unified-equity-display-scroll-fix.md`
+
+Fixed critical UI consistency issues in paper trading dashboard. Unified real-time equity display across sidebar and detail view using a centralized Zustand store (`realtimeEquityStore.ts`), added live equity points to equity charts, fixed funding payment visibility in event history (added `funding_payment` case to SSE handler), and corrected layout scrolling by changing App.tsx from `min-h-screen` to `h-screen overflow-hidden` for independent panel scrolling.
+
+**Key changes**:
+- New `realtimeEquityStore.ts` as single source of truth for live equity data
+- `useSessionEquity()` hook consumed by sidebar and detail view
+- `PaperEquityChart` now accepts `realtimePoint` prop for live equity visualization
+- Funding payments now trigger cache invalidation in SSE event handler
+- Layout supports independent scrollable panels with fixed header
+
+---
+
 ## 2026-03-10: Strategy Configurations Feature
 
 **File**: `/docs/changelogs/2026-03-10-130000-strategy-configurations.md`
