@@ -7,7 +7,7 @@ import { useAggregationStore } from '../../stores/aggregationStore.js';
 import { useAggregations } from '../../hooks/useBacktest.js';
 import { useConfigurationStore } from '../../stores/configurationStore.js';
 import { usePaperTradingStore } from '../../stores/paperTradingStore.js';
-import { useAggregationPaperSessions } from '../../hooks/useConfigurations.js';
+import { useAggregationPaperSessions, useStrategyConfigBestRuns } from '../../hooks/useConfigurations.js';
 
 function EmptyState() {
   return (
@@ -43,6 +43,9 @@ export function AggregationConfigDetail() {
   const { setActivePage } = usePaperTradingStore();
   const setSelectedSession = usePaperTradingStore((s) => s.setSelectedSession);
   const { data: paperSessions } = useAggregationPaperSessions(selectedAggregation);
+  const agg = aggregations?.find((a) => a.id === selectedAggregation);
+  const subStrategyConfigIds = agg?.subStrategyConfigIds;
+  const { data: bestRuns } = useStrategyConfigBestRuns(subStrategyConfigIds ?? undefined);
 
   if (!selectedAggregation) {
     return (
@@ -52,10 +55,7 @@ export function AggregationConfigDetail() {
     );
   }
 
-  const agg = aggregations?.find((a) => a.id === selectedAggregation);
   if (!agg) return null;
-
-  const subStrategyConfigIds = agg.subStrategyConfigIds;
 
   const handleSubStrategyClick = (i: number) => {
     const configId = subStrategyConfigIds?.[i];
@@ -191,6 +191,8 @@ export function AggregationConfigDetail() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {agg.subStrategies.map((ss, i) => {
             const hasConfigId = !!subStrategyConfigIds?.[i];
+            const configId = subStrategyConfigIds?.[i];
+            const bestRun = configId && bestRuns ? bestRuns[configId] : null;
             const paramEntries = ss.params ? Object.entries(ss.params) : [];
 
             return (
@@ -227,16 +229,17 @@ export function AggregationConfigDetail() {
                     </div>
                   </div>
                   {hasConfigId && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        fontSize: 11,
-                        color: '#555',
-                        flexShrink: 0,
-                      }}
-                    >
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: 11,
+                      color: '#555',
+                      flexShrink: 0,
+                    }}>
+                      {bestRun && (
+                        <span style={{ color: '#666' }}>({bestRun.totalRuns} run{bestRun.totalRuns !== 1 ? 's' : ''})</span>
+                      )}
                       <span>View config</span>
                       <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -264,6 +267,48 @@ export function AggregationConfigDetail() {
                         </span>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* Best run stats */}
+                {bestRun && (
+                  <div style={{
+                    display: 'flex',
+                    gap: 16,
+                    flexWrap: 'wrap',
+                    paddingTop: 6,
+                    borderTop: '1px solid #2e2e2e',
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Sharpe</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: bestRun.sharpeRatio >= 1 ? '#4ade80' : bestRun.sharpeRatio >= 0 ? '#facc15' : '#f87171', fontVariantNumeric: 'tabular-nums' }}>
+                        {bestRun.sharpeRatio.toFixed(2)}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Return</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: bestRun.totalReturnPercent >= 0 ? '#4caf50' : '#f44336', fontVariantNumeric: 'tabular-nums' }}>
+                        {bestRun.totalReturnPercent >= 0 ? '+' : ''}{bestRun.totalReturnPercent.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Max DD</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: '#e0e0e0', fontVariantNumeric: 'tabular-nums' }}>
+                        {bestRun.maxDrawdownPercent.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Win Rate</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: '#e0e0e0', fontVariantNumeric: 'tabular-nums' }}>
+                        {bestRun.winRate.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <span style={{ fontSize: 10, color: '#555', textTransform: 'uppercase' }}>Trades</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: '#e0e0e0', fontVariantNumeric: 'tabular-nums' }}>
+                        {bestRun.totalTrades}
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>

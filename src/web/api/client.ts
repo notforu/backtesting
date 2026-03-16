@@ -873,6 +873,24 @@ export async function getStrategyConfigRuns(id: string): Promise<BacktestSummary
   return data.results;
 }
 
+export interface BestRunSummary {
+  id: string;
+  sharpeRatio: number;
+  totalReturnPercent: number;
+  maxDrawdownPercent: number;
+  totalTrades: number;
+  winRate: number;
+  runAt: string;
+  totalRuns: number;
+}
+
+export async function getStrategyConfigBestRuns(configIds: string[]): Promise<Record<string, BestRunSummary | null>> {
+  return apiFetch<Record<string, BestRunSummary | null>>('/strategy-configs/best-runs', {
+    method: 'POST',
+    body: JSON.stringify({ configIds }),
+  });
+}
+
 export async function getStrategyConfigVersions(
   strategy: string,
   symbol: string,

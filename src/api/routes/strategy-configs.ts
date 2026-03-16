@@ -41,6 +41,10 @@ const VersionsQuerySchema = z.object({
   timeframe: z.string().min(1),
 });
 
+const BestRunsSchema = z.object({
+  configIds: z.array(z.string()).min(1).max(50),
+});
+
 // ============================================================================
 // Route registration
 // ============================================================================
@@ -96,6 +100,104 @@ export async function strategyConfigRoutes(fastify: FastifyInstance) {
           return reply.status(400).send({ error: 'Validation error', details: error.issues });
         }
         fastify.log.error({ err: error, msg: 'Error fetching strategy config versions' });
+        return reply
+          .status(500)
+          .send({ error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // POST /api/strategy-configs/best-runs
+  // Return the best backtest run (by Sharpe ratio) for each of the given
+  // config IDs in a single query.  Must be registered BEFORE /:id to avoid
+  // route collision.
+  // -------------------------------------------------------------------------
+  fastify.post(
+    '/api/strategy-configs/best-runs',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { configIds } = BestRunsSchema.parse(request.body);
+
+        const pool = getPool();
+
+        const { rows } = await pool.query<{
+          id: string;
+          strategy_config_id: string;
+          sharpe_ratio: string | null;
+          total_return_percent: string | null;
+          max_drawdown_percent: string | null;
+          total_trades: string | null;
+          win_rate: string | null;
+          run_at: string;
+          total_runs: string;
+        }>(
+          `WITH ranked AS (
+            SELECT
+              br.id,
+              br.strategy_config_id,
+              (br.metrics->>'sharpeRatio')::numeric        AS sharpe_ratio,
+              (br.metrics->>'totalReturnPercent')::numeric AS total_return_percent,
+              (br.metrics->>'maxDrawdownPercent')::numeric AS max_drawdown_percent,
+              (br.metrics->>'totalTrades')::int            AS total_trades,
+              (br.metrics->>'winRate')::numeric            AS win_rate,
+              br.created_at                               AS run_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY br.strategy_config_id
+                ORDER BY (br.metrics->>'sharpeRatio')::numeric DESC NULLS LAST
+              ) AS rn,
+              COUNT(*) OVER (PARTITION BY br.strategy_config_id) AS total_runs
+            FROM backtest_runs br
+            WHERE br.strategy_config_id = ANY($1)
+          )
+          SELECT * FROM ranked WHERE rn = 1`,
+          [configIds]
+        );
+
+        // Build a lookup map from query results
+        const resultMap = new Map(rows.map((row) => [row.strategy_config_id, row]));
+
+        // Build response — null for configIds with no runs
+        const response: Record<
+          string,
+          {
+            id: string;
+            sharpeRatio: number;
+            totalReturnPercent: number;
+            maxDrawdownPercent: number;
+            totalTrades: number;
+            winRate: number;
+            runAt: string;
+            totalRuns: number;
+          } | null
+        > = {};
+
+        for (const configId of configIds) {
+          const row = resultMap.get(configId);
+          if (!row) {
+            response[configId] = null;
+          } else {
+            response[configId] = {
+              id: row.id,
+              sharpeRatio: row.sharpe_ratio !== null ? Number(row.sharpe_ratio) : 0,
+              totalReturnPercent:
+                row.total_return_percent !== null ? Number(row.total_return_percent) : 0,
+              maxDrawdownPercent:
+                row.max_drawdown_percent !== null ? Number(row.max_drawdown_percent) : 0,
+              totalTrades: row.total_trades !== null ? Number(row.total_trades) : 0,
+              winRate: row.win_rate !== null ? Number(row.win_rate) : 0,
+              runAt: new Date(Number(row.run_at)).toISOString(),
+              totalRuns: Number(row.total_runs),
+            };
+          }
+        }
+
+        return reply.status(200).send(response);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          return reply.status(400).send({ error: 'Validation error', details: error.issues });
+        }
+        fastify.log.error({ err: error, msg: 'Error fetching best runs for strategy configs' });
         return reply
           .status(500)
           .send({ error: error instanceof Error ? error.message : 'Unknown error' });

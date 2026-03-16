@@ -57,3 +57,7 @@
 [2026-03-16 05:11] fe-dev (sonnet) - Add paper trading session display to aggregation config detail page
 [2026-03-16 05:11] be-dev (sonnet) - Add GET /api/aggregations/:id/paper-sessions endpoint
 [2026-03-16 05:11] fe-dev (sonnet) - Add paper sessions section to AggregationConfigDetail
+[2026-03-16 05:39] be-dev (sonnet) - Add POST /api/strategy-configs/best-runs endpoint returning best backtest run by Sharpe ratio for multiple config IDs
+[2026-03-16 05:40] fe-dev (sonnet) - Add BestRunSummary client type, getStrategyConfigBestRuns API fn, useStrategyConfigBestRuns hook, and best run stats display in AggregationConfigDetail sub-strategy cards
+[2026-03-16 05:41] be-dev (sonnet) - Add POST /api/strategy-configs/best-runs bulk endpoint
+[2026-03-16 05:41] fe-dev (sonnet) - Add best runs display to aggregation sub-strategy cards
