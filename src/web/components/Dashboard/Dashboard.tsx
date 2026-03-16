@@ -103,7 +103,7 @@ export function Dashboard({ metrics }: DashboardProps) {
       <h2 className="text-lg font-semibold text-white">Performance Metrics</h2>
 
       {/* Primary metrics - larger cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <MetricCard
           label="Total Return"
           value={formatPercent(metrics.totalReturnPercent)}
