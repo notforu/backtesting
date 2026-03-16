@@ -77,6 +77,97 @@ export function AggregationConfigDetail() {
         </p>
       </div>
 
+      {/* Paper Trading Sessions */}
+      {paperSessions && paperSessions.length > 0 && (
+        <div style={{
+          background: '#1e1e1e',
+          border: '1px solid #2a2a2a',
+          borderRadius: 8,
+          padding: '16px 20px',
+          marginBottom: 16,
+        }}>
+          <h3 style={{
+            margin: '0 0 12px',
+            fontSize: 12,
+            fontWeight: 600,
+            color: '#666',
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+          }}>
+            Paper Trading Sessions ({paperSessions.length})
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {paperSessions.map((session) => {
+              const returnPct = session.initialCapital > 0
+                ? ((session.currentEquity - session.initialCapital) / session.initialCapital) * 100
+                : 0;
+              const returnColor = returnPct >= 0 ? '#4caf50' : '#f44336';
+              const statusStyles: Record<string, { color: string; bg: string; label: string }> = {
+                running: { color: '#4ade80', bg: 'rgba(74,222,128,0.12)', label: 'Running' },
+                paused: { color: '#facc15', bg: 'rgba(250,204,21,0.12)', label: 'Paused' },
+                stopped: { color: '#888', bg: 'rgba(136,136,136,0.12)', label: 'Stopped' },
+                error: { color: '#f87171', bg: 'rgba(248,113,113,0.12)', label: 'Error' },
+              };
+              const st = statusStyles[session.status] ?? statusStyles.stopped;
+
+              return (
+                <div
+                  key={session.id}
+                  onClick={() => {
+                    setSelectedSession(session.id);
+                    setActivePage('paper-trading');
+                  }}
+                  style={{
+                    padding: '12px 14px',
+                    background: '#252525',
+                    borderRadius: 6,
+                    border: '1px solid #333',
+                    cursor: 'pointer',
+                    transition: 'background 0.15s, border-color 0.15s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.background = '#2e2e2e';
+                    (e.currentTarget as HTMLDivElement).style.borderColor = '#444';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.background = '#252525';
+                    (e.currentTarget as HTMLDivElement).style.borderColor = '#333';
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, color: '#e0e0e0', fontWeight: 500 }}>{session.name}</div>
+                    <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
+                      Equity: ${session.currentEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {' · '}
+                      <span style={{ color: returnColor }}>{returnPct >= 0 ? '+' : ''}{returnPct.toFixed(2)}%</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                    <span style={{
+                      padding: '3px 9px',
+                      borderRadius: 12,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: st.color,
+                      background: st.bg,
+                    }}>
+                      {st.label}
+                    </span>
+                    <svg width="12" height="12" fill="none" stroke="#555" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div
         style={{
           background: '#1e1e1e',
@@ -180,97 +271,6 @@ export function AggregationConfigDetail() {
           })}
         </div>
       </div>
-
-      {/* Paper Trading Sessions */}
-      {paperSessions && paperSessions.length > 0 && (
-        <div style={{
-          background: '#1e1e1e',
-          border: '1px solid #2a2a2a',
-          borderRadius: 8,
-          padding: '16px 20px',
-          marginTop: 16,
-        }}>
-          <h3 style={{
-            margin: '0 0 12px',
-            fontSize: 12,
-            fontWeight: 600,
-            color: '#666',
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-          }}>
-            Paper Trading Sessions ({paperSessions.length})
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {paperSessions.map((session) => {
-              const returnPct = session.initialCapital > 0
-                ? ((session.currentEquity - session.initialCapital) / session.initialCapital) * 100
-                : 0;
-              const returnColor = returnPct >= 0 ? '#4caf50' : '#f44336';
-              const statusStyles: Record<string, { color: string; bg: string; label: string }> = {
-                running: { color: '#4ade80', bg: 'rgba(74,222,128,0.12)', label: 'Running' },
-                paused: { color: '#facc15', bg: 'rgba(250,204,21,0.12)', label: 'Paused' },
-                stopped: { color: '#888', bg: 'rgba(136,136,136,0.12)', label: 'Stopped' },
-                error: { color: '#f87171', bg: 'rgba(248,113,113,0.12)', label: 'Error' },
-              };
-              const st = statusStyles[session.status] ?? statusStyles.stopped;
-
-              return (
-                <div
-                  key={session.id}
-                  onClick={() => {
-                    setSelectedSession(session.id);
-                    setActivePage('paper-trading');
-                  }}
-                  style={{
-                    padding: '12px 14px',
-                    background: '#252525',
-                    borderRadius: 6,
-                    border: '1px solid #333',
-                    cursor: 'pointer',
-                    transition: 'background 0.15s, border-color 0.15s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 12,
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.background = '#2e2e2e';
-                    (e.currentTarget as HTMLDivElement).style.borderColor = '#444';
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.background = '#252525';
-                    (e.currentTarget as HTMLDivElement).style.borderColor = '#333';
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, color: '#e0e0e0', fontWeight: 500 }}>{session.name}</div>
-                    <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
-                      Equity: ${session.currentEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      {' · '}
-                      <span style={{ color: returnColor }}>{returnPct >= 0 ? '+' : ''}{returnPct.toFixed(2)}%</span>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                    <span style={{
-                      padding: '3px 9px',
-                      borderRadius: 12,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: st.color,
-                      background: st.bg,
-                    }}>
-                      {st.label}
-                    </span>
-                    <svg width="12" height="12" fill="none" stroke="#555" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
