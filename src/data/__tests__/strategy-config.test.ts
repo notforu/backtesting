@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { computeStrategyConfigHash } from '../../utils/content-hash.js';
 
 // ============================================================================
 // Mock the pg pool — must be declared before any imports of the module
@@ -428,6 +429,196 @@ describe('findOrCreateStrategyConfig', () => {
     });
 
     // Caller params passed through unchanged — row.params is returned as-is
+    expect(result.config.params).toEqual({ threshold: 0.0005 });
+  });
+
+  // --------------------------------------------------------------------------
+  // Params normalization / dedup scenarios
+  // --------------------------------------------------------------------------
+
+  it('sparse params and full equivalent params send the same hash to the SELECT query', async () => {
+    // Call 1: full params — record defaults returned (simulate existing row).
+    const defaults = { longPct: 50, shortPct: 50, period: 14 };
+    const fakeStrategy = { name: 'funding-rate-v2', params: [] };
+
+    mockLoadStrategy.mockResolvedValue(fakeStrategy);
+    mockGetDefaultParams.mockReturnValue(defaults);
+
+    // Compute the expected hash for the fully-merged params.
+    const expectedHash = computeStrategyConfigHash({
+      strategyName: 'funding-rate-v2',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: { longPct: 2, shortPct: 50, period: 14 },
+    });
+
+    // First call: full params provided — SELECT returns existing row.
+    mockQuery.mockResolvedValueOnce({ rows: [makeConfigRow({ content_hash: expectedHash })] });
+
+    await findOrCreateStrategyConfig({
+      strategyName: 'funding-rate-v2',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: { longPct: 2, shortPct: 50, period: 14 },
+    });
+
+    const hashFromFullParams = mockQuery.mock.calls[0][1][0] as string;
+
+    // Reset mocks for second call.
+    vi.clearAllMocks();
+    mockLoadStrategy.mockResolvedValue(fakeStrategy);
+    mockGetDefaultParams.mockReturnValue(defaults);
+    mockQuery.mockResolvedValueOnce({ rows: [makeConfigRow({ content_hash: expectedHash })] });
+
+    // Second call: sparse params — only longPct is set.
+    await findOrCreateStrategyConfig({
+      strategyName: 'funding-rate-v2',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: { longPct: 2 },
+    });
+
+    const hashFromSparseParams = mockQuery.mock.calls[0][1][0] as string;
+
+    // Both calls must have sent the same hash to the database SELECT.
+    expect(hashFromSparseParams).toBe(hashFromFullParams);
+    expect(hashFromSparseParams).toBe(expectedHash);
+  });
+
+  it('full params matching defaults are unchanged — same hash is produced as sparse equivalent', async () => {
+    const defaults = { longPct: 50, shortPct: 50, period: 14 };
+    const fakeStrategy = { name: 'funding-rate-v2', params: [] };
+    mockLoadStrategy.mockResolvedValueOnce(fakeStrategy);
+    mockGetDefaultParams.mockReturnValueOnce(defaults);
+
+    // Intercept the SELECT to capture the hash argument.
+    mockQuery.mockImplementationOnce((_sql: string, params: unknown[]) => {
+      const hash = params[0] as string;
+      // The hash must match what we compute for the full, merged params.
+      const expectedHash = computeStrategyConfigHash({
+        strategyName: 'funding-rate-v2',
+        symbol: 'BTC/USDT',
+        timeframe: '4h',
+        params: { longPct: 50, shortPct: 50, period: 14 },
+      });
+      expect(hash).toBe(expectedHash);
+      return Promise.resolve({ rows: [makeConfigRow()] });
+    });
+
+    await findOrCreateStrategyConfig({
+      strategyName: 'funding-rate-v2',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      // All params match defaults exactly — nothing should change.
+      params: { longPct: 50, shortPct: 50, period: 14 },
+    });
+  });
+
+  it('caller params override defaults, not the other way around', async () => {
+    // longPct: 2 in caller params must win over longPct: 50 from defaults.
+    const defaults = { longPct: 50, shortPct: 50 };
+    const fakeStrategy = { name: 'funding-rate-v2', params: [] };
+    mockLoadStrategy.mockResolvedValueOnce(fakeStrategy);
+    mockGetDefaultParams.mockReturnValueOnce(defaults);
+
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // SELECT: no match
+      .mockImplementationOnce((_sql: string, params: unknown[]) => {
+        const insertedParams = JSON.parse(params[4] as string) as Record<string, unknown>;
+        // Caller's longPct: 2 must override default longPct: 50.
+        expect(insertedParams.longPct).toBe(2);
+        // shortPct should come from defaults since caller did not provide it.
+        expect(insertedParams.shortPct).toBe(50);
+        return Promise.resolve({ rows: [makeConfigRow({ params: insertedParams })] });
+      });
+
+    const result = await findOrCreateStrategyConfig({
+      strategyName: 'funding-rate-v2',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: { longPct: 2 },
+    });
+
+    expect(result.config.params).toMatchObject({ longPct: 2, shortPct: 50 });
+  });
+
+  it('extra caller params not present in defaults are preserved after merge', async () => {
+    // customParam is not in defaults but must survive the merge.
+    const defaults = { longPct: 50, shortPct: 50 };
+    const fakeStrategy = { name: 'funding-rate-v2', params: [] };
+    mockLoadStrategy.mockResolvedValueOnce(fakeStrategy);
+    mockGetDefaultParams.mockReturnValueOnce(defaults);
+
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // SELECT: no match
+      .mockImplementationOnce((_sql: string, params: unknown[]) => {
+        const insertedParams = JSON.parse(params[4] as string) as Record<string, unknown>;
+        expect(insertedParams).toEqual({ longPct: 2, shortPct: 50, customParam: true });
+        return Promise.resolve({ rows: [makeConfigRow({ params: insertedParams })] });
+      });
+
+    const result = await findOrCreateStrategyConfig({
+      strategyName: 'funding-rate-v2',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: { longPct: 2, customParam: true },
+    });
+
+    expect(result.config.params).toEqual({ longPct: 2, shortPct: 50, customParam: true });
+  });
+
+  it('empty defaults leave caller params completely unchanged', async () => {
+    // getDefaultParams returns {} — the merge spreads nothing extra.
+    const fakeStrategy = { name: 'no-defaults-strategy', params: [] };
+    mockLoadStrategy.mockResolvedValueOnce(fakeStrategy);
+    mockGetDefaultParams.mockReturnValueOnce({});
+
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // SELECT: no match
+      .mockImplementationOnce((_sql: string, params: unknown[]) => {
+        const insertedParams = JSON.parse(params[4] as string) as Record<string, unknown>;
+        // Params must be exactly what the caller provided — nothing added or removed.
+        expect(insertedParams).toEqual({ threshold: 0.0005, window: 20 });
+        return Promise.resolve({ rows: [makeConfigRow({ params: insertedParams })] });
+      });
+
+    await findOrCreateStrategyConfig({
+      strategyName: 'no-defaults-strategy',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: { threshold: 0.0005, window: 20 },
+    });
+  });
+
+  it('strategy load failure with non-empty params uses caller params as-is without throwing', async () => {
+    // loadStrategy throws — no defaults available — but params are non-empty so
+    // the function must proceed using the caller-supplied params unchanged.
+    mockLoadStrategy.mockRejectedValueOnce(new Error('Strategy not found: exotic-strategy'));
+
+    const row = makeConfigRow({ params: { threshold: 0.0005 } });
+    mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+    // Intercept to verify hash was computed from caller params as-is.
+    const expectedHash = computeStrategyConfigHash({
+      strategyName: 'exotic-strategy',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: { threshold: 0.0005 },
+    });
+
+    mockQuery.mockReset();
+    mockQuery.mockImplementationOnce((_sql: string, params: unknown[]) => {
+      expect(params[0]).toBe(expectedHash);
+      return Promise.resolve({ rows: [row] });
+    });
+
+    const result = await findOrCreateStrategyConfig({
+      strategyName: 'exotic-strategy',
+      symbol: 'BTC/USDT',
+      timeframe: '4h',
+      params: { threshold: 0.0005 },
+    });
+
     expect(result.config.params).toEqual({ threshold: 0.0005 });
   });
 });

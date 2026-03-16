@@ -218,6 +218,38 @@ describe('computeStrategyConfigHash', () => {
     });
     expect(hashUndefined).toBe(hashEmpty);
   });
+
+  // --------------------------------------------------------------------------
+  // Normalization contract: the hash itself does NOT normalize sparse vs full
+  // params — that must be done by the caller before hashing.
+  // --------------------------------------------------------------------------
+
+  it('sparse params produce a DIFFERENT hash than full params (normalization must happen before hashing)', () => {
+    // {longPct: 2} is a subset of {longPct: 2, shortPct: 50, period: 14}.
+    // The hash function treats them as distinct inputs — it is the caller's
+    // responsibility (findOrCreateStrategyConfig) to merge defaults first.
+    const hashSparse = computeStrategyConfigHash({
+      ...baseStrategyConfig(),
+      params: { longPct: 2 },
+    });
+    const hashFull = computeStrategyConfigHash({
+      ...baseStrategyConfig(),
+      params: { longPct: 2, shortPct: 50, period: 14 },
+    });
+    expect(hashSparse).not.toBe(hashFull);
+  });
+
+  it('adding any extra key to params changes the hash', () => {
+    const hashBase = computeStrategyConfigHash({
+      ...baseStrategyConfig(),
+      params: { threshold: 0.01, lookback: 24 },
+    });
+    const hashWithExtra = computeStrategyConfigHash({
+      ...baseStrategyConfig(),
+      params: { threshold: 0.01, lookback: 24, extra: true },
+    });
+    expect(hashBase).not.toBe(hashWithExtra);
+  });
 });
 
 // ---------------------------------------------------------------------------
