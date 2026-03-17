@@ -78,11 +78,49 @@ export async function runAggregateBacktest(
 
   log(`Starting aggregate backtest: ${subStrategies.length} sub-strategies, mode=${allocationMode}`);
 
+  // Load BTC daily candles for V3 regime filter (loaded once, shared across all V3 sub-strategies)
+  let btcDailyCandles: Array<{ timestamp: number; close: number }> | null = null;
+
+  async function loadBtcDailyCandles(): Promise<Array<{ timestamp: number; close: number }>> {
+    if (btcDailyCandles !== null) return btcDailyCandles;
+
+    // Try multiple exchange/symbol combos
+    const candidates: Array<[string, string]> = [
+      ['binance', 'BTC/USDT:USDT'],
+      ['binance', 'BTC/USDT'],
+      ['bybit', 'BTC/USDT:USDT'],
+      ['bybit', 'BTC/USDT'],
+    ];
+
+    for (const [ex, sym] of candidates) {
+      const candles = await getCandles(ex, sym, '1d', startDate - 300 * 24 * 60 * 60 * 1000, endDate);
+      if (candles.length >= 200) {
+        btcDailyCandles = candles.map(c => ({ timestamp: c.timestamp, close: c.close }));
+        log(`Loaded ${btcDailyCandles.length} BTC daily candles for regime filter (${ex} ${sym})`);
+        return btcDailyCandles;
+      }
+    }
+
+    log('WARNING: Could not load BTC daily candles for regime filter. V3 regime filter will default to bull regime.');
+    btcDailyCandles = [];
+    return btcDailyCandles;
+  }
+
   // 1. Load strategies and create adapters
   const adaptersWithData: AdapterWithData[] = [];
 
   for (const subConfig of subStrategies) {
     const strategy = await loadStrategy(subConfig.strategyName);
+
+    // Inject BTC daily candles for V3 regime filter
+    if (strategy.name.includes('v3') || strategy.name.includes('V3') ||
+        (subConfig.params?.useRegimeFilter === true)) {
+      const btcCandles = await loadBtcDailyCandles();
+      if (btcCandles.length > 0) {
+        (strategy as any)._btcDailyCandles = btcCandles;
+      }
+    }
+
     const adapter = new SignalAdapter(strategy, subConfig.symbol, subConfig.timeframe, subConfig.params);
 
     // Load candles from DB

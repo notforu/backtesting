@@ -1,0 +1,928 @@
+[
+  {
+    "originalRunId": "79fcd037-4e4c-4d8e-8689-915dd26ffaf9",
+    "originalSharpe": 3.3844854162224007,
+    "originalReturn": 11363.93561400279,
+    "allocationMode": "single_strongest",
+    "maxPositions": 1,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOST/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ARB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOTA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "TRB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "TIA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "KAVA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "APT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "RPL/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "BCH/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 6,
+    "remainingCount": 10
+  },
+  {
+    "originalRunId": "dfabfa35-096d-4ab2-bf90-71aa01f0950d",
+    "originalSharpe": 3.1664117565542598,
+    "originalReturn": 6848.62745981526,
+    "allocationMode": "single_strongest",
+    "maxPositions": 1,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LDO/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "DOGE/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ARB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOST/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ZEC/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ICP/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "XLM/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "NEAR/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "TIA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "TRB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "STG/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "COMP/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOTA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "COTI/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "APT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "BCH/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 3,
+    "remainingCount": 17
+  },
+  {
+    "originalRunId": "b8555e06-564d-46fe-9261-3dee62a14750",
+    "originalSharpe": 3.1329057568856538,
+    "originalReturn": 5476.130154608757,
+    "allocationMode": "top_n",
+    "maxPositions": 3,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LDO/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ARB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOST/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ZEC/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IMX/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ICP/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "XLM/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "NEAR/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "TIA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "TRB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "STG/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "COMP/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOTA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "COTI/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "APT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "BCH/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ENJ/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 2,
+    "remainingCount": 18
+  },
+  {
+    "originalRunId": "1a79a185-c0ab-4046-a044-67a1cc718894",
+    "originalSharpe": 3.0101723305768284,
+    "originalReturn": 1605.874099574472,
+    "allocationMode": "single_strongest",
+    "maxPositions": 1,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOST/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ZEC/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "LDO/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "DOGE/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ARB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 0,
+    "remainingCount": 6
+  },
+  {
+    "originalRunId": "ab5f21e6-97bb-485b-80e4-0be6aa65ac85",
+    "originalSharpe": 2.960609083416465,
+    "originalReturn": 1445.1560396740597,
+    "allocationMode": "single_strongest",
+    "maxPositions": 1,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOST/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ZEC/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "LDO/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "DOGE/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 0,
+    "remainingCount": 5
+  },
+  {
+    "originalRunId": "c0939e8f-a643-44b0-bd5a-eab4e81af895",
+    "originalSharpe": 2.9525698930167352,
+    "originalReturn": 4526.1491368956185,
+    "allocationMode": "top_n",
+    "maxPositions": 3,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOST/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ZEC/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ARB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOTA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "TRB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "STG/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "TIA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ENJ/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "KAVA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "RPL/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "BCH/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 4,
+    "remainingCount": 12
+  },
+  {
+    "originalRunId": "7af57291-3f41-4ccc-80ce-19509436aad6",
+    "originalSharpe": 2.8424559805686567,
+    "originalReturn": 1252.965682857181,
+    "allocationMode": "top_n",
+    "maxPositions": 3,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LDO/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "DOGE/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ARB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ICP/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ZEC/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 0,
+    "remainingCount": 6
+  },
+  {
+    "originalRunId": "69e9a810-a169-49b1-8adb-ac4b5ece7dd2",
+    "originalSharpe": 2.8259214058721684,
+    "originalReturn": 1235.4513218654554,
+    "allocationMode": "single_strongest",
+    "maxPositions": 1,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LDO/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "DOGE/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ARB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ICP/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ZEC/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 0,
+    "remainingCount": 6
+  },
+  {
+    "originalRunId": "ffca20e0-e8a3-415b-8756-5d152600c9c1",
+    "originalSharpe": 2.3650451458570356,
+    "originalReturn": 612.2668209937505,
+    "allocationMode": "single_strongest",
+    "maxPositions": 1,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOST/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ZEC/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 0,
+    "remainingCount": 3
+  },
+  {
+    "originalRunId": "ae3a1446-1658-4510-a06b-ac69d6f9a945",
+    "originalSharpe": 1.689372522578268,
+    "originalReturn": 11930.422539079402,
+    "allocationMode": "single_strongest",
+    "maxPositions": 1,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LDO/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "DOGE/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ARB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOST/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ZEC/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ICP/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "XLM/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "NEAR/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "TRB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "COMP/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOTA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "APT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "BCH/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 8,
+    "remainingCount": 14
+  },
+  {
+    "originalRunId": "aa352f02-c7a0-419f-91ba-b5a5c5197161",
+    "originalSharpe": 1.6523212334645492,
+    "originalReturn": 7961.999285675614,
+    "allocationMode": "top_n",
+    "maxPositions": 3,
+    "subStrategies": [
+      {
+        "params": {},
+        "symbol": "LDO/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ARB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "LPT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOST/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ZEC/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IMX/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ICP/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "XLM/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "NEAR/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "TRB/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "STG/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "IOTA/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "COTI/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "APT/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "BCH/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ENJ/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "4h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "ENS/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "1h",
+        "strategyName": "funding-rate-spike-v2"
+      },
+      {
+        "params": {},
+        "symbol": "RPL/USDT:USDT",
+        "exchange": "bybit",
+        "timeframe": "1h",
+        "strategyName": "funding-rate-spike-v2"
+      }
+    ],
+    "prunedCount": 4,
+    "remainingCount": 18
+  }
+]

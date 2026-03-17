@@ -1,3 +1,8 @@
+[2026-03-17 12:30] quant-lead (opus) - Design FR V3 Hybrid Tiered portfolio: 6 symbols, weighted_multi maxPos=3, optimized params for LDO/XLM/NEAR, defaults for ZEC/TRB/IOST
+[2026-03-17 12:15] quant-lead (opus) - Design FR V3 Quality Core concentrated portfolio: 4 symbols (ZEC, LDO, XLM, TRB), single_strongest, optimized params
+[2026-03-17 12:00] quant-lead (opus) - Design FR V3 Diversified 7 aggregation portfolio: top_n allocation, maxPositions=3, all 7 WF symbols, default params
+[2026-03-17 11:00] be-dev (sonnet) - Add bearMode param to funding-rate-spike-v3.ts (block/shortOnly/mirror bear regime behaviors)
+[2026-03-17 10:00] be-dev (sonnet) - Create funding-rate-spike-v3.ts (BTC SMA200 regime filter) and compare-v2-v3-regimes.ts script
 [2026-03-16 00:00] be-dev (sonnet) - Add GET /api/aggregations/:id/paper-sessions endpoint to aggregations route
 [2026-03-13 00:10] be-dev (sonnet) - Create scripts/import-and-backtest-pruned.ts to select 5 diverse pruned configs, import to prod via API, run backtests
 [2026-03-12 23:55] be-dev (sonnet) - Create scripts/create-configs-from-standalone.ts to build aggregation configs from best standalone runs
@@ -69,3 +74,32 @@
 [2026-03-16 06:49] fe-dev (sonnet) - Add long/short PnL breakdown to Dashboard metrics component
 [2026-03-16 14:52] be-dev (sonnet) - Add long/short PnL breakdown to PerformanceMetrics schema and calculateMetrics
 [2026-03-16 14:52] fe-dev (sonnet) - Add long/short PnL breakdown display to Dashboard component
+[2026-03-16 07:02] fe-dev (sonnet) - add long/short PnL breakdown to computePaperMetrics
+[2026-03-16 07:02] be-dev (sonnet) - add enrichMetricsWithLongShort helper in db.ts to backfill old backtest results with long/short breakdown
+[2026-03-16 13:16] be-dev (sonnet) - Write tests for paper trading FR bug fix (FR beyond last bar not marked as processed)
+[2026-03-16 13:16] be-dev (sonnet) - Create fix-paper-funding.ts script to retroactively calculate and update funding_income on paper_trades with zero funding
+[2026-03-16 14:08] be-dev (sonnet) - create regime-split-backtest.ts script for FR V2 bear/bull regime analysis
+[2026-03-16 14:18] be-dev (sonnet) - create bear-market-test-binance.ts script to fetch 2022 Binance Futures data and run FR V2 backtests
+[2026-03-16 18:00] quant-lead (opus) - Regime-split analysis of FR V2 across 5 market periods, action plan with BTC SMA200 regime filter recommendation
+[2026-03-16 18:30] Explore (sonnet) - explore prod strategies & bear testing capabilities
+[2026-03-16 18:35] be-dev (sonnet) - create regime-split-backtest.ts script
+[2026-03-16 18:50] be-dev (sonnet) - create bear-market-test-binance.ts script
+[2026-03-16 19:20] quant-lead (opus) - regime analysis strategic recommendations
+[2026-03-17 05:19] be-dev (sonnet) - create compare-bear-modes.ts script: V2 vs V3 with block/shortOnly/mirror across 17 symbols x 5 regimes
+[2026-03-17 05:30] be-dev (sonnet) - Add EMA support to funding-rate-spike-v3 regime filter
+[2026-03-17 05:31] be-dev (sonnet) - Create scripts/compare-regime-filters.ts (V2 vs V3-block with SMA200/SMA100/SMA50/EMA200/EMA100 regime filters)
+[2026-03-17 07:48] be-dev (sonnet) - Update funding-rate-spike-v3 regimeMAType default from sma to ema, update description to EMA200
+[2026-03-17 07:58] be-dev (sonnet) - inject BTC daily candles into V3 sub-strategies in aggregate engine
+[2026-03-17 08:02] be-dev (sonnet) - Create run-v3-aggregation-comparison.ts script
+[2026-03-17 14:00] be-dev (sonnet) - Update V3 default to EMA200
+[2026-03-17 14:00] Explore (sonnet) - Explore aggregation system
+[2026-03-17 14:05] be-dev (sonnet) - Implement V3 bear mode variants (block/shortOnly/mirror)
+[2026-03-17 14:10] be-dev (sonnet) - Create bear mode comparison script
+[2026-03-17 14:15] be-dev (sonnet) - Add EMA regime filter to V3
+[2026-03-17 14:20] be-dev (sonnet) - Create regime filter comparison script
+[2026-03-17 14:30] quant-lead (opus) - Design Quality Core portfolio (4 symbols, SS)
+[2026-03-17 14:30] quant-lead (opus) - Design Diversified 7 portfolio (7 symbols, top_n)
+[2026-03-17 14:30] quant-lead (opus) - Design Hybrid Tiered portfolio (6 symbols, weighted_multi)
+[2026-03-17 14:40] be-dev (sonnet) - Add BTC daily candle injection to aggregate engine
+[2026-03-17 14:45] be-dev (sonnet) - Create V3 aggregation backtest script
+[2026-03-17 14:50] docs-writer (haiku) - Changelog for V3 regime filter and aggregations

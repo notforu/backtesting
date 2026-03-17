@@ -118,6 +118,14 @@ const FUNDING_FOCUS = ['TIA', 'COMP', 'RPL', 'JTO'];
 // Top 12 profitable V2 assets at best timeframe
 const WIDE12 = ['LDO', 'DOGE', 'ARB', 'IMX', 'ICP', 'XLM', 'GRT', 'TIA', 'APT', 'NEAR', 'COMP', 'BCH'];
 
+// NEW SCAN DISCOVERIES (Mar 2026) - Sharpe > 0.5 at 4h
+const SCAN_HIGH_SHARPE = ['LPT', 'IOST', 'ZEC']; // Sharpe > 1.0
+const SCAN_STRONG = ['IOTA', 'TRB', 'STG', 'TIA', 'COTI', 'ENJ', 'ONT', 'KAVA']; // 0.5-1.0
+const SCAN_ALL_GOOD = [...SCAN_HIGH_SHARPE, 'ARB', ...SCAN_STRONG, 'APT', 'COMP', 'RPL', 'BCH']; // All > 0.5
+
+// Combined best: existing V2 top + new scan discoveries
+const MEGA_POOL = ['LDO', 'DOGE', 'ARB', 'LPT', 'IOST', 'ZEC', 'IMX', 'ICP', 'XLM', 'GRT', 'NEAR', 'TIA', 'TRB', 'STG', 'COMP', 'IOTA', 'COTI', 'APT', 'BCH', 'ENJ'];
+
 // ---------------------------------------------------------------------------
 // Config type
 // ---------------------------------------------------------------------------
@@ -130,7 +138,7 @@ interface ExploreConfig {
 }
 
 // ---------------------------------------------------------------------------
-// All configs to explore (47 total)
+// All configs to explore (60 total)
 // ---------------------------------------------------------------------------
 
 const CONFIGS: ExploreConfig[] = [
@@ -572,6 +580,122 @@ const CONFIGS: ExploreConfig[] = [
       fr('RPL', '1h'),
       fr('ENS', '1h'),
     ],
+  },
+
+  // -------------------------------------------------------------------------
+  // 48-60. Mar 2026 Scan Discoveries (new 4h winners + mega pool experiments)
+  // -------------------------------------------------------------------------
+
+  // 48. New High Sharpe Core (LPT, IOST, ZEC — all Sharpe > 1.0 at 4h)
+  {
+    name: 'New High Sharpe Core SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs(SCAN_HIGH_SHARPE, '4h'),
+  },
+
+  // 49. New High Sharpe + LDO+DOGE (proven low-DD anchors added)
+  {
+    name: 'New HighSharpe + LDO+DOGE SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs([...SCAN_HIGH_SHARPE, 'LDO', 'DOGE'], '4h'),
+  },
+
+  // 50. New High Sharpe + LDO+DOGE+ARB (six assets)
+  {
+    name: 'New HighSharpe + LDO+DOGE+ARB SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs([...SCAN_HIGH_SHARPE, 'LDO', 'DOGE', 'ARB'], '4h'),
+  },
+
+  // 51. MegaPool 20-asset single_strongest
+  {
+    name: 'MegaPool 20-asset SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs(MEGA_POOL, '4h'),
+  },
+
+  // 52. MegaPool 20-asset top_n maxPos=3
+  {
+    name: 'MegaPool 20-asset TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: subs(MEGA_POOL, '4h'),
+  },
+
+  // 53. MegaPool 20-asset top_n maxPos=5
+  {
+    name: 'MegaPool 20-asset TopN5',
+    allocationMode: 'top_n',
+    maxPositions: 5,
+    subStrategies: subs(MEGA_POOL, '4h'),
+  },
+
+  // 54. LowDD proven + new high-Sharpe discoveries, single_strongest
+  {
+    name: 'LowDD + New Discoveries SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs(['LDO', 'DOGE', 'ARB', 'ICP', 'LPT', 'ZEC'], '4h'),
+  },
+
+  // 55. LowDD proven + new high-Sharpe discoveries, top_n maxPos=3
+  {
+    name: 'LowDD + New Discoveries TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: subs(['LDO', 'DOGE', 'ARB', 'ICP', 'LPT', 'ZEC'], '4h'),
+  },
+
+  // 56. Ultra Compact Elite: LDO + LPT (two highest individual Sharpe overall)
+  {
+    name: 'Ultra Compact Elite LDO+LPT SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [fr('LDO', '4h'), fr('LPT', '4h')],
+  },
+
+  // 57. MegaPool mixed TF: 20-asset 4h pool + ENS,RPL at 1h, single_strongest
+  {
+    name: 'MegaPool MixedTF SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: [
+      ...subs(MEGA_POOL, '4h'),
+      fr('ENS', '1h'),
+      fr('RPL', '1h'),
+    ],
+  },
+
+  // 58. MegaPool mixed TF, top_n maxPos=3
+  {
+    name: 'MegaPool MixedTF TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: [
+      ...subs(MEGA_POOL, '4h'),
+      fr('ENS', '1h'),
+      fr('RPL', '1h'),
+    ],
+  },
+
+  // 59. All 16 new scan discoveries (Sharpe > 0.5 at 4h), single_strongest
+  {
+    name: 'Scan AllGood 16-asset SS',
+    allocationMode: 'single_strongest',
+    maxPositions: 1,
+    subStrategies: subs(SCAN_ALL_GOOD, '4h'),
+  },
+
+  // 60. All 16 new scan discoveries, top_n maxPos=3
+  {
+    name: 'Scan AllGood 16-asset TopN3',
+    allocationMode: 'top_n',
+    maxPositions: 3,
+    subStrategies: subs(SCAN_ALL_GOOD, '4h'),
   },
 ];
 
