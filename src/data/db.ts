@@ -1875,3 +1875,37 @@ export async function getLongShortRatioDateRange(
     end: row?.max_ts != null ? Number(row.max_ts) : null,
   };
 }
+
+// ============================================================================
+// Platform Settings
+// ============================================================================
+
+/**
+ * Retrieve a platform setting by key.
+ * Returns null when the key does not exist yet.
+ */
+export async function getPlatformSetting(key: string): Promise<unknown | null> {
+  const p = getPool();
+  const { rows } = await p.query<{ value: unknown }>(
+    `SELECT value FROM platform_settings WHERE key = $1`,
+    [key],
+  );
+  if (rows.length === 0) return null;
+  return rows[0].value;
+}
+
+/**
+ * Upsert a platform setting.
+ * Overwrites any existing value for the given key.
+ */
+export async function setPlatformSetting(key: string, value: unknown): Promise<void> {
+  const p = getPool();
+  await p.query(
+    `INSERT INTO platform_settings (key, value, updated_at)
+     VALUES ($1, $2::jsonb, NOW())
+     ON CONFLICT (key) DO UPDATE
+       SET value = EXCLUDED.value,
+           updated_at = NOW()`,
+    [key, JSON.stringify(value)],
+  );
+}

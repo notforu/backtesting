@@ -32,6 +32,9 @@ import type {
   PaperSessionEventsResponse,
   StrategyConfigEntity,
   StrategyConfigListItem,
+  KillSwitchSettings,
+  KillSwitchConfig,
+  UpdateKillSwitchRequest,
 } from '../types';
 
 const API_BASE = '/api';
@@ -989,4 +992,26 @@ export function subscribePaperSession(
     abortController?.abort();
     abortController = null;
   };
+}
+
+// ============================================================================
+// Platform Settings — Kill Switch
+// ============================================================================
+
+export async function getKillSwitchSettings(): Promise<KillSwitchSettings> {
+  return apiFetch<KillSwitchSettings>('/settings/kill-switch');
+}
+
+export async function updatePtKillSwitch(data: UpdateKillSwitchRequest): Promise<KillSwitchConfig> {
+  return apiFetch<KillSwitchConfig>('/settings/kill-switch/pt', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateLtKillSwitch(data: UpdateKillSwitchRequest): Promise<KillSwitchConfig> {
+  return apiFetch<KillSwitchConfig>('/settings/kill-switch/lt', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
 }

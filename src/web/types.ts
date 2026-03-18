@@ -623,3 +623,22 @@ export interface StrategyConfigListItem extends StrategyConfigEntity {
   latestRunSharpe?: number;
   latestRunReturn?: number;
 }
+
+// ============================================================================
+// Platform Settings Types
+// ============================================================================
+
+export interface KillSwitchConfig {
+  enabled: boolean;
+  ddPercent: number;
+}
+
+export interface KillSwitchSettings {
+  pt: KillSwitchConfig;
+  lt: KillSwitchConfig;
+}
+
+export interface UpdateKillSwitchRequest {
+  enabled: boolean;
+  ddPercent?: number;
+}

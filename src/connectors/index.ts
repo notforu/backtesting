@@ -16,3 +16,4 @@ export type {
 } from './types.js';
 
 export { createConnector } from './connector-factory.js';
+export { PaperConnector } from './paper-connector.js';

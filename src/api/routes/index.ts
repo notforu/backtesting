@@ -13,3 +13,4 @@ export { scanRoutes } from './scan.js';
 export { authRoutes } from './auth.js';
 export { priceStreamRoutes } from './price-stream.js';
 export { configExportRoutes } from './config-export.js';
+export { settingsRoutes } from './settings.js';

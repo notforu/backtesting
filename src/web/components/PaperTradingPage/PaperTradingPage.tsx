@@ -9,6 +9,7 @@ import { usePaperSessions } from '../../hooks/usePaperTrading';
 import { CreatePaperSessionModal } from '../PaperTradingPanel/CreatePaperSessionModal';
 import { PaperSessionSidebar } from './PaperSessionSidebar';
 import { PaperSessionDetail } from './PaperSessionDetail';
+import { KillSwitchPanel } from './KillSwitchPanel';
 
 export function PaperTradingPage() {
   const { selectedSessionId, isCreateModalOpen, setSelectedSession, setCreateModalOpen } =
@@ -23,7 +24,13 @@ export function PaperTradingPage() {
   }, [selectedSessionId, isLoading, sessions, setSelectedSession]);
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Kill switch settings panel — always visible at top of Trading page */}
+      <div className="px-4 pt-4 pb-2 border-b border-gray-700 shrink-0">
+        <KillSwitchPanel />
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
       <PaperSessionSidebar
         sessions={sessions}
         isLoading={isLoading}
@@ -61,6 +68,7 @@ export function PaperTradingPage() {
           }}
         />
       )}
+      </div>
     </div>
   );
 }

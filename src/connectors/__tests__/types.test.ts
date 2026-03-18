@@ -1,20 +1,18 @@
 /**
  * Connector Factory Tests
- *
- * These are placeholder tests that verify the factory correctly throws
- * for all connector types before any real implementations are created.
  */
 
 import { describe, it, expect } from 'vitest';
 import { createConnector } from '../connector-factory.js';
+import { PaperConnector } from '../paper-connector.js';
 import type { ConnectorConfig } from '../types.js';
 
 describe('createConnector', () => {
-  it('throws for paper connector (not yet implemented)', () => {
+  it('returns a PaperConnector for type "paper"', () => {
     const config: ConnectorConfig = { type: 'paper', initialCapital: 10_000 };
-    expect(() => createConnector(config)).toThrow(
-      'PaperConnector not yet implemented',
-    );
+    const connector = createConnector(config);
+    expect(connector).toBeInstanceOf(PaperConnector);
+    expect(connector.type).toBe('paper');
   });
 
   it('throws for bybit connector (not yet implemented)', () => {

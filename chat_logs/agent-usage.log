@@ -1,3 +1,5 @@
+[2026-03-18 12:24] fullstack-dev (sonnet) - Add kill switch toggle: DB table, API endpoints, UI toggles on Trading page
+[2026-03-18 12:38] docs-writer (haiku) - Changelog for kill switch toggle feature
 [2026-03-18 05:30] be-dev (sonnet) - Create final-prod-backtest-and-pt.ts: run V2 5sym WF-optimized backtest ($5k, slippage 0.10%) + create prod PT session
 [2026-03-18 04:05] be-dev (sonnet) - Create compare-v2-v3-portfolios.ts: 16-run comparison across 4 portfolio sets × 2 alloc modes × V2/V3
 [2026-03-17 12:41] be-dev (sonnet) - Create compare-v2-v3-aggregation.ts script: runs V2 vs V3 (regime filter) on same 13 symbols, saves both to DB, prints comparison table
@@ -165,3 +167,8 @@
 [2026-03-18 06:15] docs-writer (haiku) - Changelog for RiskManager TDD implementation
 [2026-03-18 12:00] be-dev (sonnet) - RiskManager module TDD (41 tests + implementation)
 [2026-03-18 12:00] be-dev (sonnet) - IConnector interface + factory + tests
+[2026-03-18 12:30] commit (haiku) - RiskManager module, IConnector interface, FR phase-B screening
+[2026-03-18 12:24] be-dev (sonnet) - Implement PaperConnector: IConnector wrapper with TDD
+[2026-03-18 12:32] be-dev (sonnet) - PaperConnector implementation complete: 49 tests pass, typecheck clean
+[2026-03-18 12:30] be-dev (sonnet) - PaperConnector implementation TDD (45 tests)
+[2026-03-18 12:30] fullstack-dev (sonnet) - Kill switch API + DB + UI toggles (17 tests)
