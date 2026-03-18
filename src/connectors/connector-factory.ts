@@ -6,6 +6,7 @@
 
 import type { ConnectorConfig, IConnector } from './types.js';
 import { PaperConnector } from './paper-connector.js';
+import { BybitConnector } from './bybit-connector.js';
 
 /**
  * Factory function that returns an IConnector for the given config.
@@ -16,7 +17,7 @@ export function createConnector(config: ConnectorConfig): IConnector {
       return new PaperConnector(config);
     case 'bybit':
     case 'bybit-testnet':
-      throw new Error('BybitConnector not yet implemented');
+      return new BybitConnector(config);
     default: {
       // TypeScript exhaustiveness check — this branch is only reachable at
       // runtime when an unknown type is passed (e.g. from an API request).

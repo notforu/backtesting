@@ -173,3 +173,8 @@
 [2026-03-18 12:30] be-dev (sonnet) - PaperConnector implementation TDD (45 tests)
 [2026-03-18 12:30] fullstack-dev (sonnet) - Kill switch API + DB + UI toggles (17 tests)
 [2026-03-18 12:41] commit (haiku) - PaperConnector + Kill Switch UI/API (62 tests)
+[2026-03-18 13:08] be-dev (sonnet) - Implement BybitConnector with CCXT integration and tests
+[2026-03-18 13:08] be-dev (sonnet) - Integrate RiskManager into PaperTradingEngine with kill switch, trade validation, and DB-backed kill switch settings
+[2026-03-18 13:21] docs-writer (haiku) - Create changelog for RiskManager integration into PaperTradingEngine
+[2026-03-18 13:00] be-dev (sonnet) - BybitConnector implementation TDD (56 tests)
+[2026-03-18 13:00] be-dev (sonnet) - RiskManager → PT engine integration (14 tests)

@@ -17,3 +17,4 @@ export type {
 
 export { createConnector } from './connector-factory.js';
 export { PaperConnector } from './paper-connector.js';
+export { BybitConnector } from './bybit-connector.js';

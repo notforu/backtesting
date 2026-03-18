@@ -25,6 +25,13 @@ vi.mock('../db.js', () => ({
   savePaperEquitySnapshot: vi.fn(),
 }));
 
+// Mock data/db.js for getPlatformSetting used by createRiskManager
+vi.mock('../../data/db.js', () => ({
+  getPlatformSetting: vi.fn().mockResolvedValue(null),
+  setPlatformSetting: vi.fn().mockResolvedValue(undefined),
+  saveFundingRates: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock PaperTradingEngine — use module-level fns so they can be reset in beforeEach
 const mockEngineStart = vi.fn().mockResolvedValue(undefined);
 const mockEngineStop = vi.fn().mockResolvedValue(undefined);
@@ -35,6 +42,7 @@ const mockEngineForceTick = vi.fn().mockResolvedValue({
   fundingPayments: [], equity: 10000, cash: 10000, positionsValue: 0, openPositions: [],
 });
 const mockEngineOn = vi.fn();
+const mockEngineSetRiskManager = vi.fn();
 
 // Use function keyword so `new PaperTradingEngine(...)` works as a constructor
 vi.mock('../engine.js', () => ({
@@ -48,6 +56,7 @@ vi.mock('../engine.js', () => ({
       resume: mockEngineResume,
       forceTick: mockEngineForceTick,
       on: mockEngineOn,
+      setRiskManager: mockEngineSetRiskManager,
     };
   }),
 }));

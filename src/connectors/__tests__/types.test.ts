@@ -2,10 +2,29 @@
  * Connector Factory Tests
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createConnector } from '../connector-factory.js';
 import { PaperConnector } from '../paper-connector.js';
+import { BybitConnector } from '../bybit-connector.js';
 import type { ConnectorConfig } from '../types.js';
+
+// Mock CCXT so BybitConnector construction does not try to instantiate the
+// real ccxt.bybit class (which would fail in unit test environment).
+vi.mock('ccxt', async () => {
+  class MockBybit {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    constructor(public readonly _constructorArgs: any) {}
+    loadMarkets = vi.fn().mockResolvedValue({});
+    fetchBalance = vi.fn().mockResolvedValue({ total: {}, free: {} });
+    createMarketBuyOrder = vi.fn();
+    createMarketSellOrder = vi.fn();
+    fetchPositions = vi.fn().mockResolvedValue([]);
+  }
+  return {
+    default: { bybit: MockBybit },
+    bybit: MockBybit,
+  };
+});
 
 describe('createConnector', () => {
   it('returns a PaperConnector for type "paper"', () => {
@@ -15,26 +34,36 @@ describe('createConnector', () => {
     expect(connector.type).toBe('paper');
   });
 
-  it('throws for bybit connector (not yet implemented)', () => {
+  it('returns a BybitConnector for type "bybit"', () => {
     const config: ConnectorConfig = {
       type: 'bybit',
       apiKey: 'test-key',
       apiSecret: 'test-secret',
     };
-    expect(() => createConnector(config)).toThrow(
-      'BybitConnector not yet implemented',
-    );
+    const connector = createConnector(config);
+    expect(connector).toBeInstanceOf(BybitConnector);
+    expect(connector.type).toBe('bybit');
   });
 
-  it('throws for bybit-testnet connector (not yet implemented)', () => {
+  it('returns a BybitConnector for type "bybit-testnet"', () => {
     const config: ConnectorConfig = {
       type: 'bybit-testnet',
       apiKey: 'test-key',
       apiSecret: 'test-secret',
       testnet: true,
     };
+    const connector = createConnector(config);
+    expect(connector).toBeInstanceOf(BybitConnector);
+    expect(connector.type).toBe('bybit-testnet');
+  });
+
+  it('throws for bybit type when apiKey is missing', () => {
+    const config: ConnectorConfig = {
+      type: 'bybit',
+      apiSecret: 'test-secret',
+    };
     expect(() => createConnector(config)).toThrow(
-      'BybitConnector not yet implemented',
+      'Bybit API key and secret are required',
     );
   });
 

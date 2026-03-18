@@ -78,7 +78,9 @@ export type PaperTradingEvent =
   | { type: 'error'; sessionId: string; message: string }
   | { type: 'status_change'; sessionId: string; oldStatus: string; newStatus: string }
   | { type: 'retry'; sessionId: string; retryCount: number; nextRetryAt: number; error: string }
-  | { type: 'realtime_equity_update'; sessionId: string; equity: number; cash: number; positionsValue: number; markPrices: Record<string, number>; timestamp: number };
+  | { type: 'realtime_equity_update'; sessionId: string; equity: number; cash: number; positionsValue: number; markPrices: Record<string, number>; timestamp: number }
+  | { type: 'trade_rejected'; sessionId: string; symbol: string; reason: string }
+  | { type: 'kill_switch_triggered'; sessionId: string; reason: string; equity: number };
 
 export interface TickResult {
   tickNumber: number;

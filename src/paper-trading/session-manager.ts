@@ -13,6 +13,8 @@ import type { PaperSession, PaperTradingEvent } from './types.js';
 import * as paperDb from './db.js';
 import { TelegramNotifier } from '../notifications/telegram.js';
 import { priceWatcher } from './price-watcher.js';
+import { RiskManager } from '../risk/risk-manager.js';
+import { getPlatformSetting } from '../data/db.js';
 
 /**
  * Hour of the day (UTC) at which the daily summary digest is sent.
@@ -101,6 +103,10 @@ export class SessionManager {
       engine = new PaperTradingEngine(session);
       this.engines.set(sessionId, engine);
 
+      // Attach RiskManager (reads kill switch settings from DB)
+      const rm = await this.createRiskManager(session);
+      engine.setRiskManager(rm);
+
       // Forward all paper-events to registered SSE listeners, Telegram, and event log
       this.registerEngineEventHandlers(engine, sessionId, session.name);
     }
@@ -149,6 +155,10 @@ export class SessionManager {
 
       engine = new PaperTradingEngine(session);
       this.engines.set(sessionId, engine);
+
+      // Attach RiskManager (reads kill switch settings from DB)
+      const rm = await this.createRiskManager(session);
+      engine.setRiskManager(rm);
 
       // Forward events to SSE listeners, Telegram, and event log
       this.registerEngineEventHandlers(engine, sessionId, session.name);
@@ -347,6 +357,42 @@ export class SessionManager {
   }
 
   // --------------------------------------------------------------------------
+  // RiskManager factory (private)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Create a RiskManager for a session, reading kill switch settings from the
+   * platform_settings table.  Falls back to safe defaults if the key is absent.
+   */
+  private async createRiskManager(session: PaperSession): Promise<RiskManager> {
+    let killSwitchEnabled = true;
+    let killSwitchDDPercent = 30;
+
+    try {
+      const raw = await getPlatformSetting('kill_switch_pt');
+      if (raw && typeof raw === 'object' && raw !== null) {
+        const cfg = raw as Record<string, unknown>;
+        if (typeof cfg.enabled === 'boolean') killSwitchEnabled = cfg.enabled;
+        if (typeof cfg.ddPercent === 'number' && cfg.ddPercent > 0 && cfg.ddPercent < 100) {
+          killSwitchDDPercent = cfg.ddPercent;
+        }
+      }
+    } catch (err) {
+      console.warn('[SessionManager] Could not load kill_switch_pt setting, using defaults:', err);
+    }
+
+    const maxPositions = session.aggregationConfig.maxPositions ?? 5;
+    return new RiskManager({
+      maxCapital: session.initialCapital,
+      maxTradeSize: session.initialCapital * 0.5,
+      maxPositions,
+      killSwitchEnabled,
+      killSwitchDDPercent,
+      symbolWhitelist: [],
+    });
+  }
+
+  // --------------------------------------------------------------------------
   // Engine event handler wiring (private)
   // --------------------------------------------------------------------------
 
@@ -525,6 +571,16 @@ export class SessionManager {
         details = { retryCount: event.retryCount, nextRetryAt: event.nextRetryAt, error: event.error };
         break;
       }
+      case 'kill_switch_triggered': {
+        message = `Kill switch triggered: ${event.reason} (equity: $${event.equity.toFixed(2)})`;
+        details = { reason: event.reason, equity: event.equity };
+        break;
+      }
+      case 'trade_rejected': {
+        message = `Trade rejected for ${event.symbol}: ${event.reason}`;
+        details = { symbol: event.symbol, reason: event.reason };
+        break;
+      }
       default:
         return;
     }
@@ -583,7 +639,14 @@ export class SessionManager {
           console.error('[SessionManager] Telegram status_change error:', err);
         });
         break;
-      // funding_payment, equity_update, tick_complete: not forwarded to Telegram
+      case 'kill_switch_triggered':
+        telegram.sendMessage(
+          `<b>KILL SWITCH TRIGGERED</b>\nSession: ${sessionName}\nReason: ${event.reason}\nEquity: $${event.equity.toFixed(2)}\nAll positions closed. Session paused.`,
+        ).catch(err => {
+          console.error('[SessionManager] Telegram kill_switch error:', err);
+        });
+        break;
+      // funding_payment, equity_update, tick_complete, trade_rejected: not forwarded to Telegram
     }
   }
 

@@ -29,6 +29,7 @@ import type { PaperSession, PaperTrade, PaperTradingEvent, TickResult } from './
 import * as paperDb from './db.js';
 import { saveFundingRates } from '../data/db.js';
 import type { Trade } from '../core/types.js';
+import type { RiskManager } from '../risk/risk-manager.js';
 
 const WARMUP_CANDLES = 200; // Historical candles for strategy warmup
 const MAX_RETRIES = 10; // Maximum transient error retries before giving up
@@ -90,6 +91,11 @@ export class PaperTradingEngine extends EventEmitter {
   private lastError: string | null = null;
   private lastErrorAt: number | null = null;
 
+  // Optional RiskManager — when set, every trade is validated before execution
+  // and the kill switch is checked after every equity update.
+  // When absent, the engine operates as before (backward compatible).
+  private riskManager?: RiskManager;
+
   constructor(session: PaperSession) {
     super();
     this.sessionId = session.id;
@@ -109,6 +115,11 @@ export class PaperTradingEngine extends EventEmitter {
 
   get status(): string {
     return this._status;
+  }
+
+  /** Attach a RiskManager to this engine. Must be called before the engine starts. */
+  setRiskManager(rm: RiskManager): void {
+    this.riskManager = rm;
   }
 
   get currentRetryCount(): number {
@@ -814,6 +825,13 @@ export class PaperTradingEngine extends EventEmitter {
                 `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`,
                 'long',
               );
+              // Notify RiskManager of closed position
+              if (this.riskManager) {
+                this.riskManager.onTradeClosed({
+                  symbol: awd.config.symbol,
+                  pnl: paperTrade.pnl ?? 0,
+                });
+              }
             }
 
             if (positions.shortPosition) {
@@ -834,6 +852,13 @@ export class PaperTradingEngine extends EventEmitter {
                 `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`,
                 'short',
               );
+              // Notify RiskManager of closed position
+              if (this.riskManager) {
+                this.riskManager.onTradeClosed({
+                  symbol: awd.config.symbol,
+                  pnl: paperTrade.pnl ?? 0,
+                });
+              }
             }
 
             awd.adapter.confirmExit();
@@ -922,6 +947,27 @@ export class PaperTradingEngine extends EventEmitter {
           const amount = capitalForTrade / entryPrice;
           if (amount <= 0) continue;
 
+          // RiskManager pre-trade validation
+          if (this.riskManager) {
+            const validation = this.riskManager.validateTrade({
+              symbol: awd.config.symbol,
+              size: capitalForTrade,
+              direction: signal.direction as 'long' | 'short',
+            });
+            if (!validation.allowed) {
+              console.warn(
+                `[PaperEngine ${this.sessionId}] Trade rejected for ${awd.config.symbol}: ${validation.reason}`,
+              );
+              this.emitEvent({
+                type: 'trade_rejected',
+                sessionId: this.sessionId,
+                symbol: awd.config.symbol,
+                reason: validation.reason ?? 'RiskManager rejected trade',
+              });
+              continue;
+            }
+          }
+
           try {
             let trade: Trade;
             if (signal.direction === 'long') {
@@ -945,6 +991,14 @@ export class PaperTradingEngine extends EventEmitter {
             const action = signal.direction === 'long' ? 'open_long' : 'open_short';
             const paperTrade = await this.saveTrade(awd, trade, action, 0);
             tradesOpened.push(paperTrade);
+
+            // Notify RiskManager that a new position was opened
+            if (this.riskManager) {
+              this.riskManager.onTradeOpened({
+                symbol: awd.config.symbol,
+                size: capitalForTrade,
+              });
+            }
 
             // Confirm in adapter so shadow state stays in sync
             awd.adapter.confirmExecutionAtBar(signal.direction, barIndex);
@@ -1025,6 +1079,43 @@ export class PaperTradingEngine extends EventEmitter {
         tickCount: this.tickCount,
         lastTickAt: this.lastTickAt,
       });
+
+      // ------------------------------------------------------------------
+      // Kill switch check: update RiskManager with latest equity, then check
+      // whether the drawdown threshold has been breached.
+      // When triggered: force-close all positions, emit event, pause engine.
+      // ------------------------------------------------------------------
+      if (this.riskManager) {
+        this.riskManager.onEquityUpdate(equity);
+        const ksCheck = this.riskManager.checkKillSwitch();
+        if (ksCheck.triggered) {
+          console.warn(
+            `[PaperEngine ${this.sessionId}] Kill switch triggered: ${ksCheck.reason}`,
+          );
+          // Force-close all open positions before pausing
+          await this.forceCloseAllPositions();
+          this.emitEvent({
+            type: 'kill_switch_triggered',
+            sessionId: this.sessionId,
+            reason: ksCheck.reason ?? 'Kill switch triggered',
+            equity,
+          });
+          // Pause so the session stops ticking but remains recoverable
+          await this.pause();
+          // Return early — no further processing after kill switch
+          return {
+            tickNumber: this.tickCount,
+            timestamp: wallClockTimestamp,
+            tradesOpened,
+            tradesClosed,
+            fundingPayments,
+            equity,
+            cash,
+            positionsValue,
+            openPositions: [],
+          };
+        }
+      }
 
       // ------------------------------------------------------------------
       // Step 10: Update unrealized PnL and fundingAccumulated for all open
