@@ -1,3 +1,4 @@
+[2026-03-18 04:05] be-dev (sonnet) - Create compare-v2-v3-portfolios.ts: 16-run comparison across 4 portfolio sets × 2 alloc modes × V2/V3
 [2026-03-17 12:41] be-dev (sonnet) - Create compare-v2-v3-aggregation.ts script: runs V2 vs V3 (regime filter) on same 13 symbols, saves both to DB, prints comparison table
 [2026-03-17 12:45] be-dev (sonnet) - Create run-v3-walk-forward.ts script for 6-symbol Hybrid Tiered portfolio WF validation
 [2026-03-17 12:30] quant-lead (opus) - Design FR V3 Hybrid Tiered portfolio: 6 symbols, weighted_multi maxPos=3, optimized params for LDO/XLM/NEAR, defaults for ZEC/TRB/IOST
@@ -121,3 +122,8 @@
 [2026-03-18 03:00] be-dev (sonnet) - Fix 5 critical silent fallback bugs (weight calc, alloc mode, strategy load, BTC candles, adapter lookup)
 [2026-03-18 03:00] be-dev (sonnet) - Add RULE 11 (no silent fallbacks) to CLAUDE.md
 [2026-03-18 03:00] Explore (sonnet) - Audit all silent fallback patterns in codebase
+[2026-03-18 03:15] commit (haiku) - fix silent fallback bugs in financial code
+[2026-03-18 03:41] be-dev (sonnet) - create compare-v2-v3-multi-config.ts script for 4 allocation configs × V2/V3
+[2026-03-18 04:00] be-dev (sonnet) - Create multi-config V2 vs V3 comparison script
+[2026-03-18 04:10] be-dev (sonnet) - Create multi-portfolio V2 vs V3 comparison script
+[2026-03-18 04:30] docs-writer (haiku) - Document V2 vs V3 regime filter comparison results
