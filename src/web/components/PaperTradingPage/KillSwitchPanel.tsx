@@ -53,54 +53,58 @@ function KillSwitchRow({ label, config, isSaving, onToggle, onDdChange }: KillSw
   }
 
   return (
-    <div className="flex items-center gap-4 py-2">
-      {/* Label */}
-      <span className="w-36 text-sm font-medium text-gray-200">{label}</span>
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-2">
+      {/* Label + toggle + status — first row on mobile */}
+      <div className="flex items-center gap-3">
+        <span className="w-28 sm:w-36 text-sm font-medium text-gray-200">{label}</span>
 
-      {/* Toggle */}
-      <button
-        type="button"
-        onClick={() => onToggle(!config.enabled)}
-        disabled={isSaving}
-        aria-pressed={config.enabled}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 ${
-          config.enabled ? 'bg-green-500' : 'bg-gray-600'
-        }`}
-      >
-        <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-            config.enabled ? 'translate-x-6' : 'translate-x-1'
-          }`}
-        />
-      </button>
-
-      {/* Status text */}
-      <span
-        className={`w-16 text-xs font-semibold ${config.enabled ? 'text-green-400' : 'text-red-400'}`}
-      >
-        {config.enabled ? 'Enabled' : 'Disabled'}
-      </span>
-
-      {/* DD% input */}
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-gray-400">Max DD:</span>
-        <input
-          type="number"
-          min={1}
-          max={99}
-          step={1}
-          value={localDd}
-          onChange={(e) => setLocalDd(e.target.value)}
-          onBlur={handleDdBlur}
-          onKeyDown={handleDdKeyDown}
+        {/* Toggle */}
+        <button
+          type="button"
+          onClick={() => onToggle(!config.enabled)}
           disabled={isSaving}
-          className="w-14 rounded border border-gray-600 bg-gray-800 px-2 py-0.5 text-center text-sm text-gray-100 focus:border-blue-400 focus:outline-none disabled:opacity-50"
-        />
-        <span className="text-xs text-gray-400">%</span>
+          aria-pressed={config.enabled}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 ${
+            config.enabled ? 'bg-green-500' : 'bg-gray-600'
+          }`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+              config.enabled ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
+
+        {/* Status text */}
+        <span
+          className={`w-16 text-xs font-semibold ${config.enabled ? 'text-green-400' : 'text-red-400'}`}
+        >
+          {config.enabled ? 'Enabled' : 'Disabled'}
+        </span>
       </div>
 
-      {/* Saving indicator */}
-      {isSaving && <span className="text-xs text-gray-400 italic">saving...</span>}
+      {/* DD% input + saving indicator — second row on mobile, inline on desktop */}
+      <div className="flex items-center gap-2 pl-1 sm:pl-0">
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-400">Max DD:</span>
+          <input
+            type="number"
+            min={1}
+            max={99}
+            step={1}
+            value={localDd}
+            onChange={(e) => setLocalDd(e.target.value)}
+            onBlur={handleDdBlur}
+            onKeyDown={handleDdKeyDown}
+            disabled={isSaving}
+            className="w-14 rounded border border-gray-600 bg-gray-800 px-2 py-0.5 text-center text-sm text-gray-100 focus:border-blue-400 focus:outline-none disabled:opacity-50"
+          />
+          <span className="text-xs text-gray-400">%</span>
+        </div>
+
+        {/* Saving indicator */}
+        {isSaving && <span className="text-xs text-gray-400 italic">saving...</span>}
+      </div>
     </div>
   );
 }

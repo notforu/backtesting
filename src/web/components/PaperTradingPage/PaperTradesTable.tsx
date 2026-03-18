@@ -31,19 +31,19 @@ export function PaperTradesTable({
       <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
       {trades.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs md:text-sm">
             <thead>
               <tr className="text-left text-gray-400 border-b border-gray-700">
-                <th className="pb-2 pr-4">#</th>
-                {isMultiAsset && !selectedAssetLabel && <th className="pb-2 pr-4">Asset</th>}
-                <th className="pb-2 pr-4">Action</th>
-                <th className="pb-2 pr-4">Price</th>
-                <th className="pb-2 pr-4">Amount</th>
-                <th className="pb-2 pr-4">P&amp;L</th>
-                <th className="pb-2 pr-4">P&amp;L %</th>
-                <th className="pb-2 pr-4">Fee</th>
-                {isFutures && <th className="pb-2 pr-4">Funding</th>}
-                <th className="pb-2 pr-4">Balance</th>
+                <th className="pb-2 pr-3 md:pr-4">#</th>
+                {isMultiAsset && !selectedAssetLabel && <th className="pb-2 pr-3 md:pr-4">Asset</th>}
+                <th className="pb-2 pr-3 md:pr-4">Action</th>
+                <th className="pb-2 pr-3 md:pr-4">Price</th>
+                <th className="pb-2 pr-3 md:pr-4 hidden sm:table-cell">Amount</th>
+                <th className="pb-2 pr-3 md:pr-4">P&amp;L</th>
+                <th className="pb-2 pr-3 md:pr-4">P&amp;L %</th>
+                <th className="pb-2 pr-3 md:pr-4 hidden sm:table-cell">Fee</th>
+                {isFutures && <th className="pb-2 pr-3 md:pr-4 hidden sm:table-cell">Funding</th>}
+                <th className="pb-2 pr-3 md:pr-4 hidden sm:table-cell">Balance</th>
                 <th className="pb-2">Time</th>
               </tr>
             </thead>
@@ -60,20 +60,20 @@ export function PaperTradesTable({
 
                 return (
                   <tr key={trade.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                    <td className="py-2 pr-4 text-gray-500">{index + 1}</td>
+                    <td className="py-2 pr-3 md:pr-4 text-gray-500">{index + 1}</td>
                     {isMultiAsset && !selectedAssetLabel && (
-                      <td className="py-2 pr-4 text-gray-400 text-xs">
+                      <td className="py-2 pr-3 md:pr-4 text-gray-400 text-xs">
                         {trade.symbol?.replace('/USDT:USDT', '') ?? '-'}
                       </td>
                     )}
-                    <td className="py-2 pr-4">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${actionColor}`}>
+                    <td className="py-2 pr-3 md:pr-4">
+                      <span className={`px-1.5 md:px-2 py-0.5 rounded text-[10px] md:text-xs font-medium ${actionColor}`}>
                         {actionLabel}
                       </span>
                     </td>
-                    <td className="py-2 pr-4 text-white">{fmtUsd(trade.price)}</td>
-                    <td className="py-2 pr-4 text-gray-300">{trade.amount.toFixed(6)}</td>
-                    <td className={`py-2 pr-4 ${
+                    <td className="py-2 pr-3 md:pr-4 text-white whitespace-nowrap">{fmtUsd(trade.price)}</td>
+                    <td className="py-2 pr-3 md:pr-4 text-gray-300 hidden sm:table-cell">{trade.amount.toFixed(6)}</td>
+                    <td className={`py-2 pr-3 md:pr-4 whitespace-nowrap ${
                       isClose
                         ? (trade.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
                         : 'text-gray-500'
@@ -82,7 +82,7 @@ export function PaperTradesTable({
                         ? `${(trade.pnl ?? 0) >= 0 ? '+' : ''}${fmtUsd(trade.pnl ?? 0)}`
                         : '-'}
                     </td>
-                    <td className={`py-2 pr-4 ${
+                    <td className={`py-2 pr-3 md:pr-4 whitespace-nowrap ${
                       isClose
                         ? (trade.pnlPercent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
                         : 'text-gray-500'
@@ -91,11 +91,11 @@ export function PaperTradesTable({
                         ? `${(trade.pnlPercent ?? 0) >= 0 ? '+' : ''}${(trade.pnlPercent ?? 0).toFixed(2)}%`
                         : '-'}
                     </td>
-                    <td className="py-2 pr-4 text-gray-400">
+                    <td className="py-2 pr-3 md:pr-4 text-gray-400 hidden sm:table-cell">
                       {trade.fee ? fmtUsd(trade.fee) : '-'}
                     </td>
                     {isFutures && (
-                      <td className={`py-2 pr-4 ${
+                      <td className={`py-2 pr-3 md:pr-4 hidden sm:table-cell ${
                         trade.fundingIncome != null && trade.fundingIncome !== 0
                           ? trade.fundingIncome >= 0 ? 'text-green-400' : 'text-red-400'
                           : 'text-gray-600'
@@ -105,8 +105,8 @@ export function PaperTradesTable({
                           : isClose ? '$0.00' : '-'}
                       </td>
                     )}
-                    <td className="py-2 pr-4 text-gray-300">{fmtUsd(trade.balanceAfter)}</td>
-                    <td className="py-2 text-gray-400">
+                    <td className="py-2 pr-3 md:pr-4 text-gray-300 hidden sm:table-cell whitespace-nowrap">{fmtUsd(trade.balanceAfter)}</td>
+                    <td className="py-2 text-gray-400 whitespace-nowrap text-[10px] md:text-xs">
                       {new Date(trade.timestamp).toLocaleString()}
                     </td>
                   </tr>

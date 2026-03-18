@@ -3,7 +3,7 @@
  * Provides the layout structure with sidebar, chart, and dashboard.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Dashboard } from './components/Dashboard';
 import { StrategyConfig } from './components/StrategyConfig';
@@ -57,6 +57,10 @@ function AppContent() {
   const [showExplorer, setShowExplorer] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
 
+  // Mobile master-detail for backtesting page:
+  // true = show sidebar (strategy config), false = show main content
+  const [backtestShowSidebar, setBacktestShowSidebar] = useState(true);
+
   const showScanner = scanResults.length > 0;
 
   const {
@@ -72,12 +76,12 @@ function AppContent() {
   const currentRunSummary = useCurrentRunSummary(currentResult, selectedBacktestId ?? null);
   const dashboardMetrics = usePerAssetMetrics(currentResult, !!isMultiAsset, selectedAsset);
 
-  const handleSelectRun = async (id: string) => {
+  const handleSelectRun = useCallback(async (id: string) => {
     const result = await loadBacktest(id);
     if (result) {
       applyHistoryParams(result);
     }
-  };
+  }, [loadBacktest, applyHistoryParams]);
 
   // Auto-load backtest when selectedBacktestId is set from URL (e.g. direct link)
   useEffect(() => {
@@ -86,6 +90,13 @@ function AppContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBacktestId]);
+
+  // On mobile: auto-navigate to results when a new backtest result arrives
+  useEffect(() => {
+    if (currentResult) {
+      setBacktestShowSidebar(false);
+    }
+  }, [currentResult]);
 
   const handleRerun = async (params: Record<string, unknown>) => {
     const isAgg =
@@ -146,8 +157,8 @@ function AppContent() {
       {/* Main Content */}
       {activePage === 'backtesting' && (
         <div className="flex-1 flex overflow-hidden">
-          {/* Left Sidebar */}
-          <aside className="w-96 flex-shrink-0 border-r border-gray-700 overflow-y-auto">
+          {/* Desktop sidebar — always visible on md+ */}
+          <aside className="hidden md:block w-96 flex-shrink-0 border-r border-gray-700 overflow-y-auto">
             <div className="p-4 space-y-4">
               <ErrorBoundary label="StrategyConfig">
                 <StrategyConfig />
@@ -155,8 +166,95 @@ function AppContent() {
             </div>
           </aside>
 
-          {/* Main Area */}
-          <main className="flex-1 overflow-y-auto">
+          {/* Mobile: show sidebar OR main content (master-detail pattern) */}
+          <div className="flex md:hidden flex-1 flex-col overflow-hidden">
+            {backtestShowSidebar ? (
+              /* Mobile sidebar */
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-4 space-y-4">
+                  <ErrorBoundary label="StrategyConfig">
+                    <StrategyConfig />
+                  </ErrorBoundary>
+                  {/* Run button navigates to results on mobile */}
+                  {currentResult && (
+                    <button
+                      onClick={() => setBacktestShowSidebar(false)}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white font-medium text-sm transition-colors"
+                    >
+                      View Results
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Mobile main content with back button */
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-700 shrink-0">
+                  <button
+                    onClick={() => setBacktestShowSidebar(true)}
+                    className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Config
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  <div className="p-4 space-y-4">
+                    <ErrorBoundary label="ChartSection">
+                      <ChartSection
+                        currentResult={currentResult}
+                        isMultiAsset={isMultiAsset}
+                        multiAssets={multiAssets}
+                        selectedAssetIndex={selectedAssetIndex}
+                        onSelectAsset={setSelectedAssetIndex}
+                        selectedAsset={selectedAsset}
+                        assetCandles={assetCandles}
+                      />
+                    </ErrorBoundary>
+
+                    {showScanner && (
+                      <ErrorBoundary label="ScannerResults">
+                        <ScannerResults />
+                      </ErrorBoundary>
+                    )}
+
+                    <section>
+                      <ErrorBoundary label="Dashboard">
+                        <Dashboard metrics={dashboardMetrics} />
+                      </ErrorBoundary>
+                    </section>
+
+                    {currentResult && currentResult.trades.length > 0 && (
+                      <section className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                        <ErrorBoundary label="TradesTable">
+                          <TradesTable
+                            trades={displayedTrades}
+                            metrics={currentResult.metrics}
+                            showAssetColumn={!!(isMultiAsset && !selectedAsset)}
+                            assetLabel={
+                              isMultiAsset && selectedAsset
+                                ? selectedAsset.label
+                                : isMultiAsset
+                                  ? 'All Assets'
+                                  : undefined
+                            }
+                          />
+                        </ErrorBoundary>
+                      </section>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop main area — always visible on md+ */}
+          <main className="hidden md:block flex-1 overflow-y-auto">
             <div className="p-4 space-y-4">
               <ErrorBoundary label="ChartSection">
                 <ChartSection
