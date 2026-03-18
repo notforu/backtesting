@@ -128,14 +128,13 @@ export async function findOrCreateStrategyConfig(config: {
   //   2. Spread defaults first, then override with caller-supplied params.
   //   3. If the result is still empty, throw — we cannot hash an empty config.
   let finalParams = config.params;
-  try {
-    const strategy = await loadStrategy(config.strategyName);
-    const defaults = getDefaultParams(strategy);
-    if (Object.keys(defaults).length > 0) {
-      finalParams = { ...defaults, ...config.params };
-    }
-  } catch {
-    // Strategy not found — use params as-is
+  // Do NOT catch errors here — if the strategy cannot be loaded that is a hard
+  // failure.  Silently swallowing the error would produce wrong hashes and
+  // duplicate config rows because the defaults would be missing.
+  const strategy = await loadStrategy(config.strategyName);
+  const defaults = getDefaultParams(strategy);
+  if (Object.keys(defaults).length > 0) {
+    finalParams = { ...defaults, ...config.params };
   }
 
   if (Object.keys(finalParams).length === 0) {

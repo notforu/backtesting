@@ -326,7 +326,7 @@ describe('findOrCreateStrategyConfig', () => {
     expect(mockLoadStrategy).toHaveBeenCalledWith('funding-rate-v2');
   });
 
-  it('throws when params are empty and strategy is not found', async () => {
+  it('throws when strategy cannot be loaded (loadStrategy error propagates)', async () => {
     mockLoadStrategy.mockRejectedValueOnce(new Error('Strategy not found: unknown-strategy'));
 
     await expect(
@@ -337,17 +337,18 @@ describe('findOrCreateStrategyConfig', () => {
         params: {},
       })
     ).rejects.toThrow(
-      'Cannot create strategy config for "unknown-strategy" with empty params.'
+      'Strategy not found: unknown-strategy'
     );
 
-    // No DB queries should have been issued
+    // No DB queries should have been issued — the loadStrategy error is thrown before hashing
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
-  it('throws when params are empty and strategy has no default parameters', async () => {
+  it('throws when params are empty and strategy has no default parameters (empty params check)', async () => {
+    // loadStrategy SUCCEEDS but strategy has no defaults and caller provides no params.
+    // The empty-params guard must still fire.
     const fakeStrategy = { name: 'paramless-strategy', params: [] };
     mockLoadStrategy.mockResolvedValueOnce(fakeStrategy);
-    // getDefaultParams returns empty object — strategy has no declared params
     mockGetDefaultParams.mockReturnValueOnce({});
 
     await expect(
@@ -364,12 +365,11 @@ describe('findOrCreateStrategyConfig', () => {
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
-  it('succeeds with explicit params even when loadStrategy throws (unknown strategy)', async () => {
-    // loadStrategy is always called to merge defaults, but its failure must be swallowed.
+  it('throws when loadStrategy fails even with non-empty explicit params', async () => {
+    // Bug 3 fix: loadStrategy errors must propagate — they are NOT swallowed.
+    // Previously: failure was silently caught and caller params used as-is.
+    // Now: the error propagates so misconfigured strategy names surface immediately.
     mockLoadStrategy.mockRejectedValueOnce(new Error('Strategy not found: totally-unknown-strategy'));
-
-    const row = makeConfigRow({ params: { threshold: 0.0005 } });
-    mockQuery.mockResolvedValueOnce({ rows: [row] });
 
     await expect(
       findOrCreateStrategyConfig({
@@ -378,7 +378,10 @@ describe('findOrCreateStrategyConfig', () => {
         timeframe: '4h',
         params: { threshold: 0.0005 },
       })
-    ).resolves.toBeDefined();
+    ).rejects.toThrow('Strategy not found: totally-unknown-strategy');
+
+    // No DB queries because the error fires before hashing
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   it('merges sparse params with strategy defaults for consistent hashing', async () => {
@@ -590,36 +593,22 @@ describe('findOrCreateStrategyConfig', () => {
     });
   });
 
-  it('strategy load failure with non-empty params uses caller params as-is without throwing', async () => {
-    // loadStrategy throws — no defaults available — but params are non-empty so
-    // the function must proceed using the caller-supplied params unchanged.
+  it('strategy load failure throws regardless of whether caller provided params', async () => {
+    // Bug 3 fix: loadStrategy errors propagate in all cases, even with non-empty params.
+    // This replaces the old "uses caller params as-is without throwing" behavior.
     mockLoadStrategy.mockRejectedValueOnce(new Error('Strategy not found: exotic-strategy'));
 
-    const row = makeConfigRow({ params: { threshold: 0.0005 } });
-    mockQuery.mockResolvedValueOnce({ rows: [row] });
+    await expect(
+      findOrCreateStrategyConfig({
+        strategyName: 'exotic-strategy',
+        symbol: 'BTC/USDT',
+        timeframe: '4h',
+        params: { threshold: 0.0005 },
+      })
+    ).rejects.toThrow('Strategy not found: exotic-strategy');
 
-    // Intercept to verify hash was computed from caller params as-is.
-    const expectedHash = computeStrategyConfigHash({
-      strategyName: 'exotic-strategy',
-      symbol: 'BTC/USDT',
-      timeframe: '4h',
-      params: { threshold: 0.0005 },
-    });
-
-    mockQuery.mockReset();
-    mockQuery.mockImplementationOnce((_sql: string, params: unknown[]) => {
-      expect(params[0]).toBe(expectedHash);
-      return Promise.resolve({ rows: [row] });
-    });
-
-    const result = await findOrCreateStrategyConfig({
-      strategyName: 'exotic-strategy',
-      symbol: 'BTC/USDT',
-      timeframe: '4h',
-      params: { threshold: 0.0005 },
-    });
-
-    expect(result.config.params).toEqual({ threshold: 0.0005 });
+    // No DB queries because the error fires before the hash is computed
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 

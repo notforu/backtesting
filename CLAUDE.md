@@ -231,6 +231,7 @@ When user requests strategy research:
 - [ ] ESLint passes
 - [ ] Tests pass (when applicable)
 - [ ] Docs updated (if behavior changed)
+- [ ] No silent fallbacks in financial/strategy code (throw on missing/invalid)
 
 ### 🔴 RULE 6: Critical Test Coverage for Financial Logic
 
@@ -283,6 +284,39 @@ This includes but is not limited to:
 - Every edge case in financial logic must be tested
 - TDD catches integration bugs early
 - Forces clear thinking about requirements before implementation
+
+### 🔇 RULE 11: No Silent Fallbacks in Financial Code
+
+**ALL code paths that handle strategy configuration, signal generation, weight calculation, capital allocation, and trade execution MUST fail loudly on invalid/missing inputs. Silent fallbacks are FORBIDDEN.**
+
+This means:
+- **Registry lookups** (weight calculators, strategy loaders, etc.) MUST throw on missing key — never silently return a default
+- **Switch statements** on enums/union types MUST have a `default` case that throws `Error(\`Unknown value: ${value}\`)`
+- **Strategy loading failures** MUST throw — never silently continue with partial config
+- **Required data loading** (e.g., BTC candles for regime filter) MUST throw on failure — never silently degrade to a different behavior
+- **Config validation** MUST happen at startup, not lazily — catch typos in strategy names, allocation modes, etc. before any backtest runs
+- **Map/Set lookups** for critical data (per-asset capital, adapter lookup) MUST use explicit checks and throw on missing entries
+
+**Why**: Silent fallbacks in financial code produce backtests that appear correct but use wrong parameters, wrong weights, or wrong capital allocation. This leads to false conclusions and real financial losses. A loud error that stops execution is always safer than a silent default that produces wrong numbers.
+
+**Pattern to AVOID**:
+```typescript
+// BAD: silent fallback
+const calculator = registry.get(name) ?? defaultCalculator;
+const params = awd ? awd.params : originalParams;
+```
+
+**Pattern to USE**:
+```typescript
+// GOOD: explicit error
+const calculator = registry.get(name);
+if (!calculator) throw new Error(`No calculator registered for "${name}"`);
+
+const awd = adapters.find(a => a.symbol === symbol);
+if (!awd) throw new Error(`Adapter not found for ${symbol}`);
+```
+
+**Applies to agents**: `be-dev`, `fe-dev`, `fullstack-dev`, `quant` — when writing ANY code that touches strategy execution, backtesting, or signal processing, NEVER use silent fallbacks.
 
 ## Key Directories
 

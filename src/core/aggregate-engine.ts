@@ -101,7 +101,16 @@ export async function runAggregateBacktest(
       }
     }
 
-    log('WARNING: Could not load BTC daily candles for regime filter. V3 regime filter will default to bull regime.');
+    const isV3 = subStrategies.some(
+      s => s.strategyName.includes('v3') || s.strategyName.includes('V3'),
+    );
+    if (isV3) {
+      throw new Error(
+        `Could not load BTC daily candles required for V3 regime filter. ` +
+        `Cache BTC/USDT daily candles first using: ` +
+        `npx tsx scripts/cache-candles.ts --exchange=binance --symbols=BTC/USDT --timeframes=1d --from=YYYY-MM-DD --to=YYYY-MM-DD`,
+      );
+    }
     btcDailyCandles = [];
     return btcDailyCandles;
   }
@@ -363,6 +372,8 @@ export async function runAggregateBacktest(
           selectedSignals = signals.slice(0, availableSlots);
           break;
         }
+        default:
+          throw new Error(`Unknown allocation mode: "${allocationMode}"`);
       }
     }
 
@@ -623,11 +634,17 @@ export async function runAggregateBacktest(
           const awd = adaptersWithData.find(
             a => a.config.symbol === s.symbol && a.config.timeframe === s.timeframe && a.config.strategyName === s.strategyName
           );
+          if (!awd) {
+            throw new Error(
+              `Adapter not found for sub-strategy "${s.strategyName}" / ${s.symbol} @ ${s.timeframe}. ` +
+              `This should never happen — all sub-strategies should have a corresponding adapter.`,
+            );
+          }
           return {
             strategyName: s.strategyName,
             symbol: s.symbol,
             timeframe: s.timeframe,
-            params: awd ? awd.adapter.params : s.params,
+            params: awd.adapter.params,
             exchange: s.exchange,
           };
         }),

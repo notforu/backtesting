@@ -1,3 +1,5 @@
+[2026-03-17 12:41] be-dev (sonnet) - Create compare-v2-v3-aggregation.ts script: runs V2 vs V3 (regime filter) on same 13 symbols, saves both to DB, prints comparison table
+[2026-03-17 12:45] be-dev (sonnet) - Create run-v3-walk-forward.ts script for 6-symbol Hybrid Tiered portfolio WF validation
 [2026-03-17 12:30] quant-lead (opus) - Design FR V3 Hybrid Tiered portfolio: 6 symbols, weighted_multi maxPos=3, optimized params for LDO/XLM/NEAR, defaults for ZEC/TRB/IOST
 [2026-03-17 12:15] quant-lead (opus) - Design FR V3 Quality Core concentrated portfolio: 4 symbols (ZEC, LDO, XLM, TRB), single_strongest, optimized params
 [2026-03-17 12:00] quant-lead (opus) - Design FR V3 Diversified 7 aggregation portfolio: top_n allocation, maxPositions=3, all 7 WF symbols, default params
@@ -103,3 +105,19 @@
 [2026-03-17 14:40] be-dev (sonnet) - Add BTC daily candle injection to aggregate engine
 [2026-03-17 14:45] be-dev (sonnet) - Create V3 aggregation backtest script
 [2026-03-17 14:50] docs-writer (haiku) - Changelog for V3 regime filter and aggregations
+[2026-03-17 09:08] be-dev (sonnet) - create optimize-hybrid-tiered.ts script for testing portfolio variants
+[2026-03-17 09:17] be-dev (sonnet) - Create and run test-doge-variants.ts script for 4 DOGE Hybrid Tiered V3 portfolio variants
+[2026-03-17 09:31] be-dev (sonnet) - Add BTC daily candle injection to walk-forward module for V3 regime filter
+[2026-03-17 15:00] fullstack-dev (sonnet) - Update fr-v2-walkforward.md with V3 WF results (ZEC/LDO/DOGE pass, XLM/TRB/IOST fail)
+[2026-03-17 20:15] be-dev (sonnet) - Create V3 walk-forward script for 6 symbols
+[2026-03-17 20:45] docs-writer (haiku) - Document V3 WF validation results
+[2026-03-17 20:45] fullstack-dev (sonnet) - Update memory with V3 WF results
+[2026-03-17 12:00] be-dev (sonnet) - Write fetch-agg-config.ts script to query aggregation_configs and aggregation_runs by ID
+[2026-03-17 12:40] be-dev (sonnet) - write find-uuid.ts script to locate UUID b35b694c across DB tables
+[2026-03-17 21:15] be-dev (sonnet) - Create V2 vs V3 aggregation comparison script
+[2026-03-18 02:53] be-dev (sonnet) - Fix critical silent fallback bugs: weight calculator, allocation mode switch, strategy loading, BTC candles V3, adapter lookup
+[2026-03-18 02:54] be-dev (sonnet) - Add RULE 11 (no silent fallbacks in financial code) to CLAUDE.md and update Quality Gates checklist
+[2026-03-18 03:12] docs-writer (haiku) - Create changelog for silent fallback bug fixes
+[2026-03-18 03:00] be-dev (sonnet) - Fix 5 critical silent fallback bugs (weight calc, alloc mode, strategy load, BTC candles, adapter lookup)
+[2026-03-18 03:00] be-dev (sonnet) - Add RULE 11 (no silent fallbacks) to CLAUDE.md
+[2026-03-18 03:00] Explore (sonnet) - Audit all silent fallback patterns in codebase

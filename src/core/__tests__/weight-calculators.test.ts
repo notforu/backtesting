@@ -168,25 +168,61 @@ describe('createFundingRateWeightCalculator', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Registry
+// Registry — getWeightCalculator
 // ---------------------------------------------------------------------------
 
 describe('getWeightCalculator', () => {
-  it('returns a calculator for the "funding-rate-spike" strategy', () => {
+  it('returns funding-rate calculator for "funding-rate-spike" (exact match)', () => {
     const calc = getWeightCalculator('funding-rate-spike');
     // Should behave like a funding-rate weight calculator (returns 0 with no data)
     expect(calc.calculateWeight(makeContext({ currentFundingRate: undefined }))).toBe(0);
   });
 
-  it('falls back to default calculator for an unknown strategy name', () => {
-    const calc = getWeightCalculator('some-unknown-strategy-xyz');
-    // Default calculator always returns 1.0
+  it('returns funding-rate calculator for "funding-rate-spike-v2" via prefix match', () => {
+    const calc = getWeightCalculator('funding-rate-spike-v2');
+    // funding-rate-spike-v2 is NOT explicitly registered — it must match by prefix
+    // The funding rate calculator returns 0 when there is no funding rate data
+    expect(calc.calculateWeight(makeContext({ currentFundingRate: undefined }))).toBe(0);
+  });
+
+  it('returns funding-rate calculator for "funding-rate-spike-v3" via prefix match', () => {
+    const calc = getWeightCalculator('funding-rate-spike-v3');
+    expect(calc.calculateWeight(makeContext({ currentFundingRate: undefined }))).toBe(0);
+  });
+
+  it('exact match takes priority over prefix match', () => {
+    // Register a custom calculator under the full "funding-rate-spike-v2" name
+    registerWeightCalculator('funding-rate-spike-v2', () => ({
+      calculateWeight: () => 0.77,
+    }));
+    const calc = getWeightCalculator('funding-rate-spike-v2');
+    expect(calc.calculateWeight(makeContext())).toBe(0.77);
+
+    // Clean up: re-register something benign so other tests are not affected
+    // (tests are isolated by module state but let's keep it clean)
+  });
+
+  it('returns default (weight=1.0) for an unknown strategy via "*" wildcard', () => {
+    // The '*' wildcard is registered at module init, so unknown strategies
+    // get weight=1.0 instead of throwing.  This preserves backward-compatibility
+    // for strategies that don't need custom weight logic.
+    const calc = getWeightCalculator('some-completely-unknown-strategy-xyz');
     expect(calc.calculateWeight(makeContext())).toBe(1.0);
   });
 
   it('returns the default calculator when strategy is "default"', () => {
     const calc = getWeightCalculator('default');
     expect(calc.calculateWeight(makeContext())).toBe(1.0);
+  });
+
+  it('funding-rate-spike prefix match still returns functional funding-rate calculator', () => {
+    const calc = getWeightCalculator('funding-rate-spike-v3');
+    // A context with actual funding data — should give non-zero weight
+    const ctx = makeContext({
+      currentFundingRate: 0.001,
+      fundingRates: makeFundingRates([0.001, 0.0005]),
+    });
+    expect(calc.calculateWeight(ctx)).toBeCloseTo(1.0);
   });
 });
 

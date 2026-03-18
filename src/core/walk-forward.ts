@@ -17,6 +17,8 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Timeframe, PerformanceMetrics, Trade, EquityPoint, RollingMetrics } from './types.js';
 import { runOptimization, type OptimizationConfig, type OptimizationResult } from './optimizer.js';
 import { runBacktest, type EngineConfig } from './engine.js';
+import { loadStrategy, clearStrategyCache } from '../strategy/loader.js';
+import { getCandles } from '../data/db.js';
 
 // ============================================================================
 // Types
@@ -244,6 +246,46 @@ export async function runWalkForwardTest(
   console.log(`\nTrain Period: ${new Date(startDate).toISOString()} to ${new Date(trainEndDate).toISOString()}`);
   console.log(`Test Period: ${new Date(trainEndDate).toISOString()} to ${new Date(endDate).toISOString()}`);
 
+  // Load BTC daily candles for V3 regime filter (if the strategy name indicates V3)
+  async function loadBtcDailyCandlesIfNeeded(): Promise<Array<{ timestamp: number; close: number }>> {
+    if (!strategyName.includes('v3') && !strategyName.includes('V3')) {
+      return [];
+    }
+
+    const candidates: Array<[string, string]> = [
+      ['binance', 'BTC/USDT:USDT'],
+      ['binance', 'BTC/USDT'],
+      ['bybit', 'BTC/USDT:USDT'],
+      ['bybit', 'BTC/USDT'],
+    ];
+
+    for (const [ex, sym] of candidates) {
+      const candles = await getCandles(ex, sym, '1d' as Timeframe, startDate - 300 * 86400000, endDate);
+      if (candles.length >= 200) {
+        return candles.map(c => ({ timestamp: c.timestamp, close: c.close }));
+      }
+    }
+
+    // V3 regime filter is the whole point of V3 — throw instead of silently continuing
+    throw new Error(
+      `Could not load BTC daily candles required for V3 regime filter in strategy "${strategyName}". ` +
+      `Cache BTC/USDT daily candles first using: ` +
+      `npx tsx scripts/cache-candles.ts --exchange=binance --symbols=BTC/USDT --timeframes=1d --from=YYYY-MM-DD --to=YYYY-MM-DD`,
+    );
+  }
+
+  const btcCandles = await loadBtcDailyCandlesIfNeeded();
+
+  // For V3 strategies: inject BTC candles into the cached strategy instance before optimization.
+  // loadStrategy() uses a cache, so the optimizer (which calls loadStrategy internally) will
+  // get the same instance with _btcDailyCandles already set.
+  if (btcCandles.length > 0) {
+    clearStrategyCache();
+    const strategyInstance = await loadStrategy(strategyName);
+    (strategyInstance as any)._btcDailyCandles = btcCandles;
+    console.log(`Injected ${btcCandles.length} BTC daily candles into strategy for regime filter`);
+  }
+
   // Step 1: Optimize on training period
   console.log('\n--- Phase 1: Training (Optimization) ---');
 
@@ -276,9 +318,20 @@ export async function runWalkForwardTest(
   // Step 2: Validate on test period
   console.log('\n--- Phase 2: Testing (Out-of-Sample Validation) ---');
 
+  // For V3 strategies: inject BTC candles into a fresh strategy instance for the test phase.
+  // The optimizer may have mutated the cached instance's internal state across runs, so we
+  // clear the cache and load a clean instance with BTC candles re-injected.
+  let testPreloadedStrategy: Awaited<ReturnType<typeof loadStrategy>> | undefined;
+  if (btcCandles.length > 0) {
+    clearStrategyCache();
+    testPreloadedStrategy = await loadStrategy(strategyName);
+    (testPreloadedStrategy as any)._btcDailyCandles = btcCandles;
+  }
+
   const engineConfig: EngineConfig = {
     saveResults: false,
     enableLogging: false,
+    ...(testPreloadedStrategy ? { preloadedStrategy: testPreloadedStrategy } : {}),
   };
 
   const testResult = await runBacktest(
