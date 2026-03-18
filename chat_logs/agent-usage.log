@@ -172,3 +172,4 @@
 [2026-03-18 12:32] be-dev (sonnet) - PaperConnector implementation complete: 49 tests pass, typecheck clean
 [2026-03-18 12:30] be-dev (sonnet) - PaperConnector implementation TDD (45 tests)
 [2026-03-18 12:30] fullstack-dev (sonnet) - Kill switch API + DB + UI toggles (17 tests)
+[2026-03-18 12:41] commit (haiku) - PaperConnector + Kill Switch UI/API (62 tests)
