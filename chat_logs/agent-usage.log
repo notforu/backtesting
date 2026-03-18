@@ -178,3 +178,6 @@
 [2026-03-18 13:21] docs-writer (haiku) - Create changelog for RiskManager integration into PaperTradingEngine
 [2026-03-18 13:00] be-dev (sonnet) - BybitConnector implementation TDD (56 tests)
 [2026-03-18 13:00] be-dev (sonnet) - RiskManager → PT engine integration (14 tests)
+
+[2026-03-18 13:20] commit (haiku) - Integrate RiskManager into paper trading engine + BybitConnector implementation
+[2026-03-18 14:00] docs-writer (haiku) - Create comprehensive session summary covering phases A, B, C
