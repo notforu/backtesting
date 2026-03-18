@@ -1,3 +1,4 @@
+[2026-03-18 05:30] be-dev (sonnet) - Create final-prod-backtest-and-pt.ts: run V2 5sym WF-optimized backtest ($5k, slippage 0.10%) + create prod PT session
 [2026-03-18 04:05] be-dev (sonnet) - Create compare-v2-v3-portfolios.ts: 16-run comparison across 4 portfolio sets × 2 alloc modes × V2/V3
 [2026-03-17 12:41] be-dev (sonnet) - Create compare-v2-v3-aggregation.ts script: runs V2 vs V3 (regime filter) on same 13 symbols, saves both to DB, prints comparison table
 [2026-03-17 12:45] be-dev (sonnet) - Create run-v3-walk-forward.ts script for 6-symbol Hybrid Tiered portfolio WF validation
@@ -127,3 +128,20 @@
 [2026-03-18 04:00] be-dev (sonnet) - Create multi-config V2 vs V3 comparison script
 [2026-03-18 04:10] be-dev (sonnet) - Create multi-portfolio V2 vs V3 comparison script
 [2026-03-18 04:30] docs-writer (haiku) - Document V2 vs V3 regime filter comparison results
+[2026-03-18 04:35] commit (haiku) - add V2 vs V3 regime filter comparison and validation results
+[2026-03-18 12:00] quant-lead (opus) - Critical skeptic's assessment of FR V2/V3 strategy: edge probably real but 3-5x smaller than backtests suggest
+[2026-03-18 06:00] quant-lead (opus) - Pragmatic assessment of FR strategy: edge real but overstated, deployment recommendation with V2 top_n mp=3, 5 validated symbols, realistic haircuts and roadmap
+[2026-03-18 04:45] quant-lead (opus) - Critical assessment #1 (Skeptic) of FR strategy
+[2026-03-18 04:45] quant-lead (opus) - Critical assessment #2 (Pragmatist) of FR strategy
+[2026-03-18 13:15] be-dev (sonnet) - create benchmark-buy-and-hold.ts script to compare strategy configs vs B&H
+[2026-03-18 12:30] be-dev (sonnet) - Create check-paper-trading.ts script to analyze prod paper trading sessions
+[2026-03-18 07:24] be-dev (sonnet) - create analyze-edge-decay.ts script for FR V2 sub-period analysis
+[2026-03-18 05:00] be-dev (sonnet) - Buy-and-hold benchmark comparison script
+[2026-03-18 05:00] be-dev (sonnet) - Paper trading results analysis script
+[2026-03-18 05:00] be-dev (sonnet) - Edge decay period-split analysis script
+[2026-03-18 14:00] be-dev (sonnet) - Create slippage-sensitivity.ts script: 5 slippage levels (0-0.20%) on FR V2 7-sym WF-opt top_n mp=3
+[2026-03-18 07:34] be-dev (sonnet) - Create position-sizing-sensitivity.ts script: test 5 position sizes for FR V2 7-sym WF-opt top_n mp=3
+[2026-03-18 10:45] be-dev (sonnet) - Create backtest-5sym-robust.ts: 5-symbol WF-validated robust portfolio (ZEC, LDO, TRB, NEAR, STG), 3 allocation modes, saves to DB
+[2026-03-18 05:30] be-dev (sonnet) - Slippage sensitivity analysis (5 levels)
+[2026-03-18 05:30] be-dev (sonnet) - Position sizing sensitivity analysis (5 levels) + engine positionSizeFraction param
+[2026-03-18 05:30] be-dev (sonnet) - 5-symbol robust portfolio backtest (3 alloc modes)

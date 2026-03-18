@@ -43,6 +43,14 @@ export interface AggregateEngineConfig {
    * Defaults to false (validation is enforced).
    */
   skipCandleValidation?: boolean;
+  /**
+   * Fraction of initialCapital to use per position in top_n and single_strongest modes.
+   * For top_n: each position gets (initialCapital * positionSizeFraction) / maxPositions.
+   * For single_strongest: all-in fraction is positionSizeFraction of available cash.
+   * For weighted_multi: fraction applied to cash snapshot before weight-proportional split.
+   * Defaults to 0.9 (90%).
+   */
+  positionSizeFraction?: number;
 }
 
 /**
@@ -53,6 +61,7 @@ export async function runAggregateBacktest(
   engineConfig: AggregateEngineConfig = {},
 ): Promise<AggregateBacktestResult> {
   const { subStrategies, allocationMode, maxPositions, initialCapital, exchange } = config;
+  const positionSizeFraction = engineConfig.positionSizeFraction ?? 0.9;
   // Defensively convert string dates to timestamps
   const startDate = typeof config.startDate === 'string' ? new Date(config.startDate).getTime() : config.startDate;
   const endDate = typeof config.endDate === 'string' ? new Date(config.endDate).getTime() : config.endDate;
@@ -396,16 +405,15 @@ export async function runAggregateBacktest(
         // Proportional to signal weight, calculated from pre-loop cash snapshot
         // Fall back to equal split if total weight is zero (avoids NaN from division by zero)
         capitalForTrade = totalWeightSnapshot > 0
-          ? (signal.weight / totalWeightSnapshot) * cashSnapshot * 0.9
-          : (cashSnapshot * 0.9) / selectedSignals.length;
+          ? (signal.weight / totalWeightSnapshot) * cashSnapshot * positionSizeFraction
+          : (cashSnapshot * positionSizeFraction) / selectedSignals.length;
       } else if (allocationMode === 'top_n') {
         // Each position gets an equal fixed share of initial capital, regardless of when it opens.
         // Using initialCapital / maxPositions ensures symmetry even when positions open on different bars.
-        const positionSizeFraction = 0.9;
         capitalForTrade = (initialCapital * positionSizeFraction) / maxPositions;
       } else {
-        // single_strongest or single signal: use 90% of available cash
-        capitalForTrade = cashSnapshot * 0.9;
+        // single_strongest or single signal: use positionSizeFraction of available cash
+        capitalForTrade = cashSnapshot * positionSizeFraction;
       }
 
       const amount = capitalForTrade / entryPrice;
