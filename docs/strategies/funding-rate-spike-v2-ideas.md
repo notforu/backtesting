@@ -315,7 +315,7 @@ this.tradeHistory = []; // { pnlPct: number }[]
 
 // After each closed trade, push to tradeHistory
 
-// Position sizing:
+// Position si.zing:
 if (positionSizeMethod === "fixed") {
   size = equity * positionSizePct / 100;
 } else if (positionSizeMethod === "fractionalKelly") {

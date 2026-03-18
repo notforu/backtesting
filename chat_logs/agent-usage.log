@@ -154,3 +154,14 @@
 [2026-03-18 10:45] Explore (sonnet) - Audit Telegram + paper trading integration status
 [2026-03-18 10:50] be-dev (sonnet) - Change daily digest from midnight to 09:00 UTC + tests
 [2026-03-18 10:50] fe-dev (sonnet) - Rename Paper Trading → Trading in UI
+[2026-03-18 10:54] commit (haiku) - Trading UI rename + daily digest to 09:00 UTC
+[2026-03-18 11:22] be-dev (sonnet) - create screen-fr-candidates.ts script to screen all Bybit symbols for FR spike strategy candidates
+[2026-03-18 11:23] be-dev (sonnet) - ran screen-fr-candidates.ts: 42 symbols qualify, top 10 eligible: DUSK, DASH, AXS, XMR, INJ, SEI, FLOW, 1000PEPE, PAXG, ATOM
+[2026-03-18 11:24] be-dev (sonnet) - Create wf-validate-new-candidates.ts: V2 WF validation on 10 new FR symbol candidates
+[2026-03-18 11:30] be-dev (sonnet) - Screen bybit futures for FR candidates (548 symbols → top 10)
+[2026-03-18 11:45] be-dev (sonnet) - Launch WF validation for 10 new FR candidates
+[2026-03-18 12:11] be-dev (sonnet) - Create IConnector interface and type definitions for trading connector abstraction
+[2026-03-18 06:00] be-dev (sonnet) - Create standalone RiskManager module with full TDD: tests first, then implementation
+[2026-03-18 06:15] docs-writer (haiku) - Changelog for RiskManager TDD implementation
+[2026-03-18 12:00] be-dev (sonnet) - RiskManager module TDD (41 tests + implementation)
+[2026-03-18 12:00] be-dev (sonnet) - IConnector interface + factory + tests
