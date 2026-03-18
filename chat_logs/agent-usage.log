@@ -145,3 +145,12 @@
 [2026-03-18 05:30] be-dev (sonnet) - Slippage sensitivity analysis (5 levels)
 [2026-03-18 05:30] be-dev (sonnet) - Position sizing sensitivity analysis (5 levels) + engine positionSizeFraction param
 [2026-03-18 05:30] be-dev (sonnet) - 5-symbol robust portfolio backtest (3 alloc modes)
+[2026-03-18 12:00] commit (haiku) - Phase 2 validation commit: positionSizeFraction + sensitivity analysis suite
+[2026-03-18 08:00] be-dev (sonnet) - Final prod-ready backtest + PT session deployment
+[2026-03-18 08:00] docs-writer (haiku) - Document phase 2 validation and PT deployment
+[2026-03-18 08:00] commit (sonnet) - Commit phase 2 validation work
+[2026-03-18 10:46] be-dev (sonnet) - Change daily digest schedule from UTC midnight to 09:00 UTC with configurable constant
+[2026-03-18 04:30] fe-dev (sonnet) - Rename 'Paper Trading' to 'Trading' in all user-visible UI strings
+[2026-03-18 10:45] Explore (sonnet) - Audit Telegram + paper trading integration status
+[2026-03-18 10:50] be-dev (sonnet) - Change daily digest from midnight to 09:00 UTC + tests
+[2026-03-18 10:50] fe-dev (sonnet) - Rename Paper Trading → Trading in UI

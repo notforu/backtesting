@@ -22,7 +22,7 @@ export function AppFooter({ activePage, currentResult }: AppFooterProps) {
               {currentResult.trades.length} trades
             </>
           )}
-          {activePage === 'paper-trading' && 'Paper Trading Mode'}
+          {activePage === 'paper-trading' && 'Trading Mode'}
           {activePage === 'configurations' && 'Configurations'}
         </span>
       </div>

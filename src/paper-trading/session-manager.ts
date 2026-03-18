@@ -14,6 +14,13 @@ import * as paperDb from './db.js';
 import { TelegramNotifier } from '../notifications/telegram.js';
 import { priceWatcher } from './price-watcher.js';
 
+/**
+ * Hour of the day (UTC) at which the daily summary digest is sent.
+ * Change this constant to move the digest to a different time without
+ * touching the scheduling logic.
+ */
+export const DAILY_DIGEST_HOUR_UTC = 9;
+
 export class SessionManager {
   /** Map of sessionId -> active engine (only sessions with a running/paused engine) */
   private engines: Map<string, PaperTradingEngine> = new Map();
@@ -103,7 +110,7 @@ export class SessionManager {
     // Register session with PriceWatcher for real-time equity updates
     await this.registerWithPriceWatcher(sessionId, session);
 
-    // Schedule daily summary at midnight UTC (only if Telegram is configured)
+    // Schedule daily summary at 09:00 UTC (only if Telegram is configured)
     if (TelegramNotifier.isConfigured()) {
       this.scheduleDailySummary(sessionId, session.name, engine);
     }
@@ -615,8 +622,8 @@ export class SessionManager {
   }
 
   /**
-   * Schedule daily summary notifications at 00:00 UTC.
-   * Sets a one-time timeout to the next midnight, then a recurring 24h interval.
+   * Schedule daily summary notifications at DAILY_DIGEST_HOUR_UTC (09:00 UTC).
+   * Sets a one-time timeout to the next occurrence of that hour, then a recurring 24h interval.
    */
   private scheduleDailySummary(
     sessionId: string,
@@ -624,12 +631,17 @@ export class SessionManager {
     _engine: PaperTradingEngine,
   ): void {
 
-    // Calculate ms until next midnight UTC
+    // Calculate ms until next 09:00 UTC
     const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-    tomorrow.setUTCHours(0, 0, 0, 0);
-    const msUntilMidnight = tomorrow.getTime() - now.getTime();
+    const next = new Date(now);
+    next.setUTCHours(DAILY_DIGEST_HOUR_UTC, 0, 0, 0);
+
+    // If the target hour today has already passed (or is exactly now), schedule for tomorrow
+    if (next.getTime() <= now.getTime()) {
+      next.setUTCDate(next.getUTCDate() + 1);
+    }
+
+    const msUntilDigest = next.getTime() - now.getTime();
 
     const timer = setTimeout(() => {
       void this.sendDailySummary(sessionId, sessionName);
@@ -640,7 +652,7 @@ export class SessionManager {
       }, 24 * 60 * 60 * 1000);
 
       this.dailySummaryTimers.set(sessionId, interval);
-    }, msUntilMidnight);
+    }, msUntilDigest);
 
     this.dailySummaryTimers.set(sessionId, timer);
   }

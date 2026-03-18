@@ -84,7 +84,7 @@ export function AppHeader({
                   : 'text-gray-400 hover:text-white hover:bg-gray-800'
               }`}
             >
-              Paper Trading
+              Trading
             </button>
           </nav>
         </div>

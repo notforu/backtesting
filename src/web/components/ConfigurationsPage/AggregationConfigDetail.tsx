@@ -225,7 +225,7 @@ export function AggregationConfigDetail() {
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
           }}>
-            Paper Trading Sessions ({paperSessions.length})
+            Trading Sessions ({paperSessions.length})
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {paperSessions.map((session) => {

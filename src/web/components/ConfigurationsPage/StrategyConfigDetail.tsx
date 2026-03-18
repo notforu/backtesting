@@ -72,7 +72,7 @@ interface SubTabBarProps {
 function SubTabBar({ active, onChange }: SubTabBarProps) {
   const tabs: { id: DetailTab; label: string }[] = [
     { id: 'runs', label: 'Runs' },
-    { id: 'paper', label: 'Paper Trading' },
+    { id: 'paper', label: 'Trading' },
     { id: 'versions', label: 'Versions' },
   ];
 
@@ -258,7 +258,7 @@ function DetailContent({ config }: DetailContentProps) {
               (e.currentTarget as HTMLButtonElement).style.background = 'none';
             }}
           >
-            Start Paper Trading
+            Start Trading
           </button>
 
           <button
@@ -328,7 +328,7 @@ function DetailContent({ config }: DetailContentProps) {
               </p>
               <ul style={{ margin: '0 0 16px', paddingLeft: 20, fontSize: 13, color: '#aaa', lineHeight: 1.7 }}>
                 <li>{runs?.length ?? 0} backtest run{(runs?.length ?? 0) !== 1 ? 's' : ''}</li>
-                <li>All associated paper trading links will be removed</li>
+                <li>All associated trading links will be removed</li>
               </ul>
               <p style={{ margin: '0 0 20px', fontSize: 12, color: '#666', fontStyle: 'italic' }}>
                 This action cannot be undone.

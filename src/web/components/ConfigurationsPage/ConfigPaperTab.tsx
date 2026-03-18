@@ -151,7 +151,7 @@ export function ConfigPaperTab({ configId }: ConfigPaperTabProps) {
         }}
       >
         <div style={{ fontSize: 28, marginBottom: 10 }}>&#9679;</div>
-        <div style={{ fontSize: 13 }}>No paper trading sessions yet</div>
+        <div style={{ fontSize: 13 }}>No trading sessions yet</div>
       </div>
     );
   }

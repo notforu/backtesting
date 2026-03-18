@@ -211,7 +211,7 @@ export function CreatePaperSessionModal({ onClose, onCreated }: CreatePaperSessi
       <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-white">New Paper Trading Session</h2>
+          <h2 className="text-lg font-semibold text-white">New Trading Session</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"

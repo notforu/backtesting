@@ -495,7 +495,7 @@ export function PaperTradingPanel() {
     <div className="space-y-4">
       {/* Panel header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white">Paper Trading Sessions</h3>
+        <h3 className="text-sm font-semibold text-white">Trading Sessions</h3>
         <button
           onClick={() => setCreateModalOpen(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-primary-600 hover:bg-primary-500 text-white font-medium transition-colors"
@@ -535,7 +535,7 @@ export function PaperTradingPanel() {
               d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
             />
           </svg>
-          No sessions yet. Create one to start paper trading.
+          No sessions yet. Create one to start trading.
         </div>
       )}
 

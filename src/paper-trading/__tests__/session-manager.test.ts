@@ -5,7 +5,7 @@
  * Mocks PaperTradingEngine and all DB calls.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { PaperSession } from '../types.js';
 import type { AggregateBacktestConfig } from '../../core/signal-types.js';
 
@@ -418,6 +418,115 @@ describe('SessionManager', () => {
 
       // Should NOT throw even if pause fails
       await expect(manager.shutdownAll()).resolves.not.toThrow();
+    });
+  });
+
+  // ==========================================================================
+  // 10. scheduleDailySummary: fires at 09:00 UTC, not midnight
+  // ==========================================================================
+
+  describe('scheduleDailySummary (09:00 UTC)', () => {
+    // Import the constant so the test stays in sync with the implementation
+    let DAILY_DIGEST_HOUR_UTC: number;
+
+    beforeEach(async () => {
+      // Dynamically import to pick up the exported constant
+      const mod = await import('../session-manager.js');
+      DAILY_DIGEST_HOUR_UTC = mod.DAILY_DIGEST_HOUR_UTC;
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('DAILY_DIGEST_HOUR_UTC constant equals 9', () => {
+      expect(DAILY_DIGEST_HOUR_UTC).toBe(9);
+    });
+
+    it('initial timeout fires at 09:00 UTC, not at midnight', async () => {
+      // Set fake clock to 08:00 UTC — summary should fire in 1 hour
+      vi.setSystemTime(new Date('2026-03-18T08:00:00.000Z'));
+
+      // Enable Telegram so scheduleDailySummary is called, and provide a notifier
+      // so sendDailySummary proceeds past the early-return guard
+      const { TelegramNotifier } = await import('../../notifications/telegram.js');
+      vi.mocked(TelegramNotifier.isConfigured).mockReturnValue(true);
+      vi.mocked(TelegramNotifier.fromEnv).mockReturnValue({
+        notifyDailySummary: vi.fn().mockResolvedValue(undefined),
+      } as unknown as InstanceType<typeof TelegramNotifier>);
+
+      const freshManager = new SessionManager();
+      await freshManager.startSession('sess-001');
+
+      // Advance clock to just before 09:00 — timer should NOT have fired yet
+      await vi.advanceTimersByTimeAsync(59 * 60 * 1000 + 59_000); // 59m59s
+      // No summary sent yet
+      expect(vi.mocked(paperDb.getPaperTrades).mock.calls.length).toBe(0);
+
+      // Advance past 09:00 — initial timeout fires
+      await vi.advanceTimersByTimeAsync(2_000); // push past the 1h mark
+
+      expect(vi.mocked(paperDb.getPaperTrades)).toHaveBeenCalled();
+
+      vi.mocked(TelegramNotifier.isConfigured).mockReturnValue(false);
+      vi.mocked(TelegramNotifier.fromEnv).mockReturnValue(null);
+    });
+
+    it('when current time is already past 09:00 UTC, schedules for 09:00 the next day', async () => {
+      // Set fake clock to 10:00 UTC — already past 09:00 today, so next fire is tomorrow 09:00
+      vi.setSystemTime(new Date('2026-03-18T10:00:00.000Z'));
+
+      const { TelegramNotifier } = await import('../../notifications/telegram.js');
+      vi.mocked(TelegramNotifier.isConfigured).mockReturnValue(true);
+      vi.mocked(TelegramNotifier.fromEnv).mockReturnValue({
+        notifyDailySummary: vi.fn().mockResolvedValue(undefined),
+      } as unknown as InstanceType<typeof TelegramNotifier>);
+
+      const freshManager = new SessionManager();
+      await freshManager.startSession('sess-001');
+
+      // Advance to 22:59:59 UTC same day — timer should NOT fire yet
+      // From 10:00 → advance 12h59m59s → 22:59:59 UTC; next digest at 09:00 tomorrow is 10h0m1s away
+      await vi.advanceTimersByTimeAsync(12 * 60 * 60 * 1000 + 59 * 60 * 1000 + 59_000); // 12h59m59s
+      expect(vi.mocked(paperDb.getPaperTrades).mock.calls.length).toBe(0);
+
+      // Now advance the remaining ~10h0m2s to reach tomorrow's 09:00
+      await vi.advanceTimersByTimeAsync(10 * 60 * 60 * 1000 + 2_000); // 10h0m2s → total 23h0m1s from 10:00
+
+      expect(vi.mocked(paperDb.getPaperTrades)).toHaveBeenCalled();
+
+      vi.mocked(TelegramNotifier.isConfigured).mockReturnValue(false);
+      vi.mocked(TelegramNotifier.fromEnv).mockReturnValue(null);
+    });
+
+    it('recurring interval fires every 24 hours after initial trigger', async () => {
+      // Set clock to 08:59 UTC — first digest fires in 1 minute
+      vi.setSystemTime(new Date('2026-03-18T08:59:00.000Z'));
+
+      const { TelegramNotifier } = await import('../../notifications/telegram.js');
+      vi.mocked(TelegramNotifier.isConfigured).mockReturnValue(true);
+      vi.mocked(TelegramNotifier.fromEnv).mockReturnValue({
+        notifyDailySummary: vi.fn().mockResolvedValue(undefined),
+      } as unknown as InstanceType<typeof TelegramNotifier>);
+
+      const freshManager = new SessionManager();
+      await freshManager.startSession('sess-001');
+
+      // Fire first timeout (1 minute + buffer)
+      await vi.advanceTimersByTimeAsync(61_000);
+
+      const callsAfterFirst = vi.mocked(paperDb.getPaperTrades).mock.calls.length;
+      expect(callsAfterFirst).toBeGreaterThan(0);
+
+      // Advance another 24h — interval fires once more
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+
+      const callsAfterSecond = vi.mocked(paperDb.getPaperTrades).mock.calls.length;
+      expect(callsAfterSecond).toBeGreaterThan(callsAfterFirst);
+
+      vi.mocked(TelegramNotifier.isConfigured).mockReturnValue(false);
+      vi.mocked(TelegramNotifier.fromEnv).mockReturnValue(null);
     });
   });
 });
