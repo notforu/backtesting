@@ -98,6 +98,9 @@ export const TradeSchema = z.object({
 
   // Accumulated funding income during position hold (futures mode only)
   fundingIncome: z.number().optional(),
+
+  // Why the position was closed (engine-managed exits vs strategy signals)
+  exitReason: z.enum(['stop_loss', 'take_profit', 'signal', 'liquidation']).optional(),
 });
 
 export type Trade = z.infer<typeof TradeSchema>;
@@ -245,6 +248,13 @@ export const PerformanceMetricsSchema = z.object({
   shortTrades: z.number().optional(),
   longWinRate: z.number().optional(),
   shortWinRate: z.number().optional(),
+
+  // Engine-managed SL/TP exit counters (populated when strategy uses setStopLoss/setTakeProfit)
+  engineStopLossCount: z.number().optional(),
+  engineTakeProfitCount: z.number().optional(),
+  /** Number of bars where both SL and TP triggered simultaneously and pessimistic fill was applied
+   * (either no sub-candles available, or sub-candles showed both triggered on the same sub-bar). */
+  pessimisticSlTpCount: z.number().optional(),
 });
 
 export type PerformanceMetrics = z.infer<typeof PerformanceMetricsSchema>;

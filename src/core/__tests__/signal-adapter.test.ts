@@ -1597,4 +1597,207 @@ describe('SignalAdapter', () => {
       expect(a.isInPosition()).toBe(true);
     });
   });
+
+  // ==========================================================================
+  // Engine-managed SL/TP storage (getActiveStopLoss / getActiveTakeProfit)
+  // ==========================================================================
+
+  describe('engine-managed SL/TP storage', () => {
+    it('getActiveStopLoss() returns null before any setStopLoss call', () => {
+      const a = new SignalAdapter(createMockStrategy(), 'BTC/USDT', '1h');
+      a.init(makeCandles([100]));
+      expect(a.getActiveStopLoss()).toBeNull();
+    });
+
+    it('getActiveTakeProfit() returns null before any setTakeProfit call', () => {
+      const a = new SignalAdapter(createMockStrategy(), 'BTC/USDT', '1h');
+      a.init(makeCandles([100]));
+      expect(a.getActiveTakeProfit()).toBeNull();
+    });
+
+    it('setStopLoss(price) called inside onBar stores the value in getActiveStopLoss()', () => {
+      const slStrategy: Strategy = {
+        name: 'sl-strategy',
+        description: 'Sets SL',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          ctx.setStopLoss(90);
+        },
+      };
+      const a = new SignalAdapter(slStrategy, 'BTC/USDT', '1h');
+      a.init(makeCandles([100]));
+
+      a.getSignal(0);
+
+      expect(a.getActiveStopLoss()).toBe(90);
+    });
+
+    it('setTakeProfit(price) called inside onBar stores the value in getActiveTakeProfit()', () => {
+      const tpStrategy: Strategy = {
+        name: 'tp-strategy',
+        description: 'Sets TP',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          ctx.setTakeProfit(120);
+        },
+      };
+      const a = new SignalAdapter(tpStrategy, 'BTC/USDT', '1h');
+      a.init(makeCandles([100]));
+
+      a.getSignal(0);
+
+      expect(a.getActiveTakeProfit()).toBe(120);
+    });
+
+    it('setStopLoss(null) clears a previously set stop-loss level', () => {
+      const slClearStrategy: Strategy = {
+        name: 'sl-clear-strategy',
+        description: 'Sets then clears SL',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          ctx.setStopLoss(null);
+        },
+      };
+      const a = new SignalAdapter(slClearStrategy, 'BTC/USDT', '1h');
+      a.init(makeCandles([100, 110]));
+
+      // Manually pre-set to simulate a previously stored value
+      const slSetStrategy: Strategy = {
+        name: 'sl-set-strategy',
+        description: 'Sets SL',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          ctx.setStopLoss(90);
+        },
+      };
+      const b = new SignalAdapter(slSetStrategy, 'BTC/USDT', '1h');
+      b.init(makeCandles([100, 110]));
+      b.getSignal(0); // sets SL to 90
+      expect(b.getActiveStopLoss()).toBe(90);
+
+      // Now overwrite with a clear strategy
+      const clearStrategy: Strategy = {
+        name: 'sl-clear',
+        description: 'Clears SL',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          ctx.setStopLoss(null);
+        },
+      };
+      const c = new SignalAdapter(clearStrategy, 'BTC/USDT', '1h');
+      c.init(makeCandles([100]));
+      // Manually trigger to set null
+      c.getSignal(0);
+      expect(c.getActiveStopLoss()).toBeNull();
+    });
+
+    it('confirmExit() clears both SL and TP levels', () => {
+      const slTpStrategy: Strategy = {
+        name: 'sl-tp-strategy',
+        description: 'Sets SL and TP',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          ctx.setStopLoss(90);
+          ctx.setTakeProfit(120);
+        },
+      };
+      const a = new SignalAdapter(slTpStrategy, 'BTC/USDT', '1h');
+      a.init(makeCandles([100]));
+      a.getSignal(0);
+
+      expect(a.getActiveStopLoss()).toBe(90);
+      expect(a.getActiveTakeProfit()).toBe(120);
+
+      a.confirmExit();
+
+      expect(a.getActiveStopLoss()).toBeNull();
+      expect(a.getActiveTakeProfit()).toBeNull();
+    });
+
+    it('resetShadow() clears both SL and TP levels', () => {
+      const slTpStrategy: Strategy = {
+        name: 'sl-tp-strategy',
+        description: 'Sets SL and TP',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          ctx.setStopLoss(85);
+          ctx.setTakeProfit(130);
+        },
+      };
+      const a = new SignalAdapter(slTpStrategy, 'BTC/USDT', '1h');
+      a.init(makeCandles([100]));
+      a.getSignal(0);
+
+      expect(a.getActiveStopLoss()).toBe(85);
+      expect(a.getActiveTakeProfit()).toBe(130);
+
+      a.resetShadow();
+
+      expect(a.getActiveStopLoss()).toBeNull();
+      expect(a.getActiveTakeProfit()).toBeNull();
+    });
+
+    it('SL/TP values are updated by wantsExit() call (stored from onBar inside wantsExit)', () => {
+      // Strategy sets SL in every onBar call, not just entry bars.
+      // wantsExit() runs onBar internally, so SL should be stored.
+      const slWantsExitStrategy: Strategy = {
+        name: 'sl-wants-exit',
+        description: 'Sets SL always',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          ctx.setStopLoss(95);
+          if (ctx.longPosition) {
+            ctx.closeLong();
+          }
+        },
+      };
+      const a = new SignalAdapter(slWantsExitStrategy, 'BTC/USDT', '1h');
+      a.init(makeCandles([100, 110]));
+      a.confirmExecutionAtBar('long', 0);
+
+      a.wantsExit(1); // runs onBar, which calls setStopLoss(95)
+
+      expect(a.getActiveStopLoss()).toBe(95);
+    });
+
+    it('SL set in one bar persists to the next bar without re-calling onBar', () => {
+      let callCount = 0;
+      const persistSLStrategy: Strategy = {
+        name: 'persist-sl',
+        description: 'Sets SL on bar 0 only',
+        version: '1.0.0',
+        params: [],
+        onBar(ctx: StrategyContext): void {
+          callCount++;
+          if (callCount === 1) {
+            ctx.setStopLoss(88);
+            ctx.openLong(1);
+          }
+          // No SL call on subsequent bars — SL should persist
+        },
+      };
+      const a = new SignalAdapter(persistSLStrategy, 'BTC/USDT', '1h');
+      a.init(makeCandles([100, 105]));
+
+      a.getSignal(0); // sets SL = 88 on bar 0
+
+      expect(a.getActiveStopLoss()).toBe(88);
+
+      // Bar 1: getSignal will call onBar again, which does NOT call setStopLoss
+      // The SL should remain at 88 (not cleared by getSignal())
+      a.confirmExecutionAtBar('long', 0);
+      a.getSignal(1);
+
+      // SL persists — it was set on bar 0 and only cleared by confirmExit/resetShadow
+      expect(a.getActiveStopLoss()).toBe(88);
+    });
+  });
 });

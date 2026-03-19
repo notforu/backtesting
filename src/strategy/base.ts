@@ -241,6 +241,22 @@ export interface StrategyContext {
    */
   sell(amount: number): void;
 
+  // ===== Stop-Loss / Take-Profit =====
+  /**
+   * Set stop-loss price for the current position. Engine checks this level
+   * against candle high/low BEFORE calling onBar() on subsequent bars.
+   * When triggered, position is closed at the SL price (not at close).
+   * Pass null to clear.
+   */
+  setStopLoss(price: number | null): void;
+
+  /**
+   * Set take-profit price for the current position.
+   * When triggered, position is closed at the TP price (not at close).
+   * Pass null to clear.
+   */
+  setTakeProfit(price: number | null): void;
+
   // ===== Utilities =====
   /**
    * Log a message for debugging

@@ -13,6 +13,7 @@ import { getCandles, getFundingRates, saveBacktestRun } from '../data/db.js';
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
 import { DEFAULT_BYBIT_TAKER_FEE_RATE } from './constants.js';
 import { validateFundingRateCoverage, validateCandleCoverage } from './funding-rate-validation.js';
+import { checkSlTpTrigger } from './intra-bar.js';
 
 interface AdapterWithData {
   adapter: SignalAdapter;
@@ -61,6 +62,8 @@ export async function runAggregateBacktest(
   engineConfig: AggregateEngineConfig = {},
 ): Promise<AggregateBacktestResult> {
   const { subStrategies, allocationMode, maxPositions, initialCapital, exchange } = config;
+  // Mode field is deprecated (always futures). Default to 'futures' when not set.
+  const effectiveMode = config.mode ?? 'futures';
   const positionSizeFraction = engineConfig.positionSizeFraction ?? 0.9;
   // Defensively convert string dates to timestamps
   const startDate = typeof config.startDate === 'string' ? new Date(config.startDate).getTime() : config.startDate;
@@ -168,9 +171,9 @@ export async function runAggregateBacktest(
       engineConfig.skipCandleValidation,
     );
 
-    // Load funding rates for futures mode
+    // Load funding rates for futures mode (effectiveMode defaults to 'futures')
     let fundingRates: FundingRate[] = [];
-    if (config.mode === 'futures') {
+    if (effectiveMode === 'futures') {
       fundingRates = await getFundingRates(
         subConfig.exchange || exchange,
         subConfig.symbol,
@@ -253,6 +256,11 @@ export async function runAggregateBacktest(
   // Populated when each trade is first opened so the base matches the actual allocation.
   const perSymbolAllocatedCapital = new Map<string, number>();
 
+  // Engine SL/TP exit counters
+  let engineStopLossCount = 0;
+  let engineTakeProfitCount = 0;
+  let pessimisticSlTpCount = 0;
+
   // 4. Main loop over unified timeline
   for (let ti = 0; ti < timeline.length; ti++) {
     const timestamp = timeline[ti];
@@ -266,7 +274,7 @@ export async function runAggregateBacktest(
     }
 
     // 4b. Process funding payments (futures mode only)
-    if (config.mode === 'futures') {
+    if (effectiveMode === 'futures') {
       for (const awd of adaptersWithData) {
         const frMap = frMaps.get(awd.config.symbol);
         const fr = frMap?.get(timestamp);
@@ -308,6 +316,69 @@ export async function runAggregateBacktest(
       const positions = portfolio.getPositionForSymbol(awd.config.symbol);
       const hasRealPosition = positions.longPosition !== null || positions.shortPosition !== null;
       if (!hasRealPosition) continue;
+
+      // --- Engine SL/TP check (runs before strategy wantsExit()) ---
+      const sl = awd.adapter.getActiveStopLoss();
+      const tp = awd.adapter.getActiveTakeProfit();
+
+      if (sl !== null || tp !== null) {
+        const candle = awd.candles[idx];
+        const side: 'long' | 'short' = positions.longPosition ? 'long' : 'short';
+        const { slTriggered, tpTriggered } = checkSlTpTrigger(candle, side, sl, tp);
+
+        if (slTriggered || tpTriggered) {
+          let exitPrice: number;
+          let exitReason: 'stop_loss' | 'take_profit';
+
+          if (slTriggered && tpTriggered) {
+            // Both triggered on the same bar — pessimistic fill (SL wins)
+            exitPrice = sl!;
+            exitReason = 'stop_loss';
+            pessimisticSlTpCount++;
+          } else if (slTriggered) {
+            exitPrice = sl!;
+            exitReason = 'stop_loss';
+          } else {
+            exitPrice = tp!;
+            exitReason = 'take_profit';
+          }
+
+          // Apply slippage (long exit = sell, short exit = buy)
+          const fillSide = side === 'long' ? 'sell' : 'buy';
+          exitPrice = applySlippage(exitPrice, fillSide);
+
+          // Close position at the SL/TP price
+          let trade: Trade;
+          if (side === 'long') {
+            trade = portfolio.closeLong(awd.config.symbol, 'all', exitPrice, timestamp, feeRate);
+          } else {
+            trade = portfolio.closeShort(awd.config.symbol, 'all', exitPrice, timestamp, feeRate);
+          }
+          trade.exitReason = exitReason;
+
+          // Attach accumulated funding income earned during the position
+          if (awd.accumulatedFunding !== 0) {
+            trade.fundingIncome = awd.accumulatedFunding;
+            awd.accumulatedFunding = 0;
+          }
+
+          allTrades.push(trade);
+          perAssetTrades.get(awd.config.symbol)?.push(trade);
+
+          // Clear adapter state (also clears SL/TP levels)
+          awd.adapter.confirmExit();
+
+          // Track counters (pessimistic already counted above)
+          if (exitReason === 'stop_loss') {
+            engineStopLossCount++;
+          } else {
+            engineTakeProfitCount++;
+          }
+
+          continue; // Skip wantsExit() — position already closed
+        }
+      }
+      // --- End engine SL/TP check ---
 
       if (awd.adapter.wantsExit(idx)) {
         const candle = awd.candles[idx];
@@ -518,9 +589,16 @@ export async function runAggregateBacktest(
   const metrics = calculateMetrics(allTrades, equity, initialCapital, dominantTimeframe);
   const rollingMetrics = calculateRollingMetrics(allTrades, equity, initialCapital);
 
-  if (config.mode === 'futures') {
+  if (effectiveMode === 'futures') {
     (metrics as Record<string, unknown>).totalFundingIncome = totalFundingIncome;
     (metrics as Record<string, unknown>).tradingPnl = metrics.totalReturn - totalFundingIncome;
+  }
+
+  // Attach engine SL/TP counters to metrics (only when any engine-managed exits occurred)
+  if (engineStopLossCount > 0 || engineTakeProfitCount > 0) {
+    (metrics as Record<string, unknown>).engineStopLossCount = engineStopLossCount;
+    (metrics as Record<string, unknown>).engineTakeProfitCount = engineTakeProfitCount;
+    (metrics as Record<string, unknown>).pessimisticSlTpCount = pessimisticSlTpCount;
   }
 
   // 9. Build per-asset results

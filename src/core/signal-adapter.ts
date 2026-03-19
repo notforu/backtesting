@@ -50,6 +50,14 @@ export class SignalAdapter implements SignalProvider {
   private shadowShortPosition: Position | null = null;
   private readonly shadowCash: number = 10_000; // Virtual cash for shadow sizing
 
+  // Engine-managed SL/TP levels set by the strategy via setStopLoss/setTakeProfit.
+  // Stored in a mutable container so the createShadowContext closure can write
+  // back without needing a 'this' alias (which would violate @typescript-eslint/no-this-alias).
+  private readonly slTp: { stopLoss: number | null; takeProfit: number | null } = {
+    stopLoss: null,
+    takeProfit: null,
+  };
+
   // Actions collected during a single onBar() call
   private pendingActions: PendingAction[] = [];
 
@@ -375,20 +383,38 @@ export class SignalAdapter implements SignalProvider {
   // SignalProvider.resetShadow
   // --------------------------------------------------------------------------
 
-  /** Unconditionally clears both shadow positions. */
+  /** Unconditionally clears both shadow positions and any active SL/TP levels. */
   resetShadow(): void {
     this.shadowLongPosition = null;
     this.shadowShortPosition = null;
+    this.slTp.stopLoss = null;
+    this.slTp.takeProfit = null;
+  }
+
+  // --------------------------------------------------------------------------
+  // SL/TP getters (used by the aggregate engine to check engine-managed exits)
+  // --------------------------------------------------------------------------
+
+  /** Return the current engine-managed stop-loss price, or null if not set. */
+  getActiveStopLoss(): number | null {
+    return this.slTp.stopLoss;
+  }
+
+  /** Return the current engine-managed take-profit price, or null if not set. */
+  getActiveTakeProfit(): number | null {
+    return this.slTp.takeProfit;
   }
 
   // --------------------------------------------------------------------------
   // Additional helpers
   // --------------------------------------------------------------------------
 
-  /** Confirm that the engine closed the position. Clears shadow positions. */
+  /** Confirm that the engine closed the position. Clears shadow positions and SL/TP. */
   confirmExit(): void {
     this.shadowLongPosition = null;
     this.shadowShortPosition = null;
+    this.slTp.stopLoss = null;
+    this.slTp.takeProfit = null;
   }
 
   // --------------------------------------------------------------------------
@@ -418,10 +444,12 @@ export class SignalAdapter implements SignalProvider {
     const longSnap = this.shadowLongPosition ? { ...this.shadowLongPosition } : null;
     const shortSnap = this.shadowShortPosition ? { ...this.shadowShortPosition } : null;
 
-    // Capture instance fields for use inside closures (avoid this-alias)
+    // Capture instance fields for use inside closures (avoid this-alias).
+    // this.slTp is already a mutable object reference — closures write directly through it.
     const adapterCandles = this.candles;
     const pendingActions = this.pendingActions;
     const barIndicators = this._barIndicators;
+    const slTp = this.slTp;
 
     const context: StrategyContext = {
       // ----- Market data -----
@@ -475,6 +503,14 @@ export class SignalAdapter implements SignalProvider {
       },
       sell(amount: number): void {
         if (amount > 0) pendingActions.push({ action: 'CLOSE_LONG', amount });
+      },
+
+      // ----- Stop-loss / Take-profit — stored so aggregate engine can check them -----
+      setStopLoss(price: number | null): void {
+        slTp.stopLoss = price;
+      },
+      setTakeProfit(price: number | null): void {
+        slTp.takeProfit = price;
       },
 
       // ----- Utilities -----

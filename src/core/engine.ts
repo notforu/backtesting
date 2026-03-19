@@ -14,7 +14,7 @@ import type {
   FundingRate,
   TradeAction,
 } from './types.js';
-import { BacktestConfigSchema } from './types.js';
+import { BacktestConfigSchema, timeframeToMs } from './types.js';
 import { Portfolio } from './portfolio.js';
 import { LeveragedPortfolio } from './leveraged-portfolio.js';
 import { Broker, type BrokerConfig } from './broker.js';
@@ -26,6 +26,7 @@ import { getProvider } from '../data/providers/index.js';
 import { getCandles, saveCandles, saveBacktestRun, getCandleDateRange, getFundingRates } from '../data/db.js';
 import { DEFAULT_TAKER_FEE_RATE, DEFAULT_FUTURES_SLIPPAGE_PERCENT } from './constants.js';
 import { validateFundingRateCoverage, validateCandleCoverage } from './funding-rate-validation.js';
+import { checkSlTpTrigger, resolveAmbiguousExit, getSubTimeframe } from './intra-bar.js';
 
 /**
  * Engine configuration options
@@ -99,6 +100,14 @@ export interface EngineConfig {
    * Defaults to false (validation is enforced).
    */
   skipCandleValidation?: boolean;
+
+  /**
+   * Sub-candle timeframe for intra-bar SL/TP resolution.
+   * Only used when both SL and TP trigger on the same bar.
+   * Default: auto-detected from main timeframe (e.g., 4h → 5m).
+   * Set to null to disable sub-candle fetching (always pessimistic fill).
+   */
+  intraBarTimeframe?: Timeframe | null;
 }
 
 /**
@@ -302,6 +311,93 @@ export async function runBacktest(
   // Action queue for the strategy
   let pendingActions: PendingAction[] = [];
 
+  // Engine-managed SL/TP state (set by strategy via context methods)
+  let activeStopLoss: number | null = null;
+  let activeTakeProfit: number | null = null;
+
+  // Engine-managed SL/TP exit counters (reported in PerformanceMetrics)
+  let engineStopLossCount = 0;
+  let engineTakeProfitCount = 0;
+  let pessimisticSlTpCount = 0;
+
+  // Track ranges where sub-candles have already been fetched to avoid re-fetching
+  const subCandleFetchedRanges = new Set<string>();
+
+  /**
+   * Apply slippage to a SL/TP fill price.
+   * For long exits (closing long, covering short SL): selling → price moves down.
+   * For short exits (closing short, covering long SL): buying → price moves up.
+   */
+  function applySlippageToExitPrice(price: number, side: 'long' | 'short'): number {
+    const slippage = options.broker?.slippagePercent ?? 0;
+    if (slippage === 0) return price;
+    // Closing a long = selling → adverse slippage goes down
+    // Closing a short = buying → adverse slippage goes up
+    if (side === 'long') {
+      return price * (1 - slippage / 100);
+    } else {
+      return price * (1 + slippage / 100);
+    }
+  }
+
+  /**
+   * Fetch sub-candles for a specific bar to resolve ambiguous SL/TP exits.
+   * Tries DB first, then falls back to exchange provider.
+   */
+  async function fetchSubCandlesForBar(
+    barTimestamp: number,
+    barDurationMs: number,
+    subTimeframe: Timeframe,
+  ): Promise<Candle[]> {
+    const rangeKey = `${subTimeframe}:${barTimestamp}`;
+    if (subCandleFetchedRanges.has(rangeKey)) {
+      // Already fetched for this bar, try DB directly
+      return getCandles(
+        validatedConfig.exchange,
+        validatedConfig.symbol,
+        subTimeframe,
+        barTimestamp,
+        barTimestamp + barDurationMs - 1,
+      );
+    }
+
+    // Try DB first
+    const dbCandles = await getCandles(
+      validatedConfig.exchange,
+      validatedConfig.symbol,
+      subTimeframe,
+      barTimestamp,
+      barTimestamp + barDurationMs - 1,
+    );
+
+    if (dbCandles.length > 0) {
+      subCandleFetchedRanges.add(rangeKey);
+      return dbCandles;
+    }
+
+    // Not in DB — try fetching from exchange
+    try {
+      const provider = getProvider(validatedConfig.exchange);
+      const fetched = await provider.fetchCandles(
+        validatedConfig.symbol,
+        subTimeframe,
+        new Date(barTimestamp),
+        new Date(barTimestamp + barDurationMs - 1),
+      );
+
+      if (fetched.length > 0) {
+        await saveCandles(fetched, validatedConfig.exchange, validatedConfig.symbol, subTimeframe);
+      }
+
+      subCandleFetchedRanges.add(rangeKey);
+      return fetched;
+    } catch {
+      // If we can't fetch sub-candles, return empty (will use pessimistic fallback)
+      subCandleFetchedRanges.add(rangeKey);
+      return [];
+    }
+  }
+
   // 5. Create a single reusable context object (updated each bar to avoid per-bar allocation)
   const reusableCandleView = new CandleViewImpl(candles, 0);
 
@@ -360,6 +456,15 @@ export async function runBacktest(
       if (amount > 0) {
         pendingActions.push({ action: 'CLOSE_LONG', amount });
       }
+    },
+
+    // Stop-loss / Take-profit (engine-managed)
+    setStopLoss(price: number | null): void {
+      activeStopLoss = price;
+    },
+
+    setTakeProfit(price: number | null): void {
+      activeTakeProfit = price;
     },
 
     // Utilities
@@ -449,9 +554,139 @@ export async function runBacktest(
     pendingActions = [];
     barIndicators = {};
 
+    // -------------------------------------------------------------------------
+    // STEP A: Engine-managed SL/TP check BEFORE strategy processes this bar
+    // -------------------------------------------------------------------------
+    const hasLong = portfolio.hasLongPosition;
+    const hasShort = portfolio.hasShortPosition;
+    const hasPosition = hasLong || hasShort;
+    const hasSlTp = activeStopLoss !== null || activeTakeProfit !== null;
+
+    if (hasPosition && hasSlTp) {
+      const side = hasLong ? 'long' : 'short';
+      const { slTriggered, tpTriggered } = checkSlTpTrigger(
+        candle,
+        side,
+        activeStopLoss,
+        activeTakeProfit,
+      );
+
+      let engineExitPrice: number | null = null;
+      let engineExitReason: 'stop_loss' | 'take_profit' | null = null;
+
+      if (slTriggered && tpTriggered) {
+        // Ambiguous: both triggered on same bar
+        // Determine sub-timeframe for resolution
+        const subTf = options.intraBarTimeframe === undefined
+          ? getSubTimeframe(validatedConfig.timeframe)
+          : options.intraBarTimeframe;
+
+        let subCandles: Candle[] = [];
+        if (subTf !== null) {
+          const barDurationMs = timeframeToMs(validatedConfig.timeframe);
+          subCandles = await fetchSubCandlesForBar(candle.timestamp, barDurationMs, subTf);
+        }
+
+        const exitResult = resolveAmbiguousExit(
+          subCandles,
+          side,
+          activeStopLoss!,
+          activeTakeProfit!,
+        );
+        engineExitPrice = exitResult.exitPrice;
+        engineExitReason = exitResult.exitType;
+        // Both SL and TP triggered on the same bar — count as pessimistic regardless of resolution
+        pessimisticSlTpCount++;
+      } else if (slTriggered) {
+        engineExitPrice = activeStopLoss!;
+        engineExitReason = 'stop_loss';
+      } else if (tpTriggered) {
+        engineExitPrice = activeTakeProfit!;
+        engineExitReason = 'take_profit';
+      }
+
+      // Track exit type counters
+      if (engineExitReason === 'stop_loss') engineStopLossCount++;
+      else if (engineExitReason === 'take_profit') engineTakeProfitCount++;
+
+      if (engineExitPrice !== null && engineExitReason !== null) {
+        // Apply slippage to the exit price
+        const fillPrice = applySlippageToExitPrice(engineExitPrice, side);
+        const feeRate = options.broker?.feeRate ?? 0;
+
+        // Close the position directly (bypass broker's pending order mechanism)
+        let engineTrade: Trade;
+        if (hasLong) {
+          const pos = portfolio.longPosition!;
+          engineTrade = portfolio.closeLong(pos.amount, fillPrice, candle.timestamp, feeRate);
+        } else {
+          const pos = portfolio.shortPosition!;
+          engineTrade = portfolio.closeShort(pos.amount, fillPrice, candle.timestamp, feeRate);
+        }
+
+        // Tag the trade with the exit reason
+        engineTrade.exitReason = engineExitReason;
+
+        // Attach funding income to this engine-managed close trade
+        if (engineTrade.closedPositionId && fundingByPositionId.has(engineTrade.closedPositionId)) {
+          engineTrade.fundingIncome = fundingByPositionId.get(engineTrade.closedPositionId)!;
+          fundingByPositionId.delete(engineTrade.closedPositionId);
+        }
+
+        // Attach nearest funding rate (futures mode)
+        if (allFundingRates.length > 0) {
+          const nearest = findNearestFundingRate(allFundingRates, candle.timestamp);
+          if (nearest) engineTrade.fundingRate = nearest.fundingRate;
+        }
+
+        trades.push(engineTrade);
+
+        // Clear SL/TP state — position is now closed
+        activeStopLoss = null;
+        activeTakeProfit = null;
+
+        // Create a synthetic filled order for onOrderFilled notification
+        if (strategy.onOrderFilled) {
+          const syntheticOrder: Order = {
+            id: uuidv4(),
+            symbol: validatedConfig.symbol,
+            side: side === 'long' ? 'sell' : 'buy',
+            type: 'market',
+            amount: engineTrade.amount,
+            status: 'filled',
+            createdAt: candle.timestamp,
+            filledAt: candle.timestamp,
+            filledPrice: fillPrice,
+          };
+          // We call onOrderFilled after updating context below
+          filledOrders.push(syntheticOrder);
+        }
+
+        // Update context so strategy sees the closed position in onBar()
+        updateContext(i);
+
+        // Call onOrderFilled for the engine-managed exit
+        if (strategy.onOrderFilled) {
+          const engineOrder = filledOrders[filledOrders.length - 1];
+          strategy.onOrderFilled(ctx, engineOrder);
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // STEP B: Normal strategy processing
+    // -------------------------------------------------------------------------
+
     // Update reusable context and call strategy
     updateContext(i);
     strategy.onBar(ctx);
+
+    // When strategy closes a position, also clear any active SL/TP
+    // (detected by comparing position state before/after onBar)
+    if ((hasLong && !portfolio.hasLongPosition) || (hasShort && !portfolio.hasShortPosition)) {
+      activeStopLoss = null;
+      activeTakeProfit = null;
+    }
 
     // Flush per-bar indicators into the main collector
     for (const [name, value] of Object.entries(barIndicators)) {
@@ -598,6 +833,13 @@ export async function runBacktest(
   if (validatedConfig.mode === 'futures') {
     (metrics as Record<string, unknown>).totalFundingIncome = totalFundingIncome;
     (metrics as Record<string, unknown>).tradingPnl = metrics.totalReturn - totalFundingIncome;
+  }
+
+  // Add engine-managed SL/TP counters (only populated when strategy uses setStopLoss/setTakeProfit)
+  if (engineStopLossCount > 0 || engineTakeProfitCount > 0 || pessimisticSlTpCount > 0) {
+    (metrics as Record<string, unknown>).engineStopLossCount = engineStopLossCount;
+    (metrics as Record<string, unknown>).engineTakeProfitCount = engineTakeProfitCount;
+    (metrics as Record<string, unknown>).pessimisticSlTpCount = pessimisticSlTpCount;
   }
 
   // 11. Build result
