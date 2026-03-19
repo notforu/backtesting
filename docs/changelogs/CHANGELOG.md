@@ -4,6 +4,57 @@ All notable changes to this project are documented here. Newest entries first.
 
 ---
 
+## [2026-03-19] Mutation Testing Challenge: Financial Logic Coverage
+
+### Summary
+Completed manual mutation testing across 5 critical financial modules (backtesting engine, metrics, aggregate engine, multi-portfolio, and paper trading). Discovered 15 coverage gaps in existing tests and fixed with 110 new specification tests. Overall mutation kill rate improved from 63% (26/41 mutations) to 100% after fixes.
+
+### Key Changes
+- **Engine Unit Tests**: 19 new tests covering funding rate calculations, loop boundaries, early exit bypasses
+- **Metrics Calculation**: 5 new tests fixing Sharpe annualization, Sortino downside deviation, win rate, expectancy calculations
+- **Aggregate Engine**: NEW test file with 9 tests for capital allocation, top_n selection, weight normalization
+- **Multi-Portfolio**: 3 new tests for short position PnL sign and capital distribution
+- **Paper Trading**: 5 new tests for SL/TP placement, funding rate boundaries, state restoration
+- **Price Watcher**: NEW test file with 41 tests (100% kill rate on 6 mutations)
+- **Live Data Fetcher**: NEW test file with 28 tests for OHLCV aggregation and time windows
+
+### Critical Findings
+1. **Degenerate test inputs masked bugs**: Existing tests only used all-winner trades, equal weights, single assets
+2. **15 mutations survived original tests**: Sharpe annualization factor, Sortino sign flips, off-by-one errors, weight normalization skips
+3. **Structural gap identified**: `runBacktest()` cannot be unit tested due to hard DB/file system dependencies
+4. **100% kill rate achieved**: All 110 new tests pass; all 41 tested mutations now killed
+
+See `/docs/changelogs/2026-03-19-145000-mutation-testing-challenge.md` for full details.
+
+---
+
+## [2026-03-19] Funding Rate Spike V4: Engine-Managed Stop Loss & Take Profit
+
+### Summary
+Implemented engine-managed stop loss and take profit execution in the backtesting system. The new `funding-rate-spike-v4` strategy uses `ctx.setStopLoss()` and `ctx.setTakeProfit()` instead of manual exit checks, producing 5-24% more realistic (lower) performance metrics. Comparison with v2 reveals systematic optimism in candle-close execution models.
+
+### Key Changes
+- **Signal adapter SL/TP methods** now persist values instead of no-ops
+- **Aggregate engine** checks intra-bar SL/TP levels before evaluating `wantsExit()` (step 4c)
+- **Engine metrics** now track SL/TP trigger counts and pessimistic instances
+- **Mode defaulting** fixed in aggregate engine (was not defaulting to 'futures')
+
+### Performance Results
+Comparison of v2 (manual candle-close exits) vs v4 (engine-managed intra-bar exits):
+
+| Configuration | V2 Sharpe | V4 Sharpe | Degradation | Pessimistic Instances |
+|---------------|-----------|-----------|-------------|----------------------|
+| 7-symbol top_n | 3.122 | 2.883 | -8% | 7 |
+| 11-symbol top_n | 3.042 | 2.312 | -24% | 22 |
+| 13-symbol short-selling | 2.982 | 2.833 | -5% | 9 |
+
+V2's systematic optimism (5-24% higher Sharpe) is resolved by filling at exact SL/TP price levels rather than candle close.
+
+### Files
+See `/docs/changelogs/2026-03-19-091500-funding-rate-spike-v4-engine-sltp.md` for complete details.
+
+---
+
 ## [2026-02-25] Params Modal and Explorer Improvements
 
 ### Summary

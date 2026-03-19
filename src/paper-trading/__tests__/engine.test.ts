@@ -2269,6 +2269,248 @@ describe('PaperTradingEngine', () => {
     expect(isTransientError(etimedoutError)).toBe(true);
   });
 
+  // ==========================================================================
+  // MUT-M5: lastProcessedFRTs guard uses <= (not <), preventing double-application
+  // on the exact boundary timestamp after pointer advancement.
+  // ==========================================================================
+
+  // ==========================================================================
+  // MUT-M6: State restoration correctly adjusts cash to match stored currentCash
+  // Verifies restoreState() applies cashDiff to compensate for fees paid
+  // during position opens.
+  // ==========================================================================
+
+  it('MUT-M6: cash is correctly restored from DB session after state restore', async () => {
+    // Simulate a position that was originally opened WITH fees:
+    // - initialCapital = 10_000
+    // - amount = 0.1 @ entryPrice = 50_000 → notional = 5_000
+    // - fee = 0.00055 * 5_000 = 2.75
+    // - After open: cash = 10_000 - 5_000 - 2.75 = 4_997.25
+    //
+    // During restoreState():
+    //   1. Re-open with zero fee → cash = 10_000 - 5_000 = 5_000 (no fee deducted)
+    //   2. cashDiff = currentCash - portfolio.cash = 4_997.25 - 5_000 = -2.75
+    //   3. applyFundingPayment(-2.75) → cash = 5_000 + (-2.75) = 4_997.25 ✓
+    //
+    // If cashDiff is not applied, the portfolio shows cash=5_000 instead of 4_997.25,
+    // which means the equity snapshot will be wrong by 2.75.
+
+    const initialCapital = 10_000;
+    const entryPrice = 50_000;
+    const amount = 0.1;
+    const feeRate = 0.00055;
+    const fee = feeRate * amount * entryPrice; // 2.75
+    const expectedCash = initialCapital - amount * entryPrice - fee; // 4_997.25
+
+    const existingPosition: PaperPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'long',
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice,
+      amount,
+      entryTime: Date.now() - 86400000,
+      unrealizedPnl: 0,
+      fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
+    };
+
+    // Stored session reflects the cash AFTER fees were paid historically
+    const sessionWithPos = makePaperSession({
+      initialCapital,
+      currentCash: expectedCash,
+      currentEquity: initialCapital, // equity unchanged (position at entry price)
+    });
+
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(sessionWithPos);
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([existingPosition]);
+
+    // Strategy: no signals (just hold)
+    mockStrategy.onBar = (_ctx: StrategyContext) => { /* hold */ };
+
+    // Use fresh candles at entry price so position unrealized PnL = 0
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latestTs = Math.floor(now / tfMs) * tfMs - tfMs;
+    const candlesAtEntryPrice = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(entryPrice, latestTs - (199 - i) * tfMs)
+    );
+    mockFetchLatestCandles.mockResolvedValue(candlesAtEntryPrice);
+
+    const engine = new PaperTradingEngine(sessionWithPos);
+    // start() calls restoreState() — should set portfolio cash to expectedCash
+    await engine.start();
+
+    // Run a tick — the equity snapshot cash should match expectedCash
+    const result = await engine.forceTick();
+
+    // Cash must match the stored currentCash (fees already accounted for historically)
+    expect(result.cash).toBeCloseTo(expectedCash, 2);
+
+    // Equity = cash + position value = expectedCash + (amount * entryPrice)
+    const expectedEquity = expectedCash + amount * entryPrice; // 4997.25 + 5000 = 9997.25
+    expect(result.equity).toBeCloseTo(expectedEquity, 2);
+  });
+
+  // ==========================================================================
+  // MUT-M7: Bars are processed in CHRONOLOGICAL order (earliest first)
+  // A strategy that opens on the first available bar should use the earliest
+  // bar's entry price, not the latest bar's price (reversed order).
+  // ==========================================================================
+
+  it('MUT-M7: multi-bar processing is in chronological order - entry uses earliest new bar price', async () => {
+    // Build 200 candles where the last 3 are "new" bars with ascending prices:
+    //   bar[197]: close=40_000 (first new bar — should be entry price with correct order)
+    //   bar[198]: close=50_000
+    //   bar[199]: close=60_000 (last bar — would be entry price if reversed order)
+
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latestTs = Math.floor(now / tfMs) * tfMs - tfMs;
+
+    const candles = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(50_000, latestTs - (199 - i) * tfMs)
+    );
+    // Override last 3 bars with specific prices
+    candles[197] = makeCandle(40_000, latestTs - 2 * tfMs);
+    candles[198] = makeCandle(50_000, latestTs - tfMs);
+    candles[199] = makeCandle(60_000, latestTs);
+
+    mockFetchLatestCandles.mockResolvedValue(candles);
+
+    // Strategy: open long once (on the first bar it gets a chance)
+    let opened = false;
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!opened && !ctx.longPosition) {
+        ctx.openLong(1);
+        opened = true;
+      }
+    };
+
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([]);
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(makePaperSession());
+
+    const session = makePaperSession();
+    const engine = new PaperTradingEngine(session);
+
+    // Set lastProcessedCandleTs so bars 197-199 are all "new"
+    const lastProcessedTs = candles[196].timestamp;
+    (engine as unknown as Record<string, unknown>)['lastProcessedCandleTs'] = new Map([
+      ['BTC/USDT:4h', lastProcessedTs],
+    ]);
+
+    const result = await engine.forceTick();
+
+    // Exactly one trade should be opened (opened on first new bar)
+    expect(result.tradesOpened).toHaveLength(1);
+
+    // With chronological order: entry should use bar[197] close price = 40_000
+    // (first new bar in chronological order where signal fires)
+    // With reversed order: entry would use bar[199] close price = 60_000
+    const savedPosition = vi.mocked(paperDb.savePaperPosition).mock.calls[0][0];
+    expect(savedPosition.entryPrice).toBe(40_000);
+  });
+
+  it('MUT-M5: FR at exact lastProcessedFRTs timestamp is NOT re-applied on subsequent tick', async () => {
+    // Scenario:
+    // - After a previous tick, lastProcessedFRTimestamps is set to frTimestamp T
+    // - On the next tick, the FR at exactly T is within the new bar's window
+    // - With <= guard: skipped (correct — already processed)
+    // - With < guard: applied again (wrong — double-counted)
+    //
+    // Setup: manually inject lastProcessedFRTimestamps and verify funding
+    // payment count for a FR at exactly the pointer's timestamp.
+
+    const tfMs = 4 * 60 * 60 * 1000;
+    const now = Date.now();
+    const latestTs = Math.floor(now / tfMs) * tfMs - tfMs;
+
+    // Build candles: 200 bars. newBarsStartIndex will be candles.length-1 (last bar only, first tick)
+    const candles = Array.from({ length: 200 }, (_, i) =>
+      makeCandle(50_000, latestTs - (199 - i) * tfMs)
+    );
+    mockFetchLatestCandles.mockResolvedValue(candles);
+
+    // FR timestamp = latestTs (the last bar's timestamp)
+    const frTimestamp = latestTs;
+    const fundingRate = 0.001; // 0.1%
+    mockFetchLatestFundingRates.mockResolvedValue([
+      { timestamp: frTimestamp, fundingRate, markPrice: 50_000 },
+    ]);
+
+    const existingPosition: PaperPosition = {
+      id: 1,
+      sessionId: 'test-session-1',
+      symbol: 'BTC/USDT',
+      direction: 'long',
+      subStrategyKey: 'mock-strategy:BTC/USDT:4h',
+      entryPrice: 50_000,
+      amount: 0.1,
+      entryTime: latestTs - tfMs * 10,
+      unrealizedPnl: 0,
+      fundingAccumulated: 0,
+      stopLoss: null,
+      takeProfit: null,
+    };
+
+    const futuresConfig = {
+      subStrategies: [
+        {
+          strategyName: 'mock-strategy',
+          symbol: 'BTC/USDT',
+          timeframe: '4h' as const,
+          params: {},
+          exchange: 'bybit',
+        },
+      ],
+      allocationMode: 'single_strongest' as const,
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: now - 86400000,
+      endDate: now,
+      exchange: 'bybit',
+      mode: 'futures' as const,
+    };
+
+    const sessionWithPos = makePaperSession({
+      aggregationConfig: futuresConfig,
+      currentCash: 5_000,
+      currentEquity: 10_000,
+    });
+
+    vi.mocked(paperDb.getPaperSession).mockResolvedValue(sessionWithPos);
+    vi.mocked(paperDb.getPaperPositions).mockResolvedValue([existingPosition]);
+
+    mockStrategy.onBar = (_ctx: StrategyContext) => { /* hold */ };
+
+    const engine = new PaperTradingEngine(sessionWithPos);
+    await engine.start();
+
+    // Manually inject lastProcessedFRTimestamps to point to frTimestamp.
+    // This simulates a prior tick having already processed the FR at frTimestamp.
+    (engine as unknown as Record<string, unknown>)['lastProcessedFRTimestamps'] = new Map([
+      ['BTC/USDT', frTimestamp],
+    ]);
+
+    // Run a tick. The FR at frTimestamp should be SKIPPED because
+    // lastProcessedFRTimestamps.get('BTC/USDT') === frTimestamp
+    // and the guard is `fr.timestamp <= lastProcessedFRTs` (i.e., <= skips it).
+    await engine.forceTick();
+
+    // Capture funding_payment events
+    const emittedEvents: unknown[] = [];
+    engine.on('paper-event', (e) => emittedEvents.push(e));
+
+    // Check savePaperPosition calls — fundingAccumulated should be 0 (FR was skipped)
+    const savePosCallsWithFunding = vi.mocked(paperDb.savePaperPosition).mock.calls.filter(
+      c => c[0].fundingAccumulated !== 0,
+    );
+    // The FR was already marked as processed — funding should NOT have been accumulated
+    expect(savePosCallsWithFunding).toHaveLength(0);
+  });
+
   it('R7: isTransientError classifies config/strategy errors as fatal', () => {
     const session = makePaperSession();
     const engine = new PaperTradingEngine(session);
@@ -2278,5 +2520,120 @@ describe('PaperTradingEngine', () => {
     expect(isTransientError(new Error('Session not found'))).toBe(false);
     expect(isTransientError(new Error('Strategy my-strategy not found'))).toBe(false);
     expect(isTransientError(new Error('Validation error: invalid config'))).toBe(false);
+  });
+
+  // ==========================================================================
+  // MUT-M4: SL/TP direction for long with stopLossPct
+  // Verifies computeSlTp correctly places stop loss BELOW entry price for long
+  // and ABOVE entry price for short when using percentage-based SL/TP.
+  // ==========================================================================
+
+  it('MUT-M4: long stop loss is placed below entry price when stopLossPct is set', async () => {
+    const entryPrice = 50_000;
+    const stopLossPct = 5; // 5% below entry
+    const takeProfitPct = 10; // 10% above entry
+
+    const config: AggregateBacktestConfig = {
+      subStrategies: [
+        {
+          strategyName: 'mock-strategy',
+          symbol: 'BTC/USDT',
+          timeframe: '4h',
+          params: { stopLossPct, takeProfitPct, useATRStops: false },
+          exchange: 'bybit',
+        },
+      ],
+      allocationMode: 'single_strongest',
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: Date.now() - 86400000,
+      endDate: Date.now(),
+      exchange: 'bybit',
+      mode: 'spot',
+    };
+
+    // Strategy: open long
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!ctx.longPosition) ctx.openLong(1);
+    };
+
+    const session = makePaperSession({ aggregationConfig: config });
+    const engine = new PaperTradingEngine(session);
+
+    await engine.forceTick();
+
+    // Check what was saved to DB position
+    const savedPositions = vi.mocked(paperDb.savePaperPosition).mock.calls.map(c => c[0]);
+    expect(savedPositions).toHaveLength(1);
+    const savedPos = savedPositions[0];
+
+    // Stop loss must be BELOW entry price for a long position
+    expect(savedPos.stopLoss).not.toBeNull();
+    expect(savedPos.stopLoss!).toBeLessThan(entryPrice);
+
+    // Verify exact value: entryPrice * (1 - stopLossPct/100)
+    const expectedSL = entryPrice * (1 - stopLossPct / 100); // 47_500
+    expect(savedPos.stopLoss!).toBeCloseTo(expectedSL, 2);
+
+    // Take profit must be ABOVE entry price for a long position
+    expect(savedPos.takeProfit).not.toBeNull();
+    expect(savedPos.takeProfit!).toBeGreaterThan(entryPrice);
+
+    const expectedTP = entryPrice * (1 + takeProfitPct / 100); // 55_000
+    expect(savedPos.takeProfit!).toBeCloseTo(expectedTP, 2);
+  });
+
+  it('MUT-M4: short stop loss is placed above entry price when stopLossPct is set', async () => {
+    const entryPrice = 50_000;
+    const stopLossPct = 5; // 5% above entry (for short, SL is higher)
+    const takeProfitPct = 10; // 10% below entry (for short, TP is lower)
+
+    const config: AggregateBacktestConfig = {
+      subStrategies: [
+        {
+          strategyName: 'mock-strategy',
+          symbol: 'BTC/USDT',
+          timeframe: '4h',
+          params: { stopLossPct, takeProfitPct, useATRStops: false },
+          exchange: 'bybit',
+        },
+      ],
+      allocationMode: 'single_strongest',
+      maxPositions: 1,
+      initialCapital: 10_000,
+      startDate: Date.now() - 86400000,
+      endDate: Date.now(),
+      exchange: 'bybit',
+      mode: 'spot',
+    };
+
+    // Strategy: open short
+    mockStrategy.onBar = (ctx: StrategyContext) => {
+      if (!ctx.shortPosition) ctx.openShort(1);
+    };
+
+    const session = makePaperSession({ aggregationConfig: config });
+    const engine = new PaperTradingEngine(session);
+
+    await engine.forceTick();
+
+    const savedPositions = vi.mocked(paperDb.savePaperPosition).mock.calls.map(c => c[0]);
+    expect(savedPositions).toHaveLength(1);
+    const savedPos = savedPositions[0];
+
+    // Stop loss must be ABOVE entry price for a short position
+    expect(savedPos.stopLoss).not.toBeNull();
+    expect(savedPos.stopLoss!).toBeGreaterThan(entryPrice);
+
+    // Verify exact value: entryPrice * (1 + stopLossPct/100)
+    const expectedSL = entryPrice * (1 + stopLossPct / 100); // 52_500
+    expect(savedPos.stopLoss!).toBeCloseTo(expectedSL, 2);
+
+    // Take profit must be BELOW entry price for a short position
+    expect(savedPos.takeProfit).not.toBeNull();
+    expect(savedPos.takeProfit!).toBeLessThan(entryPrice);
+
+    const expectedTP = entryPrice * (1 - takeProfitPct / 100); // 45_000
+    expect(savedPos.takeProfit!).toBeCloseTo(expectedTP, 2);
   });
 });

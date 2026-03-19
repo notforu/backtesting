@@ -791,6 +791,38 @@ describe('MultiSymbolPortfolio', () => {
       expect(after?.unrealizedPnl).toBeCloseTo(unrealizedBefore ?? 0, 10);
     });
 
+    it('updatePrice sets correct unrealizedPnl on shortPosition (positive when price drops)', () => {
+      // Short 1 ETH at $2,000
+      portfolio.openShort(ETH, 1, 2_000, NOW);
+
+      // Price drops to $1,500 → unrealized profit = (2000 - 1500) * 1 = +500
+      portfolio.updatePrice(ETH, 1_500);
+
+      const { shortPosition } = portfolio.getPositionForSymbol(ETH);
+      expect(shortPosition).not.toBeNull();
+      // Short gains when price drops: unrealizedPnl = (entryPrice - currentPrice) * amount = +500
+      expect(shortPosition!.unrealizedPnl).toBeCloseTo(500, 6);
+    });
+
+    it('updatePrice sets correct unrealizedPnl on shortPosition (negative when price rises)', () => {
+      // Short 2 ETH at $2,000
+      portfolio.openShort(ETH, 2, 2_000, NOW);
+
+      // Price rises to $2,500 → unrealized loss = (2000 - 2500) * 2 = -1000
+      portfolio.updatePrice(ETH, 2_500);
+
+      const { shortPosition } = portfolio.getPositionForSymbol(ETH);
+      expect(shortPosition!.unrealizedPnl).toBeCloseTo(-1_000, 6);
+    });
+
+    it('updatePrice sets unrealizedPnl = 0 for short when price equals entryPrice', () => {
+      portfolio.openShort(ETH, 1, 2_000, NOW);
+      portfolio.updatePrice(ETH, 2_000); // same price
+
+      const { shortPosition } = portfolio.getPositionForSymbol(ETH);
+      expect(shortPosition!.unrealizedPnl).toBeCloseTo(0, 10);
+    });
+
     it('should allow negative funding payment that pushes cash below zero', () => {
       // Start with $10,000 cash, drain with large negative payment
       portfolio.applyFundingPayment(-15_000);

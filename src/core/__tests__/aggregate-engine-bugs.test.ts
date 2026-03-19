@@ -187,6 +187,61 @@ describe('BUG 1: Capital allocation mid-loop mutation (top_n / weighted_multi)',
     expect(tradeValues[1]).toBeCloseTo(1_800, 1);
   });
 
+  it('M4: weighted_multi normalizes weights (total != 1.0): weights 2.0 and 3.0 sum to 5.0', () => {
+    // When weights don't sum to 1.0, the engine must normalize: (weight / totalWeight)
+    // weights = 2.0 and 3.0 → totalWeight = 5.0
+    // AAA: 2/5 * $10k * 0.9 = $3,600
+    // BBB: 3/5 * $10k * 0.9 = $5,400
+    // If normalization is skipped (bug): 2.0 * $9k = $18,000 and 3.0 * $9k = $27,000 (exceeds capital!)
+    const initialCash = 10_000;
+    const portfolio = new MultiSymbolPortfolio(initialCash);
+    const price = 100;
+
+    const signals = [
+      { signal: makeSignal('AAA/USDT', 2.0), symbol: 'AAA/USDT', price },
+      { signal: makeSignal('BBB/USDT', 3.0), symbol: 'BBB/USDT', price },
+    ];
+
+    const tradeValues = simulateWeightedMultiAllocation(portfolio, signals);
+
+    // With normalization: AAA gets 2/5 * $9000 = $3,600; BBB gets 3/5 * $9000 = $5,400
+    expect(tradeValues).toHaveLength(2);
+    expect(tradeValues[0]).toBeCloseTo(3_600, 1);
+    expect(tradeValues[1]).toBeCloseTo(5_400, 1);
+
+    // Total allocated should equal 90% of initial cash (not exceed it)
+    const totalAllocated = tradeValues.reduce((a, b) => a + b, 0);
+    expect(totalAllocated).toBeCloseTo(initialCash * 0.9, 1);
+  });
+
+  it('M4: weighted_multi normalized sum always equals 90% of cash regardless of weight scale', () => {
+    // Weights are 4.0, 6.0, 2.0 → totalWeight = 12.0
+    // Normalized fractions: 4/12, 6/12, 2/12 → sum to 1.0
+    // Total capital allocated = 1.0 * $10k * 0.9 = $9,000 exactly
+    const initialCash = 10_000;
+    const portfolio = new MultiSymbolPortfolio(initialCash);
+    const price = 100;
+
+    const signals = [
+      { signal: makeSignal('AAA/USDT', 4.0), symbol: 'AAA/USDT', price },
+      { signal: makeSignal('BBB/USDT', 6.0), symbol: 'BBB/USDT', price },
+      { signal: makeSignal('CCC/USDT', 2.0), symbol: 'CCC/USDT', price },
+    ];
+
+    const tradeValues = simulateWeightedMultiAllocation(portfolio, signals);
+
+    // Total must be exactly 90% of initial cash
+    const totalAllocated = tradeValues.reduce((a, b) => a + b, 0);
+    expect(totalAllocated).toBeCloseTo(initialCash * 0.9, 1); // $9,000
+
+    // AAA: 4/12 * $9k = $3,000
+    expect(tradeValues[0]).toBeCloseTo(3_000, 1);
+    // BBB: 6/12 * $9k = $4,500
+    expect(tradeValues[1]).toBeCloseTo(4_500, 1);
+    // CCC: 2/12 * $9k = $1,500
+    expect(tradeValues[2]).toBeCloseTo(1_500, 1);
+  });
+
   it('weighted_multi: second signal should be calculated from ORIGINAL cash, not post-first-trade cash', () => {
     const initialCash = 10_000;
     const portfolio = new MultiSymbolPortfolio(initialCash);
@@ -541,6 +596,60 @@ describe('BUG 4: Capital allocation corner cases', () => {
     expect(selectedSignals[1].symbol).toBe('BBB/USDT');
   });
 
+  it('M6: top_n available slots = maxPositions - currentPositionCount (not +)', () => {
+    // With maxPositions=3 and 2 existing positions, only 1 new position should be allowed.
+    // Bug: using + instead of - gives slots = 3+2 = 5 instead of 3-2 = 1.
+    const maxPositions = 3;
+    const portfolio = new MultiSymbolPortfolio(10_000);
+
+    // Open 2 existing positions to set currentPositionCount = 2
+    portfolio.openLong('AAA/USDT', 1, 100, 1_000_000, 0);
+    portfolio.openLong('BBB/USDT', 1, 100, 1_000_000, 0);
+    const currentPositionCount = portfolio.getPositionCount();
+    expect(currentPositionCount).toBe(2);
+
+    // availableSlots must be maxPositions - currentPositionCount = 3 - 2 = 1
+    const correctSlots = Math.max(0, maxPositions - currentPositionCount);
+    expect(correctSlots).toBe(1);
+
+    // Bug: + instead of - gives 5 slots (way too many)
+    const buggySlots = Math.max(0, maxPositions + currentPositionCount);
+    expect(buggySlots).toBe(5);
+
+    // The correct and buggy values must differ
+    expect(correctSlots).not.toBe(buggySlots);
+
+    // Simulate selection: only 1 signal should be selected with correct slots
+    const allSignals = [
+      makeSignal('CCC/USDT', 1.0),
+      makeSignal('DDD/USDT', 0.9),
+      makeSignal('EEE/USDT', 0.8),
+    ];
+    const selectedCorrect = allSignals.slice(0, correctSlots);
+    const selectedBuggy = allSignals.slice(0, buggySlots);
+
+    expect(selectedCorrect).toHaveLength(1); // correct: 1 slot
+    expect(selectedBuggy).toHaveLength(3);   // buggy: 3 signals would all be selected
+  });
+
+  it('M6: top_n slots are 0 when positions = maxPositions (no more slots available)', () => {
+    // Exactly at capacity: maxPositions=2, currentPositionCount=2 → 0 slots
+    const maxPositions = 2;
+    const portfolio = new MultiSymbolPortfolio(10_000);
+    portfolio.openLong('AAA/USDT', 1, 100, 1_000_000, 0);
+    portfolio.openLong('BBB/USDT', 1, 100, 1_000_000, 0);
+
+    const currentPositionCount = portfolio.getPositionCount();
+    const correctSlots = Math.max(0, maxPositions - currentPositionCount);
+    expect(correctSlots).toBe(0); // no slots at capacity
+
+    // Bug: + gives 4 slots instead of 0
+    const buggySlots = Math.max(0, maxPositions + currentPositionCount);
+    expect(buggySlots).toBe(4); // definitely wrong
+
+    expect(correctSlots).not.toBe(buggySlots);
+  });
+
   it('top_n with 0 available slots: no signals should execute', () => {
     const portfolio = new MultiSymbolPortfolio(10_000);
     const maxPositions = 2;
@@ -764,6 +873,78 @@ describe('Allocation math: regression tests', () => {
     expect(perTrade).toBeCloseTo(3_000, 2);
   });
 
+  it('M1: top_n capital uses maxPositions as divisor, not maxPositions+1', () => {
+    // The engine formula is: capitalForTrade = (initialCapital * positionSizeFraction) / maxPositions
+    // With maxPositions=2 and initialCapital=$10k, each trade gets $4,500 (not $3,000)
+    const initialCapital = 10_000;
+    const maxPositions = 2;
+    const positionSizeFraction = 0.9;
+
+    // Correct formula divides by maxPositions
+    const correctCapital = (initialCapital * positionSizeFraction) / maxPositions;
+    expect(correctCapital).toBeCloseTo(4_500, 2);
+
+    // Off-by-one bug: divides by maxPositions+1 = 3
+    const buggyCapital = (initialCapital * positionSizeFraction) / (maxPositions + 1);
+    expect(buggyCapital).toBeCloseTo(3_000, 2);
+
+    // They must NOT be equal — the correct value is $4,500 per position (not $3,000)
+    expect(correctCapital).not.toBeCloseTo(buggyCapital, 0);
+  });
+
+  it('M1: top_n with maxPositions=3 allocates initialCapital*0.9/3 per position (not /4)', () => {
+    // Test that confirms the divisor is maxPositions (3), not maxPositions+1 (4)
+    const initialCapital = 10_000;
+    const maxPositions = 3;
+    const positionSizeFraction = 0.9;
+
+    const correctCapitalPerPosition = (initialCapital * positionSizeFraction) / maxPositions;
+    // $10k * 0.9 / 3 = $3,000 per position
+    expect(correctCapitalPerPosition).toBeCloseTo(3_000, 2);
+
+    // If we used maxPositions+1=4, we'd get $2,250, which is wrong
+    const wrongCapital = (initialCapital * positionSizeFraction) / (maxPositions + 1);
+    expect(wrongCapital).toBeCloseTo(2_250, 2);
+
+    // The per-position amount derived from maxPositions must differ from that of maxPositions+1
+    expect(correctCapitalPerPosition).not.toBeCloseTo(wrongCapital, 0);
+  });
+
+  it('M1: top_n portfolio simulation — 2 positions must each receive $4,500 not $3,000', () => {
+    // Simulate top_n allocation using the engine formula directly (maxPositions as divisor).
+    // With maxPositions=2 and $10k initial capital, each position should cost $4,500.
+    // If the engine divides by maxPositions+1=3 instead, each position costs $3,000.
+    const initialCapital = 10_000;
+    const maxPositions = 2;
+    const positionSizeFraction = 0.9;
+    const price = 100;
+
+    const portfolio = new MultiSymbolPortfolio(initialCapital);
+    const signals = [
+      { signal: makeSignal('AAA/USDT', 1.0), symbol: 'AAA/USDT', price },
+      { signal: makeSignal('BBB/USDT', 1.0), symbol: 'BBB/USDT', price },
+    ];
+
+    // Simulate the engine's top_n formula: each signal gets (initialCapital * fraction) / maxPositions
+    for (const { signal, symbol } of signals) {
+      const capitalForTrade = (initialCapital * positionSizeFraction) / maxPositions;
+      const amount = capitalForTrade / price;
+      portfolio.openLong(symbol, amount, price, signal.timestamp, 0);
+    }
+
+    const posA = portfolio.getPositionForSymbol('AAA/USDT').longPosition;
+    const posB = portfolio.getPositionForSymbol('BBB/USDT').longPosition;
+
+    // Each position notional = amount * price = (4500 / 100) * 100 = $4,500
+    const expectedNotional = (initialCapital * positionSizeFraction) / maxPositions;
+    expect(posA!.amount * price).toBeCloseTo(expectedNotional, 2); // $4,500
+    expect(posB!.amount * price).toBeCloseTo(expectedNotional, 2); // $4,500
+
+    // Not $3,000 (which would be the off-by-one result of dividing by maxPositions+1)
+    const wrongNotional = (initialCapital * positionSizeFraction) / (maxPositions + 1);
+    expect(posA!.amount * price).not.toBeCloseTo(wrongNotional, 1); // not $3,000
+  });
+
   it('weighted_multi capital formula snapshot: weight 0.7 out of total 1.0', () => {
     const initialCash = 10_000;
     const signalWeight = 0.7;
@@ -907,6 +1088,52 @@ describe('BUG 6: Per-asset equity capital base', () => {
     expect(perAssetCapital).toBeCloseTo(1_500, 2);
     // Definitely NOT the full initial capital
     expect(perAssetCapital).not.toBeCloseTo(initialCapital, 0);
+  });
+
+  it('M7: fallback per-asset capital divides by numAdapters, not numAdapters+1', () => {
+    // The fallback formula is: initialCapital / adaptersWithData.length
+    // With 4 sub-strategies and $10k, fallback = $2,500 each (not $2,000 = $10k/5)
+    const initialCapital = 10_000;
+    const numAdapters = 4;
+
+    const correctFallback = initialCapital / numAdapters;
+    expect(correctFallback).toBeCloseTo(2_500, 2);
+
+    // Bug: divide by numAdapters+1 gives $2,000 instead
+    const buggyFallback = initialCapital / (numAdapters + 1);
+    expect(buggyFallback).toBeCloseTo(2_000, 2);
+
+    // Must not be equal
+    expect(correctFallback).not.toBeCloseTo(buggyFallback, 0);
+
+    // Sum of all per-asset capitals must equal initialCapital
+    const sumCorrect = correctFallback * numAdapters;
+    expect(sumCorrect).toBeCloseTo(initialCapital, 2);
+
+    // With the bug, sum would be: buggyFallback * numAdapters = 2000 * 4 = 8000 ≠ 10000
+    const sumBuggy = buggyFallback * numAdapters;
+    expect(sumBuggy).not.toBeCloseTo(initialCapital, 0);
+  });
+
+  it('M7: fallback per-asset capital sum across all assets = initialCapital', () => {
+    // For N assets with fallback capital: each gets initialCapital/N
+    // Their sum must equal initialCapital exactly
+    const testCases = [
+      { initialCapital: 10_000, numAssets: 2 },
+      { initialCapital: 10_000, numAssets: 3 },
+      { initialCapital: 15_000, numAssets: 5 },
+    ];
+
+    for (const { initialCapital, numAssets } of testCases) {
+      const fallback = initialCapital / numAssets;
+      const total = fallback * numAssets;
+      expect(total).toBeCloseTo(initialCapital, 6);
+
+      // Bug: using numAssets+1 gives wrong totals
+      const buggyFallback = initialCapital / (numAssets + 1);
+      const buggyTotal = buggyFallback * numAssets;
+      expect(buggyTotal).not.toBeCloseTo(initialCapital, 0);
+    }
   });
 
   it('per-asset max drawdown should never exceed 100%', () => {

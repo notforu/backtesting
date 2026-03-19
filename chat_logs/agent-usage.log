@@ -208,3 +208,16 @@
 [2025-03-19 14:30] commit (haiku) - intra-bar SL/TP resolution with sub-candle support
 [2026-03-19 12:00] be-dev (sonnet) - Add sub-candle resolution for ambiguous SL/TP in aggregate engine
 [2026-03-19 14:15] be-dev (sonnet) - Add sub-candle resolution to aggregate engine for ambiguous SL/TP
+[2026-03-19 14:45] commit (haiku) - Commit sub-candle resolution for ambiguous aggregate SL/TP exits
+[2026-03-19 20:45] Explore (haiku) - Explore telegram alerts and paper trading session management
+[2026-03-19 20:47] be-dev (sonnet) - Suppress non-error status_change Telegram alerts + unified daily digest for all sessions
+[2026-03-19 20:54] be-dev (sonnet) - Suppress status_change Telegram alerts + unified daily digest
+
+[2026-03-19 00:00] commit (haiku) - Create two commits for Telegram notifications and session manager refactor
+[2026-03-19 14:30] qa (sonnet) - Mutation testing: backtesting engine (7 mutations, 19 new tests)
+[2026-03-19 14:30] qa (sonnet) - Mutation testing: metrics calculation (9 mutations, 5 new tests)
+[2026-03-19 14:30] qa (sonnet) - Mutation testing: aggregate engine + multi-portfolio (10 mutations, 12 new tests)
+[2026-03-19 14:30] qa (sonnet) - Mutation testing: paper trading engine (9 mutations, 5 new tests)
+[2026-03-19 14:30] qa (sonnet) - Write tests from scratch: price watcher + live data fetcher (69 new tests)
+[2026-03-19 14:30] Explore (haiku) - Analyze critical code coverage for mutation testing
+[2026-03-19 14:50] docs-writer (haiku) - Create changelog for mutation testing session: 110 tests, 15 coverage gaps fixed, 100% kill rate achieved

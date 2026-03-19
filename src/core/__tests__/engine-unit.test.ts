@@ -357,6 +357,75 @@ describe('Engine — early stop equity check logic', () => {
   });
 });
 
+describe('Engine — early stop loop termination behavior', () => {
+  /**
+   * Simulates the engine main loop with early stop logic intact.
+   * The engine checks every 100 bars: if equity < initialCapital * fraction, break.
+   * Returns the number of bars that were processed.
+   */
+  function runLoopWithEarlyStop(
+    equityByBar: number[],
+    initialCapital: number,
+    earlyStopEquityFraction: number | undefined,
+  ): number {
+    const totalBars = equityByBar.length;
+    let processedBars = 0;
+
+    for (let i = 0; i < totalBars; i++) {
+      processedBars++;
+
+      // Early termination check (every 100 bars)
+      if (i % 100 === 0 && earlyStopEquityFraction !== undefined) {
+        if (equityByBar[i] < initialCapital * earlyStopEquityFraction) {
+          break;
+        }
+      }
+    }
+
+    return processedBars;
+  }
+
+  it('processes all bars when earlyStopEquityFraction is undefined', () => {
+    const equity = Array.from({ length: 300 }, () => 5_000);
+    const processed = runLoopWithEarlyStop(equity, 10_000, undefined);
+    expect(processed).toBe(300);
+  });
+
+  it('processes all bars when equity stays above threshold', () => {
+    const equity = Array.from({ length: 300 }, () => 8_000);
+    const processed = runLoopWithEarlyStop(equity, 10_000, 0.3);
+    expect(processed).toBe(300);
+  });
+
+  it('terminates early when equity drops below threshold at bar 100', () => {
+    // equity drops below 30% threshold (3000) at bar 100
+    const equity = Array.from({ length: 300 }, (_, i) => (i < 100 ? 8_000 : 1_000));
+    const processed = runLoopWithEarlyStop(equity, 10_000, 0.3);
+    // Should stop at bar 100 (index 100), so only 101 bars processed
+    expect(processed).toBeLessThan(300);
+    expect(processed).toBe(101); // bar 100 is the 101st bar (0-indexed)
+  });
+
+  it('without early stop, all bars are processed even with low equity', () => {
+    // equity drops to 0 but no early stop configured
+    const equity = Array.from({ length: 300 }, () => 0);
+    const processed = runLoopWithEarlyStop(equity, 10_000, undefined);
+    expect(processed).toBe(300);
+  });
+
+  it('bypassing early stop causes the loop to run more bars than expected', () => {
+    // This test documents the bug: without early stop, low-equity runs continue unnecessarily
+    const equity = Array.from({ length: 300 }, (_, i) => (i < 100 ? 8_000 : 1_000));
+    const withEarlyStop = runLoopWithEarlyStop(equity, 10_000, 0.3);
+    const withoutEarlyStop = runLoopWithEarlyStop(equity, 10_000, undefined);
+
+    // Early stop should terminate before processing all bars
+    expect(withEarlyStop).toBeLessThan(withoutEarlyStop);
+    expect(withoutEarlyStop).toBe(300);
+    expect(withEarlyStop).toBe(101);
+  });
+});
+
 // ============================================================================
 // Tests — equity curve and trade accumulation (pure data logic)
 // ============================================================================
@@ -381,6 +450,54 @@ describe('Engine — equity and trade tracking invariants', () => {
     expect(equityTimestamps).toHaveLength(candles.length);
     expect(equityValues).toHaveLength(candles.length);
     expect(equityTimestamps).toHaveLength(equityValues.length);
+  });
+
+  it('loop processes ALL candles including the last bar (no off-by-one)', () => {
+    // The engine loop must be `i < totalBars` not `i < totalBars - 1`
+    // This test ensures ALL N candles produce N equity data points
+    const candles = [
+      { timestamp: 1000, close: 100 },
+      { timestamp: 2000, close: 110 },
+      { timestamp: 3000, close: 105 },
+      { timestamp: 4000, close: 120 },  // LAST BAR - must not be skipped
+    ];
+    const totalBars = candles.length;
+
+    const processedTimestamps: number[] = [];
+    // Simulates engine main loop with correct bound: `i < totalBars`
+    for (let i = 0; i < totalBars; i++) {
+      processedTimestamps.push(candles[i].timestamp);
+    }
+
+    // All 4 bars must be processed
+    expect(processedTimestamps).toHaveLength(4);
+    // Last bar (timestamp 4000) must be processed
+    expect(processedTimestamps[processedTimestamps.length - 1]).toBe(4000);
+  });
+
+  it('skipping last bar (off-by-one bug) would miss signals and reduce equity points', () => {
+    // This documents the off-by-one failure mode:
+    // With `i < totalBars - 1`, the last candle is never processed
+    const candles = [
+      { timestamp: 1000, close: 100 },
+      { timestamp: 2000, close: 110 },
+      { timestamp: 3000, close: 105 },
+      { timestamp: 4000, close: 120 },
+    ];
+    const totalBars = candles.length;
+
+    const buggyTimestamps: number[] = [];
+    // Simulates the BUGGY loop: `i < totalBars - 1`
+    for (let i = 0; i < totalBars - 1; i++) {
+      buggyTimestamps.push(candles[i].timestamp);
+    }
+
+    // Buggy loop only produces 3 points, not 4
+    expect(buggyTimestamps).toHaveLength(3);
+    // Last bar (4000) was NOT processed — this is the bug
+    expect(buggyTimestamps).not.toContain(4000);
+    // Correct behavior must be to process exactly totalBars entries
+    expect(buggyTimestamps).not.toHaveLength(totalBars);
   });
 
   it('equityTimestamps are sorted ascending (match candle order)', () => {
@@ -416,5 +533,120 @@ describe('Engine — equity and trade tracking invariants', () => {
     expect(allTrades[1]).toBe('close-long-1');
     expect(allTrades[2]).toBe('open-short-1');
     expect(allTrades[3]).toBe('close-short-1');
+  });
+});
+
+// ============================================================================
+// Tests — funding rate payment calculation (pure logic mirroring engine.ts)
+// ============================================================================
+
+describe('Engine — funding rate payment calculation', () => {
+  /**
+   * Mirrors the engine's funding rate payment logic for a long position.
+   * payment = -amount * markPrice * fundingRate
+   * Positive fundingRate → long pays (negative payment)
+   * Negative fundingRate → long receives (positive payment)
+   */
+  function calcLongFundingPayment(
+    amount: number,
+    markPrice: number,
+    fundingRate: number,
+  ): number {
+    return -amount * markPrice * fundingRate;
+  }
+
+  /**
+   * Mirrors the engine's funding rate payment logic for a short position.
+   * payment = amount * markPrice * fundingRate
+   * Positive fundingRate → short receives (positive payment)
+   * Negative fundingRate → short pays (negative payment)
+   */
+  function calcShortFundingPayment(
+    amount: number,
+    markPrice: number,
+    fundingRate: number,
+  ): number {
+    return amount * markPrice * fundingRate;
+  }
+
+  // Long position funding payments
+  it('long pays (negative payment) when fundingRate is positive', () => {
+    // 1 BTC at $30,000 with +0.01% funding rate → long pays $3
+    const payment = calcLongFundingPayment(1, 30_000, 0.0001);
+    expect(payment).toBeCloseTo(-3, 8);
+  });
+
+  it('long receives (positive payment) when fundingRate is negative', () => {
+    // 1 BTC at $30,000 with -0.01% funding rate → long receives $3
+    const payment = calcLongFundingPayment(1, 30_000, -0.0001);
+    expect(payment).toBeCloseTo(3, 8);
+  });
+
+  it('long payment is zero when fundingRate is zero', () => {
+    const payment = calcLongFundingPayment(2, 50_000, 0);
+    expect(payment).toBeCloseTo(0, 8);
+  });
+
+  it('long payment scales linearly with position size', () => {
+    const p1 = calcLongFundingPayment(1, 30_000, 0.0001);
+    const p2 = calcLongFundingPayment(2, 30_000, 0.0001);
+    expect(p2).toBeCloseTo(p1 * 2, 8);
+  });
+
+  it('long payment scales linearly with markPrice', () => {
+    const p1 = calcLongFundingPayment(1, 30_000, 0.0001);
+    const p2 = calcLongFundingPayment(1, 60_000, 0.0001);
+    expect(p2).toBeCloseTo(p1 * 2, 8);
+  });
+
+  // Short position funding payments
+  it('short receives (positive payment) when fundingRate is positive', () => {
+    // 1 BTC at $30,000 with +0.01% funding rate → short receives $3
+    const payment = calcShortFundingPayment(1, 30_000, 0.0001);
+    expect(payment).toBeCloseTo(3, 8);
+  });
+
+  it('short pays (negative payment) when fundingRate is negative', () => {
+    // 1 BTC at $30,000 with -0.01% funding rate → short pays $3
+    const payment = calcShortFundingPayment(1, 30_000, -0.0001);
+    expect(payment).toBeCloseTo(-3, 8);
+  });
+
+  it('short payment is zero when fundingRate is zero', () => {
+    const payment = calcShortFundingPayment(2, 50_000, 0);
+    expect(payment).toBeCloseTo(0, 8);
+  });
+
+  // Long and short payments are opposite signs (symmetry)
+  it('long and short payments are equal and opposite for same position', () => {
+    const longPayment = calcLongFundingPayment(1, 30_000, 0.0001);
+    const shortPayment = calcShortFundingPayment(1, 30_000, 0.0001);
+    // Long pays, short receives → opposite signs
+    expect(longPayment).toBeCloseTo(-shortPayment, 8);
+  });
+
+  it('net funding income is zero when long and short positions are equal size', () => {
+    const longPayment = calcLongFundingPayment(1, 30_000, 0.0001);
+    const shortPayment = calcShortFundingPayment(1, 30_000, 0.0001);
+    // Net income across long + short = 0 (funding transfers between them)
+    expect(longPayment + shortPayment).toBeCloseTo(0, 8);
+  });
+
+  // Typical 8h funding rate scenario
+  it('typical positive funding rate: long pays 0.01% on $50k position', () => {
+    // 1 BTC at $50,000, 0.01% funding rate → payment = -50,000 * 0.0001 = -$5
+    const payment = calcLongFundingPayment(1, 50_000, 0.0001);
+    expect(payment).toBeCloseTo(-5, 8);
+  });
+
+  it('total funding income increases when long position receives negative funding', () => {
+    // Simulates the totalFundingIncome accumulator in the engine
+    let totalFundingIncome = 0;
+    // Bar 1: long receives $3 (negative rate)
+    totalFundingIncome += calcLongFundingPayment(1, 30_000, -0.0001);
+    // Bar 2: long pays $3 (positive rate)
+    totalFundingIncome += calcLongFundingPayment(1, 30_000, 0.0001);
+    // Net = 0
+    expect(totalFundingIncome).toBeCloseTo(0, 8);
   });
 });

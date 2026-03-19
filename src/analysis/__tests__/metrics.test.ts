@@ -365,6 +365,42 @@ describe('calculateMetrics — avgWin / avgLoss', () => {
     const metrics = calculateMetrics(trades, equity, 10_000);
     expect(metrics.avgLoss).toBe(0);
   });
+
+  it('calculates avgWin using only winning trades count (not total trades)', () => {
+    // 2 wins (+20, +30) and 1 loss (-10) → 3 total trades but winCount=2
+    // avgWin correct: (20+30)/2 = 25  (NOT (20+30)/3 = 16.67)
+    const trades = [
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 120, entryTime: 1000, exitTime: 2000 }),
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 130, entryTime: 3000, exitTime: 4000 }),
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 90, entryTime: 5000, exitTime: 6000 }),
+    ];
+    const equity = makeEquity([
+      [1000, 10_000], [2000, 10_020], [3000, 10_020],
+      [4000, 10_050], [5000, 10_050], [6000, 10_040],
+    ]);
+    const metrics = calculateMetrics(trades, equity, 10_000);
+    expect(metrics.totalTrades).toBe(3);
+    expect(metrics.winningTrades).toBe(2);
+    expect(metrics.avgWin).toBeCloseTo(25, 6); // (20+30)/2 = 25, not 16.67
+  });
+
+  it('calculates avgLoss using only losing trades count (not total trades)', () => {
+    // 1 win (+20) and 2 losses (-10, -20) → 3 total trades but lossCount=2
+    // avgLoss correct: (10+20)/2 = 15  (NOT (10+20)/3 = 10)
+    const trades = [
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 120, entryTime: 1000, exitTime: 2000 }),
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 90, entryTime: 3000, exitTime: 4000 }),
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 80, entryTime: 5000, exitTime: 6000 }),
+    ];
+    const equity = makeEquity([
+      [1000, 10_000], [2000, 10_020], [3000, 10_020],
+      [4000, 10_010], [5000, 10_010], [6000, 9_990],
+    ]);
+    const metrics = calculateMetrics(trades, equity, 10_000);
+    expect(metrics.totalTrades).toBe(3);
+    expect(metrics.losingTrades).toBe(2);
+    expect(metrics.avgLoss).toBeCloseTo(15, 6); // (10+20)/2 = 15, not 10
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -388,6 +424,28 @@ describe('calculateMetrics — expectancy', () => {
   it('returns 0 expectancy when no close trades', () => {
     const metrics = calculateMetrics([], [], 10_000);
     expect(metrics.expectancy).toBe(0);
+  });
+
+  it('calculates expectancy using total trades count (not just winners)', () => {
+    // 2 wins (+15, +5) and 1 loss (-10) → totalReturn=10, totalTrades=3, winCount=2
+    // Correct expectancy: 10/3 ≈ 3.33  (NOT 10/2 = 5)
+    const trades = [
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 115, entryTime: 1000, exitTime: 2000 }),
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 105, entryTime: 3000, exitTime: 4000 }),
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 90, entryTime: 5000, exitTime: 6000 }),
+    ];
+    // totalReturn is derived from equity: 10000 + 15 + 5 - 10 = 10010
+    const equity = makeEquity([
+      [1000, 10_000], [2000, 10_015], [3000, 10_015],
+      [4000, 10_020], [5000, 10_020], [6000, 10_010],
+    ]);
+    const metrics = calculateMetrics(trades, equity, 10_000);
+    expect(metrics.totalTrades).toBe(3);
+    expect(metrics.winningTrades).toBe(2);
+    // totalReturn = 10010 - 10000 = 10
+    // expectancy = 10 / 3 ≈ 3.33, not 10 / 2 = 5
+    expect(metrics.expectancy).toBeCloseTo(10 / 3, 4);
+    expect(metrics.expectancy).not.toBeCloseTo(5, 1); // would be 5 if dividing by winCount
   });
 });
 
@@ -485,6 +543,45 @@ describe('calculateMetrics — sharpeRatio', () => {
     // Both use 365 for '1d' but default uses 252 → they should differ
     expect(sharpeDefault).not.toBeCloseTo(sharpe1d, 3);
   });
+
+  it('calculates exact Sharpe ratio value using (mean/stdDev)*sqrt(factor)', () => {
+    // Equity with known variability so we can verify the exact annualization formula.
+    // Equity: 10000, 10100, 10050, 10200, 10150, 10300
+    // Returns: +1%, -0.495%, +1.4925%, -0.4902%, +1.4778%
+    // Expected: annualizedReturn = mean*252, annualizedStdDev = stdDev*sqrt(252)
+    // Sharpe = annualizedReturn / annualizedStdDev = (mean/stdDev) * sqrt(252)
+    resetCounters();
+    const trades = [
+      ...makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 110, entryTime: 1000, exitTime: 2000 }),
+    ];
+    const equity = makeEquity([
+      [1000, 10_000],
+      [2000, 10_100],
+      [3000, 10_050],
+      [4000, 10_200],
+      [5000, 10_150],
+      [6000, 10_300],
+    ]);
+    const metrics = calculateMetrics(trades, equity, 10_000);
+
+    // Manually compute expected Sharpe with correct formula
+    const returns = [
+      (10_100 - 10_000) / 10_000,
+      (10_050 - 10_100) / 10_100,
+      (10_200 - 10_050) / 10_050,
+      (10_150 - 10_200) / 10_200,
+      (10_300 - 10_150) / 10_150,
+    ];
+    const mean = returns.reduce((s, r) => s + r, 0) / returns.length;
+    const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / (returns.length - 1);
+    const stdDev = Math.sqrt(variance);
+    const expectedSharpe = (mean / stdDev) * Math.sqrt(252);
+
+    // The correct Sharpe should be close to the expected value (around 9.3)
+    // If annualization uses / instead of * for stdDev, result would be 252x larger (~2354)
+    expect(metrics.sharpeRatio).toBeCloseTo(expectedSharpe, 3);
+    expect(metrics.sharpeRatio).toBeLessThan(100); // A 252x mutation would produce ~2354
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -526,6 +623,44 @@ describe('calculateMetrics — sortinoRatio', () => {
     ]);
     const metrics = calculateMetrics(trades, equity, 10_000);
     expect(metrics.sortinoRatio).toBeGreaterThan(0);
+  });
+
+  it('uses downside deviation (not full std dev) — Sortino > Sharpe for skewed returns', () => {
+    // Returns: +1%, -0.5%, +2%, -0.3%, +1.5%, +0.8%
+    // With only 2 negative returns out of 6, downside deviation < full std dev
+    // so Sortino should be meaningfully higher than Sharpe ratio.
+    // Correct Sortino ≈ 28.9; if wrong denominator (full std dev) used → ≈ 12.1
+    resetCounters();
+    const trades = makeTradePair({ side: 'long', amount: 1, entryPrice: 100, exitPrice: 110, entryTime: 1000, exitTime: 7000 });
+    const equity = makeEquity([
+      [1000, 10_000],
+      [2000, 10_100],
+      [3000, 10_049.5],
+      [4000, 10_250.49],
+      [5000, 10_219.74],
+      [6000, 10_373.03],
+      [7000, 10_456.02],
+    ]);
+    const metrics = calculateMetrics(trades, equity, 10_000);
+
+    // Manually compute expected Sortino (using downside deviation only)
+    const returns = [
+      (10_100 - 10_000) / 10_000,
+      (10_049.5 - 10_100) / 10_100,
+      (10_250.49 - 10_049.5) / 10_049.5,
+      (10_219.74 - 10_250.49) / 10_250.49,
+      (10_373.03 - 10_219.74) / 10_219.74,
+      (10_456.02 - 10_373.03) / 10_373.03,
+    ];
+    const mean = returns.reduce((s, r) => s + r, 0) / returns.length;
+    const negativeReturns = returns.filter(r => r < 0);
+    const downsideVariance = negativeReturns.reduce((s, r) => s + r * r, 0) / negativeReturns.length;
+    const downsideDeviation = Math.sqrt(downsideVariance);
+    const expectedSortino = (mean / downsideDeviation) * Math.sqrt(252);
+
+    // Correct sortino should be ~28.9 (not ~12.1 which is Sharpe-like using full std dev)
+    expect(metrics.sortinoRatio).toBeCloseTo(expectedSortino, 2);
+    expect(metrics.sortinoRatio).toBeGreaterThan(20); // Guards against using full std dev (~12)
   });
 });
 
