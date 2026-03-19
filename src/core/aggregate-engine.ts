@@ -16,7 +16,11 @@ import { validateFundingRateCoverage, validateCandleCoverage } from './funding-r
 import { checkSlTpTrigger, resolveAmbiguousExit, getSubTimeframe } from './intra-bar.js';
 import { timeframeToMs } from './types.js';
 
-interface AdapterWithData {
+// ============================================================================
+// Exported interfaces for the pure core loop
+// ============================================================================
+
+export interface AdapterWithData {
   adapter: SignalAdapter;
   config: SubStrategyConfig;
   candles: Candle[];
@@ -25,6 +29,42 @@ interface AdapterWithData {
   timestampToIndex: Map<number, number>;
   /** Accumulated funding income for the currently open position */
   accumulatedFunding: number;
+}
+
+export interface CoreAggregateInput {
+  config: AggregateBacktestConfig;
+  adaptersWithData: AdapterWithData[];
+  initialCapital: number;
+  feeRate: number;
+  slippagePercent: number;
+  positionSizeFraction: number;
+  enableLogging?: boolean;
+  onProgress?: (progress: { current: number; total: number; percent: number }) => void;
+  intraBarTimeframe?: string | null;
+  /** Injectable sub-candle resolver for engine-managed SL/TP disambiguation */
+  subCandleResolver?: (
+    symbol: string,
+    exchange: string,
+    barTimestamp: number,
+    barDurationMs: number,
+    subTimeframe: string,
+  ) => Promise<Candle[]>;
+}
+
+export interface CoreAggregateOutput {
+  allTrades: Trade[];
+  /** Raw equity timestamps and values (before generateEquityCurve()) */
+  equityTimestamps: number[];
+  equityValues: number[];
+  signalHistory: Signal[];
+  perAssetTrades: Map<string, Trade[]>;
+  totalFundingIncome: number;
+  perSymbolFunding: Map<string, number>;
+  perSymbolAllocatedCapital: Map<string, number>;
+  engineStopLossCount: number;
+  engineTakeProfitCount: number;
+  pessimisticSlTpCount: number;
+  subCandleResolvedCount: number;
 }
 
 export interface AggregateEngineConfig {
@@ -62,27 +102,43 @@ export interface AggregateEngineConfig {
   intraBarTimeframe?: Timeframe | null;
 }
 
+// ============================================================================
+// Pure core loop (no DB / filesystem dependencies)
+// ============================================================================
+
 /**
- * Run an aggregate backtest with signal-based allocation across multiple sub-strategies
+ * Run the core aggregate backtesting loop over pre-loaded adapters and candle data.
+ *
+ * This function is completely pure with respect to I/O — it only depends on the
+ * data provided in `input`. DB/filesystem access is injected via the optional
+ * `subCandleResolver` callback (used for intra-bar SL/TP disambiguation).
+ *
+ * The caller is responsible for:
+ *   1. Loading candles + funding rates from DB
+ *   2. Building AdapterWithData[] (including adapter.init())
+ *   3. Calling generateEquityCurve() on the returned equity arrays
+ *   4. Assembling the final AggregateBacktestResult
  */
-export async function runAggregateBacktest(
-  config: AggregateBacktestConfig,
-  engineConfig: AggregateEngineConfig = {},
-): Promise<AggregateBacktestResult> {
-  const { subStrategies, allocationMode, maxPositions, initialCapital, exchange } = config;
+export async function runCoreAggregateLoop(input: CoreAggregateInput): Promise<CoreAggregateOutput> {
+  const {
+    config,
+    adaptersWithData,
+    initialCapital,
+    feeRate,
+    slippagePercent,
+    positionSizeFraction,
+    enableLogging,
+    onProgress,
+    intraBarTimeframe,
+    subCandleResolver,
+  } = input;
+
+  const { allocationMode, maxPositions, exchange } = config;
   // Mode field is deprecated (always futures). Default to 'futures' when not set.
   const effectiveMode = config.mode ?? 'futures';
-  const positionSizeFraction = engineConfig.positionSizeFraction ?? 0.9;
-  // Defensively convert string dates to timestamps
-  const startDate = typeof config.startDate === 'string' ? new Date(config.startDate).getTime() : config.startDate;
-  const endDate = typeof config.endDate === 'string' ? new Date(config.endDate).getTime() : config.endDate;
-  // engineConfig.feeRate takes priority; fall back to config.feeRate, then Bybit default
-  const feeRate = engineConfig.feeRate ?? config.feeRate ?? DEFAULT_BYBIT_TAKER_FEE_RATE;
-  const slippagePercent = config.slippagePercent ?? 0;
-  const saveResults = engineConfig.saveResults ?? true;
 
   const log = (msg: string): void => {
-    if (engineConfig.enableLogging) console.log(`[AggregateEngine] ${msg}`);
+    if (enableLogging) console.log(`[AggregateEngine] ${msg}`);
   };
 
   /**
@@ -94,133 +150,6 @@ export async function runAggregateBacktest(
     return side === 'buy'
       ? price * (1 + slippagePercent / 100)
       : price * (1 - slippagePercent / 100);
-  }
-
-  log(`Starting aggregate backtest: ${subStrategies.length} sub-strategies, mode=${allocationMode}`);
-
-  // Load BTC daily candles for V3 regime filter (loaded once, shared across all V3 sub-strategies)
-  let btcDailyCandles: Array<{ timestamp: number; close: number }> | null = null;
-
-  async function loadBtcDailyCandles(): Promise<Array<{ timestamp: number; close: number }>> {
-    if (btcDailyCandles !== null) return btcDailyCandles;
-
-    // Try multiple exchange/symbol combos
-    const candidates: Array<[string, string]> = [
-      ['binance', 'BTC/USDT:USDT'],
-      ['binance', 'BTC/USDT'],
-      ['bybit', 'BTC/USDT:USDT'],
-      ['bybit', 'BTC/USDT'],
-    ];
-
-    for (const [ex, sym] of candidates) {
-      const candles = await getCandles(ex, sym, '1d', startDate - 300 * 24 * 60 * 60 * 1000, endDate);
-      if (candles.length >= 200) {
-        btcDailyCandles = candles.map(c => ({ timestamp: c.timestamp, close: c.close }));
-        log(`Loaded ${btcDailyCandles.length} BTC daily candles for regime filter (${ex} ${sym})`);
-        return btcDailyCandles;
-      }
-    }
-
-    const isV3 = subStrategies.some(
-      s => s.strategyName.includes('v3') || s.strategyName.includes('V3'),
-    );
-    if (isV3) {
-      throw new Error(
-        `Could not load BTC daily candles required for V3 regime filter. ` +
-        `Cache BTC/USDT daily candles first using: ` +
-        `npx tsx scripts/cache-candles.ts --exchange=binance --symbols=BTC/USDT --timeframes=1d --from=YYYY-MM-DD --to=YYYY-MM-DD`,
-      );
-    }
-    btcDailyCandles = [];
-    return btcDailyCandles;
-  }
-
-  // 1. Load strategies and create adapters
-  const adaptersWithData: AdapterWithData[] = [];
-
-  for (const subConfig of subStrategies) {
-    const strategy = await loadStrategy(subConfig.strategyName);
-
-    // Inject BTC daily candles for V3 regime filter
-    if (strategy.name.includes('v3') || strategy.name.includes('V3') ||
-        (subConfig.params?.useRegimeFilter === true)) {
-      const btcCandles = await loadBtcDailyCandles();
-      if (btcCandles.length > 0) {
-        (strategy as any)._btcDailyCandles = btcCandles;
-      }
-    }
-
-    const adapter = new SignalAdapter(strategy, subConfig.symbol, subConfig.timeframe, subConfig.params);
-
-    // Load candles from DB
-    const candles = await getCandles(
-      subConfig.exchange || exchange,
-      subConfig.symbol,
-      subConfig.timeframe,
-      startDate,
-      endDate,
-    );
-
-    if (candles.length === 0) {
-      throw new Error(
-        `No candle data for ${subConfig.symbol} (${subConfig.timeframe}) on ${subConfig.exchange || exchange}. ` +
-        `Cache candles first using: npx tsx scripts/cache-candles.ts --exchange=${subConfig.exchange || exchange} --symbols=${subConfig.symbol} --timeframes=${subConfig.timeframe} --from=YYYY-MM-DD --to=YYYY-MM-DD`,
-      );
-    }
-
-    // Validate that we have sufficient candle coverage for the date range
-    validateCandleCoverage(
-      candles.length,
-      subConfig.symbol,
-      subConfig.exchange || exchange,
-      subConfig.timeframe,
-      startDate,
-      endDate,
-      engineConfig.skipCandleValidation,
-    );
-
-    // Load funding rates for futures mode (effectiveMode defaults to 'futures')
-    let fundingRates: FundingRate[] = [];
-    if (effectiveMode === 'futures') {
-      fundingRates = await getFundingRates(
-        subConfig.exchange || exchange,
-        subConfig.symbol,
-        startDate,
-        endDate,
-      );
-
-      // Validate that we have sufficient funding rate coverage (throws if < 80%)
-      validateFundingRateCoverage(
-        fundingRates,
-        subConfig.symbol,
-        subConfig.exchange || exchange,
-        startDate,
-        endDate,
-        engineConfig.skipFundingRateValidation,
-      );
-    }
-
-    // Initialize adapter with candles and funding rates
-    adapter.init(candles, fundingRates);
-
-    // Build timestamp -> index map for O(1) candle lookups
-    const timestampToIndex = new Map<number, number>();
-    candles.forEach((c, i) => timestampToIndex.set(c.timestamp, i));
-
-    adaptersWithData.push({
-      adapter,
-      config: subConfig,
-      candles,
-      fundingRates,
-      timestampToIndex,
-      accumulatedFunding: 0,
-    });
-
-    log(`Loaded ${subConfig.symbol}@${subConfig.timeframe}: ${candles.length} candles, ${fundingRates.length} FR`);
-  }
-
-  if (adaptersWithData.length === 0) {
-    throw new Error('No valid sub-strategies loaded (all had empty candle data)');
   }
 
   // 2. Build unified timeline: union of all candle timestamps, sorted ascending
@@ -345,19 +274,19 @@ export async function runAggregateBacktest(
             // Both triggered on the same bar — try sub-candle resolution to determine order
             pessimisticSlTpCount++; // Count all ambiguous cases
 
-            const subTf = engineConfig.intraBarTimeframe === undefined
+            const subTf = intraBarTimeframe === undefined
               ? getSubTimeframe(awd.config.timeframe as Timeframe)
-              : engineConfig.intraBarTimeframe;
+              : intraBarTimeframe;
 
             let subCandles: Candle[] = [];
-            if (subTf !== null) {
+            if (subTf !== null && subCandleResolver) {
               const barDurationMs = timeframeToMs(awd.config.timeframe as Timeframe);
-              subCandles = await getCandles(
-                awd.config.exchange || exchange,
+              subCandles = await subCandleResolver(
                 awd.config.symbol,
-                subTf,
+                awd.config.exchange || exchange,
                 candle.timestamp,
-                candle.timestamp + barDurationMs - 1,
+                barDurationMs,
+                subTf,
               );
             }
 
@@ -564,8 +493,8 @@ export async function runAggregateBacktest(
     equityValues.push(portfolio.equity);
 
     // Report progress periodically
-    if (engineConfig.onProgress && ti % 100 === 0) {
-      engineConfig.onProgress({
+    if (onProgress && ti % 100 === 0) {
+      onProgress({
         current: ti + 1,
         total: timeline.length,
         percent: ((ti + 1) / timeline.length) * 100,
@@ -607,6 +536,216 @@ export async function runAggregateBacktest(
 
   // Sort all trades by timestamp so metrics calculations are correct
   allTrades.sort((a, b) => a.timestamp - b.timestamp);
+
+  return {
+    allTrades,
+    equityTimestamps,
+    equityValues,
+    signalHistory,
+    perAssetTrades,
+    totalFundingIncome,
+    perSymbolFunding,
+    perSymbolAllocatedCapital,
+    engineStopLossCount,
+    engineTakeProfitCount,
+    pessimisticSlTpCount,
+    subCandleResolvedCount,
+  };
+}
+
+// ============================================================================
+// Orchestrator: load data, run loop, assemble result
+// ============================================================================
+
+/**
+ * Run an aggregate backtest with signal-based allocation across multiple sub-strategies
+ */
+export async function runAggregateBacktest(
+  config: AggregateBacktestConfig,
+  engineConfig: AggregateEngineConfig = {},
+): Promise<AggregateBacktestResult> {
+  const { subStrategies, allocationMode, maxPositions, initialCapital, exchange } = config;
+  // Mode field is deprecated (always futures). Default to 'futures' when not set.
+  const effectiveMode = config.mode ?? 'futures';
+  const positionSizeFraction = engineConfig.positionSizeFraction ?? 0.9;
+  // Defensively convert string dates to timestamps
+  const startDate = typeof config.startDate === 'string' ? new Date(config.startDate).getTime() : config.startDate;
+  const endDate = typeof config.endDate === 'string' ? new Date(config.endDate).getTime() : config.endDate;
+  // engineConfig.feeRate takes priority; fall back to config.feeRate, then Bybit default
+  const feeRate = engineConfig.feeRate ?? config.feeRate ?? DEFAULT_BYBIT_TAKER_FEE_RATE;
+  const slippagePercent = config.slippagePercent ?? 0;
+  const saveResults = engineConfig.saveResults ?? true;
+
+  const log = (msg: string): void => {
+    if (engineConfig.enableLogging) console.log(`[AggregateEngine] ${msg}`);
+  };
+
+  log(`Starting aggregate backtest: ${subStrategies.length} sub-strategies, mode=${allocationMode}`);
+
+  // Load BTC daily candles for V3 regime filter (loaded once, shared across all V3 sub-strategies)
+  let btcDailyCandles: Array<{ timestamp: number; close: number }> | null = null;
+
+  async function loadBtcDailyCandles(): Promise<Array<{ timestamp: number; close: number }>> {
+    if (btcDailyCandles !== null) return btcDailyCandles;
+
+    // Try multiple exchange/symbol combos
+    const candidates: Array<[string, string]> = [
+      ['binance', 'BTC/USDT:USDT'],
+      ['binance', 'BTC/USDT'],
+      ['bybit', 'BTC/USDT:USDT'],
+      ['bybit', 'BTC/USDT'],
+    ];
+
+    for (const [ex, sym] of candidates) {
+      const candles = await getCandles(ex, sym, '1d', startDate - 300 * 24 * 60 * 60 * 1000, endDate);
+      if (candles.length >= 200) {
+        btcDailyCandles = candles.map(c => ({ timestamp: c.timestamp, close: c.close }));
+        log(`Loaded ${btcDailyCandles.length} BTC daily candles for regime filter (${ex} ${sym})`);
+        return btcDailyCandles;
+      }
+    }
+
+    const isV3 = subStrategies.some(
+      s => s.strategyName.includes('v3') || s.strategyName.includes('V3'),
+    );
+    if (isV3) {
+      throw new Error(
+        `Could not load BTC daily candles required for V3 regime filter. ` +
+        `Cache BTC/USDT daily candles first using: ` +
+        `npx tsx scripts/cache-candles.ts --exchange=binance --symbols=BTC/USDT --timeframes=1d --from=YYYY-MM-DD --to=YYYY-MM-DD`,
+      );
+    }
+    btcDailyCandles = [];
+    return btcDailyCandles;
+  }
+
+  // 1. Load strategies and create adapters
+  const adaptersWithData: AdapterWithData[] = [];
+
+  for (const subConfig of subStrategies) {
+    const strategy = await loadStrategy(subConfig.strategyName);
+
+    // Inject BTC daily candles for V3 regime filter
+    if (strategy.name.includes('v3') || strategy.name.includes('V3') ||
+        (subConfig.params?.useRegimeFilter === true)) {
+      const btcCandles = await loadBtcDailyCandles();
+      if (btcCandles.length > 0) {
+        (strategy as any)._btcDailyCandles = btcCandles;
+      }
+    }
+
+    const adapter = new SignalAdapter(strategy, subConfig.symbol, subConfig.timeframe, subConfig.params);
+
+    // Load candles from DB
+    const candles = await getCandles(
+      subConfig.exchange || exchange,
+      subConfig.symbol,
+      subConfig.timeframe,
+      startDate,
+      endDate,
+    );
+
+    if (candles.length === 0) {
+      throw new Error(
+        `No candle data for ${subConfig.symbol} (${subConfig.timeframe}) on ${subConfig.exchange || exchange}. ` +
+        `Cache candles first using: npx tsx scripts/cache-candles.ts --exchange=${subConfig.exchange || exchange} --symbols=${subConfig.symbol} --timeframes=${subConfig.timeframe} --from=YYYY-MM-DD --to=YYYY-MM-DD`,
+      );
+    }
+
+    // Validate that we have sufficient candle coverage for the date range
+    validateCandleCoverage(
+      candles.length,
+      subConfig.symbol,
+      subConfig.exchange || exchange,
+      subConfig.timeframe,
+      startDate,
+      endDate,
+      engineConfig.skipCandleValidation,
+    );
+
+    // Load funding rates for futures mode (effectiveMode defaults to 'futures')
+    let fundingRates: FundingRate[] = [];
+    if (effectiveMode === 'futures') {
+      fundingRates = await getFundingRates(
+        subConfig.exchange || exchange,
+        subConfig.symbol,
+        startDate,
+        endDate,
+      );
+
+      // Validate that we have sufficient funding rate coverage (throws if < 80%)
+      validateFundingRateCoverage(
+        fundingRates,
+        subConfig.symbol,
+        subConfig.exchange || exchange,
+        startDate,
+        endDate,
+        engineConfig.skipFundingRateValidation,
+      );
+    }
+
+    // Initialize adapter with candles and funding rates
+    adapter.init(candles, fundingRates);
+
+    // Build timestamp -> index map for O(1) candle lookups
+    const timestampToIndex = new Map<number, number>();
+    candles.forEach((c, i) => timestampToIndex.set(c.timestamp, i));
+
+    adaptersWithData.push({
+      adapter,
+      config: subConfig,
+      candles,
+      fundingRates,
+      timestampToIndex,
+      accumulatedFunding: 0,
+    });
+
+    log(`Loaded ${subConfig.symbol}@${subConfig.timeframe}: ${candles.length} candles, ${fundingRates.length} FR`);
+  }
+
+  if (adaptersWithData.length === 0) {
+    throw new Error('No valid sub-strategies loaded (all had empty candle data)');
+  }
+
+  // Build a real subCandleResolver that calls getCandles from the DB
+  const realSubCandleResolver = async (
+    symbol: string,
+    exch: string,
+    barTimestamp: number,
+    barDurationMs: number,
+    subTf: string,
+  ): Promise<Candle[]> => {
+    return getCandles(exch, symbol, subTf as Timeframe, barTimestamp, barTimestamp + barDurationMs - 1);
+  };
+
+  // Run the pure core loop
+  const loopOutput = await runCoreAggregateLoop({
+    config: { ...config, startDate, endDate },
+    adaptersWithData,
+    initialCapital,
+    feeRate,
+    slippagePercent,
+    positionSizeFraction,
+    enableLogging: engineConfig.enableLogging,
+    onProgress: engineConfig.onProgress,
+    intraBarTimeframe: engineConfig.intraBarTimeframe,
+    subCandleResolver: realSubCandleResolver,
+  });
+
+  const {
+    allTrades,
+    equityTimestamps,
+    equityValues,
+    signalHistory,
+    perAssetTrades,
+    totalFundingIncome,
+    perSymbolFunding,
+    perSymbolAllocatedCapital,
+    engineStopLossCount,
+    engineTakeProfitCount,
+    pessimisticSlTpCount,
+    subCandleResolvedCount,
+  } = loopOutput;
 
   // 6. Generate equity curve with drawdown annotations
   const equity = generateEquityCurve(equityTimestamps, equityValues, initialCapital);
@@ -691,28 +830,28 @@ export async function runAggregateBacktest(
       }
 
       // Mark-to-market equity at this bar
-      let equity: number;
+      let assetEquity: number;
       if (currentPosition) {
         const unrealizedPnl =
           currentPosition.direction === 'long'
             ? (candle.close - currentPosition.entryPrice) * currentPosition.amount
             : (currentPosition.entryPrice - candle.close) * currentPosition.amount;
-        equity = realizedEquity + unrealizedPnl;
+        assetEquity = realizedEquity + unrealizedPnl;
       } else {
-        equity = realizedEquity;
+        assetEquity = realizedEquity;
       }
 
       assetEquityTimestamps.push(candle.timestamp);
-      assetEquityValues.push(equity);
+      assetEquityValues.push(assetEquity);
     }
 
-    const assetEquity: EquityPoint[] = assetEquityTimestamps.length > 0
+    const assetEquityCurve: EquityPoint[] = assetEquityTimestamps.length > 0
       ? generateEquityCurve(assetEquityTimestamps, assetEquityValues, perAssetCapital)
       : [];
 
-    const assetMetrics = calculateMetrics(trades, assetEquity, perAssetCapital, awd.config.timeframe);
+    const assetMetrics = calculateMetrics(trades, assetEquityCurve, perAssetCapital, awd.config.timeframe);
     const assetRolling = trades.length > 0
-      ? calculateRollingMetrics(trades, assetEquity, perAssetCapital)
+      ? calculateRollingMetrics(trades, assetEquityCurve, perAssetCapital)
       : undefined;
 
     const symbolFunding = perSymbolFunding.get(symbol) ?? 0;
@@ -722,7 +861,7 @@ export async function runAggregateBacktest(
       symbol,
       timeframe: awd.config.timeframe,
       trades,
-      equity: assetEquity,
+      equity: assetEquityCurve,
       metrics: {
         ...assetMetrics,
         totalFundingIncome: symbolFunding,

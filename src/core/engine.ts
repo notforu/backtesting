@@ -19,7 +19,7 @@ import { Portfolio } from './portfolio.js';
 import { LeveragedPortfolio } from './leveraged-portfolio.js';
 import { Broker, type BrokerConfig } from './broker.js';
 import { loadStrategy } from '../strategy/loader.js';
-import { validateStrategyParams, type StrategyContext, type LogEntry } from '../strategy/base.js';
+import { validateStrategyParams, type StrategyContext, type LogEntry, type Strategy } from '../strategy/base.js';
 import { CandleViewImpl, type PendingAction } from './candle-view.js';
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
 import { getProvider } from '../data/providers/index.js';
@@ -27,6 +27,545 @@ import { getCandles, saveCandles, saveBacktestRun, getCandleDateRange, getFundin
 import { DEFAULT_TAKER_FEE_RATE, DEFAULT_FUTURES_SLIPPAGE_PERCENT } from './constants.js';
 import { validateFundingRateCoverage, validateCandleCoverage } from './funding-rate-validation.js';
 import { checkSlTpTrigger, resolveAmbiguousExit, getSubTimeframe } from './intra-bar.js';
+
+// ============================================================================
+// Core backtest loop — pure, injectable, no DB / filesystem dependencies
+// ============================================================================
+
+/**
+ * All inputs required to run the inner backtest loop.
+ * Every external dependency (candles, funding rates, sub-candle resolution)
+ * is passed in explicitly so the function has zero imports from ../data/.
+ */
+export interface CoreBacktestInput {
+  /** Full backtest configuration (validated) */
+  config: BacktestConfig;
+  /** Candles for the backtest period (sorted ascending) */
+  candles: Candle[];
+  /** Pre-loaded, validated strategy instance */
+  strategy: Strategy;
+  /** Validated strategy parameters */
+  params: Record<string, unknown>;
+  /** Funding rates for the period (futures mode; empty array for spot) */
+  fundingRates: FundingRate[];
+  /** Broker fee/slippage configuration */
+  brokerConfig: BrokerConfig;
+  /** Leverage multiplier (1 = no leverage) */
+  leverage: number;
+  /** Starting capital */
+  initialCapital: number;
+  /** Whether to print log messages to console (default false) */
+  enableLogging?: boolean;
+  /**
+   * Stop early if equity drops below this fraction of initial capital.
+   * e.g. 0.3 = stop when equity < 30% of initialCapital.
+   */
+  earlyStopEquityFraction?: number;
+  /** Progress callback invoked every 100 bars */
+  onProgress?: (progress: { current: number; total: number; percent: number }) => void;
+  /**
+   * Sub-candle timeframe for intra-bar SL/TP disambiguation.
+   * - undefined → auto-detect from config.timeframe (default)
+   * - null       → disable sub-candle resolution (always pessimistic)
+   * - Timeframe  → use this specific sub-timeframe
+   */
+  intraBarTimeframe?: Timeframe | null;
+  /**
+   * Injectable sub-candle resolver.
+   * Called when both SL and TP trigger on the same bar.
+   * If not provided, the ambiguous case always uses pessimistic fill (SL wins).
+   */
+  subCandleResolver?: (barTimestamp: number, barDurationMs: number, subTimeframe: Timeframe) => Promise<Candle[]>;
+}
+
+/**
+ * Raw output of the core backtest loop.
+ * The caller (runBacktest) converts this to a full BacktestResult by computing
+ * metrics, equity curve, and saving to DB.
+ */
+export interface CoreBacktestOutput {
+  /** All trades executed during the backtest */
+  trades: Trade[];
+  /** Per-bar equity snapshots (parallel arrays) */
+  equity: { timestamp: number; equity: number }[];
+  /** Per-bar indicator values emitted via ctx.setIndicator() */
+  indicators: Record<string, { timestamps: number[]; values: number[] }>;
+  /** Total funding income (positive = received, negative = paid) */
+  totalFundingIncome: number;
+  /** Number of bars where engine-managed SL triggered */
+  engineStopLossCount: number;
+  /** Number of bars where engine-managed TP triggered */
+  engineTakeProfitCount: number;
+  /** Number of bars where both SL and TP triggered simultaneously */
+  pessimisticSlTpCount: number;
+  /** Number of bars where sub-candle resolution was used */
+  subCandleResolvedCount: number;
+  /** Total bars processed (may be less than candles.length if early-stopped) */
+  barsProcessed: number;
+}
+
+/**
+ * Run the core backtest loop with no external I/O.
+ *
+ * This function is the pure heart of the backtesting engine.
+ * It accepts all data as inputs and returns raw loop outputs.
+ * It has zero imports from ../data/ — fully unit-testable.
+ */
+export async function runCoreBacktestLoop(input: CoreBacktestInput): Promise<CoreBacktestOutput> {
+  const {
+    config,
+    candles,
+    strategy,
+    params,
+    fundingRates,
+    brokerConfig,
+    leverage,
+    initialCapital,
+    enableLogging = false,
+    earlyStopEquityFraction,
+    onProgress,
+    subCandleResolver,
+  } = input;
+
+  // Resolve intraBarTimeframe: undefined → auto-detect, null → disabled, Timeframe → use as-is
+  const intraBarTimeframe: Timeframe | null =
+    input.intraBarTimeframe === undefined
+      ? getSubTimeframe(config.timeframe as Timeframe)
+      : input.intraBarTimeframe;
+
+  // --- Internal log helper (no DB, just console) ---
+  const log = (message: string, timestamp: number): void => {
+    if (enableLogging) {
+      console.log(`[${new Date(timestamp).toISOString()}] ${message}`);
+    }
+  };
+
+  // --- Build funding rate map for O(1) lookup ---
+  const fundingRateMap: Map<number, FundingRate> | null = fundingRates.length > 0
+    ? new Map(fundingRates.map(fr => [fr.timestamp, fr]))
+    : null;
+
+  const isFuturesMode = config.mode === 'futures';
+
+  // --- Portfolio + Broker ---
+  const portfolio = leverage > 1
+    ? new LeveragedPortfolio(initialCapital, config.symbol, leverage)
+    : new Portfolio(initialCapital, config.symbol);
+  const broker = new Broker(portfolio, brokerConfig);
+
+  // --- Result accumulators ---
+  const trades: Trade[] = [];
+  const equityPoints: { timestamp: number; equity: number }[] = [];
+  const filledOrders: Order[] = [];
+  const indicators: Record<string, { timestamps: number[]; values: number[] }> = {};
+  let barIndicators: Record<string, number> = {};
+
+  // --- Per-position funding income accumulator ---
+  const fundingByPositionId = new Map<string, number>();
+  let totalFundingIncome = 0;
+
+  // --- Pending action queue ---
+  let pendingActions: PendingAction[] = [];
+
+  // --- Engine-managed SL/TP state ---
+  let activeStopLoss: number | null = null;
+  let activeTakeProfit: number | null = null;
+  let engineStopLossCount = 0;
+  let engineTakeProfitCount = 0;
+  let pessimisticSlTpCount = 0;
+  let subCandleResolvedCount = 0;
+
+  // --- Slippage helper for engine-managed SL/TP exits ---
+  function applySlippageToExitPrice(price: number, side: 'long' | 'short'): number {
+    const slippage = brokerConfig.slippagePercent ?? 0;
+    if (slippage === 0) return price;
+    // Closing a long = selling → adverse slippage goes down
+    // Closing a short = buying → adverse slippage goes up
+    return side === 'long'
+      ? price * (1 - slippage / 100)
+      : price * (1 + slippage / 100);
+  }
+
+  // --- Build reusable context ---
+  const reusableCandleView = new CandleViewImpl(candles, 0);
+
+  const ctx: StrategyContext = {
+    get candles(): Candle[] {
+      return candles.slice(0, ctx.currentIndex + 1);
+    },
+    candleView: reusableCandleView,
+    currentIndex: 0,
+    currentCandle: candles[0],
+    params,
+
+    portfolio: portfolio.getState(),
+    balance: 0,
+    equity: 0,
+    longPosition: null,
+    shortPosition: null,
+
+    fundingRates: fundingRateMap ? fundingRates : undefined,
+    currentFundingRate: undefined,
+
+    openLong(amount: number): void {
+      if (amount > 0) pendingActions.push({ action: 'OPEN_LONG', amount });
+    },
+    closeLong(amount?: number): void {
+      pendingActions.push({ action: 'CLOSE_LONG', amount: amount ?? 'all' });
+    },
+    openShort(amount: number): void {
+      if (amount > 0) pendingActions.push({ action: 'OPEN_SHORT', amount });
+    },
+    closeShort(amount?: number): void {
+      pendingActions.push({ action: 'CLOSE_SHORT', amount: amount ?? 'all' });
+    },
+    buy(amount: number): void {
+      if (amount > 0) pendingActions.push({ action: 'OPEN_LONG', amount });
+    },
+    sell(amount: number): void {
+      if (amount > 0) pendingActions.push({ action: 'CLOSE_LONG', amount });
+    },
+    setStopLoss(price: number | null): void {
+      activeStopLoss = price;
+    },
+    setTakeProfit(price: number | null): void {
+      activeTakeProfit = price;
+    },
+    log(message: string): void {
+      log(`[Strategy] ${message}`, ctx.currentCandle.timestamp);
+    },
+    setIndicator(name: string, value: number): void {
+      barIndicators[name] = value;
+    },
+  };
+
+  const updateContext = (currentIndex: number): void => {
+    const portfolioState = portfolio.getState();
+    ctx.currentIndex = currentIndex;
+    ctx.currentCandle = candles[currentIndex];
+    reusableCandleView.endIndex = currentIndex;
+    ctx.portfolio = portfolioState;
+    ctx.balance = portfolioState.balance;
+    ctx.equity = portfolioState.equity;
+    ctx.longPosition = portfolioState.longPosition;
+    ctx.shortPosition = portfolioState.shortPosition;
+    if (fundingRateMap) {
+      ctx.currentFundingRate = fundingRateMap.get(candles[currentIndex].timestamp) ?? null;
+    }
+  };
+
+  // --- Strategy init ---
+  if (strategy.init) {
+    updateContext(0);
+    strategy.init(ctx);
+  }
+
+  // --- Main loop ---
+  const totalBars = candles.length;
+  log(`Processing ${totalBars} bars`, Date.now());
+
+  let barsProcessed = 0;
+
+  for (let i = 0; i < totalBars; i++) {
+    const candle = candles[i];
+    barsProcessed++;
+
+    // Update portfolio price
+    portfolio.updatePrice(candle.close);
+
+    // Check for liquidation (only for leveraged portfolios)
+    if (portfolio instanceof LeveragedPortfolio && portfolio.wasLiquidated) {
+      const liqTrade = portfolio.getLiquidationTrade();
+      if (liqTrade) {
+        trades.push(liqTrade);
+        log(`LIQUIDATION: Position closed at ${candle.close}`, candle.timestamp);
+      }
+    }
+
+    // Process funding payments (futures mode)
+    if (fundingRateMap && isFuturesMode) {
+      const fr = fundingRateMap.get(candle.timestamp);
+      if (fr) {
+        const longPos = portfolio.longPosition;
+        const shortPos = portfolio.shortPosition;
+
+        if (longPos) {
+          const markPrice = fr.markPrice ?? candle.close;
+          const payment = -longPos.amount * markPrice * fr.fundingRate;
+          portfolio.applyFundingPayment(payment);
+          totalFundingIncome += payment;
+          fundingByPositionId.set(longPos.id, (fundingByPositionId.get(longPos.id) ?? 0) + payment);
+        }
+
+        if (shortPos) {
+          const markPrice = fr.markPrice ?? candle.close;
+          const payment = shortPos.amount * markPrice * fr.fundingRate;
+          portfolio.applyFundingPayment(payment);
+          totalFundingIncome += payment;
+          fundingByPositionId.set(shortPos.id, (fundingByPositionId.get(shortPos.id) ?? 0) + payment);
+        }
+      }
+    }
+
+    // Reset per-bar state
+    pendingActions = [];
+    barIndicators = {};
+
+    // -------------------------------------------------------------------------
+    // STEP A: Engine-managed SL/TP check BEFORE strategy processes this bar
+    // -------------------------------------------------------------------------
+    const hasLong = portfolio.hasLongPosition;
+    const hasShort = portfolio.hasShortPosition;
+    const hasPosition = hasLong || hasShort;
+    const hasSlTp = activeStopLoss !== null || activeTakeProfit !== null;
+
+    if (hasPosition && hasSlTp) {
+      const side = hasLong ? 'long' : 'short';
+      const { slTriggered, tpTriggered } = checkSlTpTrigger(
+        candle,
+        side,
+        activeStopLoss,
+        activeTakeProfit,
+      );
+
+      let engineExitPrice: number | null = null;
+      let engineExitReason: 'stop_loss' | 'take_profit' | null = null;
+
+      if (slTriggered && tpTriggered) {
+        // Ambiguous: both triggered on same bar
+        let subCandles: Candle[] = [];
+        if (intraBarTimeframe !== null && subCandleResolver) {
+          const barDurationMs = timeframeToMs(config.timeframe as Timeframe);
+          subCandles = await subCandleResolver(candle.timestamp, barDurationMs, intraBarTimeframe);
+          if (subCandles.length > 0) subCandleResolvedCount++;
+        }
+
+        const exitResult = resolveAmbiguousExit(
+          subCandles,
+          side,
+          activeStopLoss!,
+          activeTakeProfit!,
+        );
+        engineExitPrice = exitResult.exitPrice;
+        engineExitReason = exitResult.exitType;
+        pessimisticSlTpCount++;
+      } else if (slTriggered) {
+        engineExitPrice = activeStopLoss!;
+        engineExitReason = 'stop_loss';
+      } else if (tpTriggered) {
+        engineExitPrice = activeTakeProfit!;
+        engineExitReason = 'take_profit';
+      }
+
+      if (engineExitReason === 'stop_loss') engineStopLossCount++;
+      else if (engineExitReason === 'take_profit') engineTakeProfitCount++;
+
+      if (engineExitPrice !== null && engineExitReason !== null) {
+        const fillPrice = applySlippageToExitPrice(engineExitPrice, side);
+        const feeRateVal = brokerConfig.feeRate ?? 0;
+
+        let engineTrade: Trade;
+        if (hasLong) {
+          const pos = portfolio.longPosition!;
+          engineTrade = portfolio.closeLong(pos.amount, fillPrice, candle.timestamp, feeRateVal);
+        } else {
+          const pos = portfolio.shortPosition!;
+          engineTrade = portfolio.closeShort(pos.amount, fillPrice, candle.timestamp, feeRateVal);
+        }
+
+        engineTrade.exitReason = engineExitReason;
+
+        if (engineTrade.closedPositionId && fundingByPositionId.has(engineTrade.closedPositionId)) {
+          engineTrade.fundingIncome = fundingByPositionId.get(engineTrade.closedPositionId)!;
+          fundingByPositionId.delete(engineTrade.closedPositionId);
+        }
+
+        if (fundingRates.length > 0) {
+          const nearest = findNearestFundingRate(fundingRates, candle.timestamp);
+          if (nearest) engineTrade.fundingRate = nearest.fundingRate;
+        }
+
+        trades.push(engineTrade);
+
+        activeStopLoss = null;
+        activeTakeProfit = null;
+
+        if (strategy.onOrderFilled) {
+          const syntheticOrder: Order = {
+            id: uuidv4(),
+            symbol: config.symbol,
+            side: side === 'long' ? 'sell' : 'buy',
+            type: 'market',
+            amount: engineTrade.amount,
+            status: 'filled',
+            createdAt: candle.timestamp,
+            filledAt: candle.timestamp,
+            filledPrice: fillPrice,
+          };
+          filledOrders.push(syntheticOrder);
+        }
+
+        updateContext(i);
+
+        if (strategy.onOrderFilled) {
+          const engineOrder = filledOrders[filledOrders.length - 1];
+          strategy.onOrderFilled(ctx, engineOrder);
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // STEP B: Normal strategy processing
+    // -------------------------------------------------------------------------
+    updateContext(i);
+    strategy.onBar(ctx);
+
+    // When strategy closes a position, clear active SL/TP
+    if ((hasLong && !portfolio.hasLongPosition) || (hasShort && !portfolio.hasShortPosition)) {
+      activeStopLoss = null;
+      activeTakeProfit = null;
+    }
+
+    // Flush per-bar indicators
+    for (const [name, value] of Object.entries(barIndicators)) {
+      if (!indicators[name]) {
+        indicators[name] = { timestamps: [], values: [] };
+      }
+      indicators[name].timestamps.push(candle.timestamp);
+      indicators[name].values.push(value);
+    }
+    barIndicators = {};
+
+    // Process strategy actions
+    for (const pendingAction of pendingActions) {
+      const amount = pendingAction.amount === 'all'
+        ? getPositionAmount(portfolio, pendingAction.action)
+        : pendingAction.amount;
+
+      if (amount > 0) {
+        broker.createOrder(
+          {
+            symbol: config.symbol,
+            action: pendingAction.action,
+            type: 'market',
+            amount,
+          },
+          candle.timestamp
+        );
+      }
+    }
+
+    // Process pending orders
+    const { orders: processedOrders, trades: newTrades } = broker.processPendingOrders(candle);
+    filledOrders.push(...processedOrders);
+
+    // Attach nearest funding rate to each new trade (futures mode only)
+    if (fundingRates.length > 0) {
+      for (const trade of newTrades) {
+        const nearest = findNearestFundingRate(fundingRates, trade.timestamp);
+        if (nearest) trade.fundingRate = nearest.fundingRate;
+      }
+    }
+
+    // Attach funding income to close trades
+    for (const trade of newTrades) {
+      if (trade.closedPositionId && fundingByPositionId.has(trade.closedPositionId)) {
+        trade.fundingIncome = fundingByPositionId.get(trade.closedPositionId)!;
+        fundingByPositionId.delete(trade.closedPositionId);
+      }
+    }
+
+    trades.push(...newTrades);
+
+    // Call onOrderFilled for each filled order
+    if (strategy.onOrderFilled) {
+      for (const order of processedOrders.filter((o) => o.status === 'filled')) {
+        strategy.onOrderFilled(ctx, order);
+      }
+    }
+
+    // Record equity point
+    equityPoints.push({ timestamp: candle.timestamp, equity: portfolio.equity });
+
+    // Early termination check (every 100 bars)
+    if (i % 100 === 0 && earlyStopEquityFraction !== undefined) {
+      if (portfolio.equity < initialCapital * earlyStopEquityFraction) {
+        log(
+          `Early termination: equity ${portfolio.equity.toFixed(2)} dropped below ${(earlyStopEquityFraction * 100).toFixed(0)}% of initial capital`,
+          candle.timestamp,
+        );
+        break;
+      }
+    }
+
+    // Report progress
+    if (onProgress && i % 100 === 0) {
+      onProgress({
+        current: i + 1,
+        total: totalBars,
+        percent: ((i + 1) / totalBars) * 100,
+      });
+    }
+  }
+
+  // --- Strategy onEnd ---
+  if (strategy.onEnd) {
+    pendingActions = [];
+    updateContext(totalBars - 1);
+    strategy.onEnd(ctx);
+
+    for (const pendingAction of pendingActions) {
+      const amount = pendingAction.amount === 'all'
+        ? getPositionAmount(portfolio, pendingAction.action)
+        : pendingAction.amount;
+
+      if (amount > 0) {
+        broker.createOrder(
+          {
+            symbol: config.symbol,
+            action: pendingAction.action,
+            type: 'market',
+            amount,
+          },
+          candles[totalBars - 1].timestamp
+        );
+      }
+    }
+
+    const { orders: finalOrders, trades: finalTrades } = broker.processPendingOrders(
+      candles[totalBars - 1]
+    );
+    filledOrders.push(...finalOrders);
+
+    if (fundingRates.length > 0) {
+      for (const trade of finalTrades) {
+        const nearest = findNearestFundingRate(fundingRates, trade.timestamp);
+        if (nearest) trade.fundingRate = nearest.fundingRate;
+      }
+    }
+
+    for (const trade of finalTrades) {
+      if (trade.closedPositionId && fundingByPositionId.has(trade.closedPositionId)) {
+        trade.fundingIncome = fundingByPositionId.get(trade.closedPositionId)!;
+        fundingByPositionId.delete(trade.closedPositionId);
+      }
+    }
+
+    trades.push(...finalTrades);
+  }
+
+  return {
+    trades,
+    equity: equityPoints,
+    indicators,
+    totalFundingIncome,
+    engineStopLossCount,
+    engineTakeProfitCount,
+    pessimisticSlTpCount,
+    subCandleResolvedCount,
+    barsProcessed,
+  };
+}
 
 /**
  * Engine configuration options
@@ -144,7 +683,18 @@ function findNearestFundingRate(rates: FundingRate[], timestamp: number): Fundin
 }
 
 /**
- * Run a backtest with the given configuration
+ * Run a backtest with the given configuration.
+ *
+ * Acts as an orchestrator:
+ * 1. Validates config
+ * 2. Loads strategy / candles / funding rates / fees
+ * 3. Builds CoreBacktestInput (with real subCandleResolver)
+ * 4. Calls runCoreBacktestLoop()
+ * 5. Converts CoreBacktestOutput → BacktestResult (metrics, equity curve)
+ * 6. Saves to DB if requested
+ *
+ * The public API is unchanged (backward compatible).
+ *
  * @param config - Backtest configuration
  * @param engineConfig - Engine options
  * @returns Backtest result with metrics and trades
@@ -227,13 +777,8 @@ export async function runBacktest(
 
   log(`Loaded ${candles.length} candles`, Date.now());
 
-  // Load funding rates for futures mode (use pre-loaded if provided)
-  let fundingRateMap: Map<number, FundingRate> | null = null;
+  // 3. Load funding rates for futures mode (use pre-loaded if provided)
   let allFundingRates: FundingRate[] = [];
-  let totalFundingIncome = 0;
-
-  // Track cumulative funding income per position ID (for per-trade breakdown)
-  const fundingByPositionId = new Map<string, number>();
 
   if (validatedConfig.mode === 'futures') {
     if (options.preloadedFundingRates) {
@@ -259,15 +804,9 @@ export async function runBacktest(
       validatedConfig.endDate,
       options.skipFundingRateValidation,
     );
-
-    // Build map for O(1) lookup by timestamp
-    fundingRateMap = new Map();
-    for (const fr of allFundingRates) {
-      fundingRateMap.set(fr.timestamp, fr);
-    }
   }
 
-  // 3. Get trading fees (skip API call if skipFeeFetch is set)
+  // 4. Get trading fees (skip API call if skipFeeFetch is set)
   let feeRate = options.broker?.feeRate ?? DEFAULT_TAKER_FEE_RATE;
 
   if (!options.skipFeeFetch) {
@@ -275,7 +814,6 @@ export async function runBacktest(
     const provider = getProvider(validatedConfig.exchange);
     try {
       const fees = await provider.fetchTradingFees(validatedConfig.symbol);
-      // Use taker fee for market orders (default order type)
       feeRate = fees.taker;
       log(`Using exchange fee rate: ${(feeRate * 100).toFixed(3)}% (taker)`, Date.now());
     } catch {
@@ -283,67 +821,17 @@ export async function runBacktest(
     }
   }
 
-  // 4. Initialize portfolio and broker with fetched fee rate
   const brokerConfig: BrokerConfig = {
     ...options.broker,
     feeRate,
   };
 
   const leverage = validatedConfig.leverage ?? 1;
-  const portfolio = leverage > 1
-    ? new LeveragedPortfolio(validatedConfig.initialCapital, validatedConfig.symbol, leverage)
-    : new Portfolio(validatedConfig.initialCapital, validatedConfig.symbol);
-  const broker = new Broker(portfolio, brokerConfig);
-
   log(`Using leverage: ${leverage}x`, Date.now());
 
-  // 4. Track results
-  const trades: Trade[] = [];
-  const equityTimestamps: number[] = [];
-  const equityValues: number[] = [];
-  const filledOrders: Order[] = [];
-
-  // Indicator collector (populated via context.setIndicator())
-  const indicators: Record<string, { timestamps: number[]; values: number[] }> = {};
-  // Per-bar staging area — flushed after each strategy.onBar() call
-  let barIndicators: Record<string, number> = {};
-
-  // Action queue for the strategy
-  let pendingActions: PendingAction[] = [];
-
-  // Engine-managed SL/TP state (set by strategy via context methods)
-  let activeStopLoss: number | null = null;
-  let activeTakeProfit: number | null = null;
-
-  // Engine-managed SL/TP exit counters (reported in PerformanceMetrics)
-  let engineStopLossCount = 0;
-  let engineTakeProfitCount = 0;
-  let pessimisticSlTpCount = 0;
-
-  // Track ranges where sub-candles have already been fetched to avoid re-fetching
+  // 5. Build the injectable sub-candle resolver (wraps DB + exchange fetch)
   const subCandleFetchedRanges = new Set<string>();
 
-  /**
-   * Apply slippage to a SL/TP fill price.
-   * For long exits (closing long, covering short SL): selling → price moves down.
-   * For short exits (closing short, covering long SL): buying → price moves up.
-   */
-  function applySlippageToExitPrice(price: number, side: 'long' | 'short'): number {
-    const slippage = options.broker?.slippagePercent ?? 0;
-    if (slippage === 0) return price;
-    // Closing a long = selling → adverse slippage goes down
-    // Closing a short = buying → adverse slippage goes up
-    if (side === 'long') {
-      return price * (1 - slippage / 100);
-    } else {
-      return price * (1 + slippage / 100);
-    }
-  }
-
-  /**
-   * Fetch sub-candles for a specific bar to resolve ambiguous SL/TP exits.
-   * Tries DB first, then falls back to exchange provider.
-   */
   async function fetchSubCandlesForBar(
     barTimestamp: number,
     barDurationMs: number,
@@ -351,7 +839,6 @@ export async function runBacktest(
   ): Promise<Candle[]> {
     const rangeKey = `${subTimeframe}:${barTimestamp}`;
     if (subCandleFetchedRanges.has(rangeKey)) {
-      // Already fetched for this bar, try DB directly
       return getCandles(
         validatedConfig.exchange,
         validatedConfig.symbol,
@@ -361,7 +848,6 @@ export async function runBacktest(
       );
     }
 
-    // Try DB first
     const dbCandles = await getCandles(
       validatedConfig.exchange,
       validatedConfig.symbol,
@@ -375,7 +861,6 @@ export async function runBacktest(
       return dbCandles;
     }
 
-    // Not in DB — try fetching from exchange
     try {
       const provider = getProvider(validatedConfig.exchange);
       const fetched = await provider.fetchCandles(
@@ -392,439 +877,50 @@ export async function runBacktest(
       subCandleFetchedRanges.add(rangeKey);
       return fetched;
     } catch {
-      // If we can't fetch sub-candles, return empty (will use pessimistic fallback)
       subCandleFetchedRanges.add(rangeKey);
       return [];
     }
   }
 
-  // 5. Create a single reusable context object (updated each bar to avoid per-bar allocation)
-  const reusableCandleView = new CandleViewImpl(candles, 0);
-
-  const ctx: StrategyContext = {
-    // Market data - candleView is memory efficient
-    get candles(): Candle[] {
-      // Only allocate array if explicitly accessed (legacy strategies)
-      return candles.slice(0, ctx.currentIndex + 1);
-    },
-    candleView: reusableCandleView,
-    currentIndex: 0,
-    currentCandle: candles[0],
+  // 6. Run the pure core loop
+  log(`Processing ${candles.length} bars`, Date.now());
+  const loopOutput = await runCoreBacktestLoop({
+    config: validatedConfig,
+    candles,
+    strategy,
     params,
+    fundingRates: allFundingRates,
+    brokerConfig,
+    leverage,
+    initialCapital: validatedConfig.initialCapital,
+    enableLogging: options.enableLogging,
+    earlyStopEquityFraction: options.earlyStopEquityFraction,
+    onProgress: options.onProgress,
+    intraBarTimeframe: options.intraBarTimeframe,
+    subCandleResolver: fetchSubCandlesForBar,
+  });
 
-    // Portfolio state (read-only) — updated each bar
-    portfolio: portfolio.getState(),
-    balance: 0,
-    equity: 0,
-    longPosition: null,
-    shortPosition: null,
+  const {
+    trades,
+    equity: equityPoints,
+    indicators,
+    totalFundingIncome,
+    engineStopLossCount,
+    engineTakeProfitCount,
+    pessimisticSlTpCount,
+  } = loopOutput;
 
-    // Funding rate data (futures mode)
-    fundingRates: fundingRateMap ? allFundingRates : undefined,
-    currentFundingRate: undefined,
+  // 7. Generate equity curve with drawdown
+  const equityTimestamps = equityPoints.map(p => p.timestamp);
+  const equityValues = equityPoints.map(p => p.equity);
 
-    // Trading actions
-    openLong(amount: number): void {
-      if (amount > 0) {
-        pendingActions.push({ action: 'OPEN_LONG', amount });
-      }
-    },
-
-    closeLong(amount?: number): void {
-      pendingActions.push({ action: 'CLOSE_LONG', amount: amount ?? 'all' });
-    },
-
-    openShort(amount: number): void {
-      if (amount > 0) {
-        pendingActions.push({ action: 'OPEN_SHORT', amount });
-      }
-    },
-
-    closeShort(amount?: number): void {
-      pendingActions.push({ action: 'CLOSE_SHORT', amount: amount ?? 'all' });
-    },
-
-    // Legacy actions (deprecated but supported for backwards compatibility)
-    buy(amount: number): void {
-      if (amount > 0) {
-        pendingActions.push({ action: 'OPEN_LONG', amount });
-      }
-    },
-
-    sell(amount: number): void {
-      // Legacy sell closes long position
-      if (amount > 0) {
-        pendingActions.push({ action: 'CLOSE_LONG', amount });
-      }
-    },
-
-    // Stop-loss / Take-profit (engine-managed)
-    setStopLoss(price: number | null): void {
-      activeStopLoss = price;
-    },
-
-    setTakeProfit(price: number | null): void {
-      activeTakeProfit = price;
-    },
-
-    // Utilities
-    log(message: string): void {
-      log(`[Strategy] ${message}`, ctx.currentCandle.timestamp);
-    },
-
-    setIndicator(name: string, value: number): void {
-      barIndicators[name] = value;
-    },
-  };
-
-  /**
-   * Update the reusable context in-place for the given bar index.
-   * Avoids per-bar object allocation (1.5M+ allocations for large optimizer runs).
-   */
-  const updateContext = (currentIndex: number): void => {
-    const portfolioState = portfolio.getState();
-    ctx.currentIndex = currentIndex;
-    ctx.currentCandle = candles[currentIndex];
-    reusableCandleView.endIndex = currentIndex;
-    ctx.portfolio = portfolioState;
-    ctx.balance = portfolioState.balance;
-    ctx.equity = portfolioState.equity;
-    ctx.longPosition = portfolioState.longPosition;
-    ctx.shortPosition = portfolioState.shortPosition;
-    if (fundingRateMap) {
-      ctx.currentFundingRate = fundingRateMap.get(candles[currentIndex].timestamp) ?? null;
-    }
-  };
-
-  // 6. Call strategy init
-  if (strategy.init) {
-    updateContext(0);
-    strategy.init(ctx);
-  }
-
-  // 7. Main backtest loop
-  const totalBars = candles.length;
-  log(`Processing ${totalBars} bars`, Date.now());
-
-  for (let i = 0; i < totalBars; i++) {
-    const candle = candles[i];
-
-    // Update portfolio price
-    portfolio.updatePrice(candle.close);
-
-    // Check for liquidation (only for leveraged portfolios)
-    if (portfolio instanceof LeveragedPortfolio && portfolio.wasLiquidated) {
-      const liqTrade = portfolio.getLiquidationTrade();
-      if (liqTrade) {
-        trades.push(liqTrade);
-        log(`LIQUIDATION: Position closed at ${candle.close}`, candle.timestamp);
-      }
-    }
-
-    // Process funding payments (futures mode)
-    if (fundingRateMap && validatedConfig.mode === 'futures') {
-      const fr = fundingRateMap.get(candle.timestamp);
-      if (fr) {
-        const longPos = portfolio.longPosition;
-        const shortPos = portfolio.shortPosition;
-
-        if (longPos) {
-          // Long pays when rate positive, receives when negative
-          const markPrice = fr.markPrice ?? candle.close;
-          const payment = -longPos.amount * markPrice * fr.fundingRate;
-          portfolio.applyFundingPayment(payment);
-          totalFundingIncome += payment;
-          // Accumulate funding for this position
-          fundingByPositionId.set(longPos.id, (fundingByPositionId.get(longPos.id) ?? 0) + payment);
-        }
-
-        if (shortPos) {
-          // Short receives when rate positive, pays when negative
-          const markPrice = fr.markPrice ?? candle.close;
-          const payment = shortPos.amount * markPrice * fr.fundingRate;
-          portfolio.applyFundingPayment(payment);
-          totalFundingIncome += payment;
-          // Accumulate funding for this position
-          fundingByPositionId.set(shortPos.id, (fundingByPositionId.get(shortPos.id) ?? 0) + payment);
-        }
-      }
-    }
-
-    // Reset pending actions for this bar
-    pendingActions = [];
-    barIndicators = {};
-
-    // -------------------------------------------------------------------------
-    // STEP A: Engine-managed SL/TP check BEFORE strategy processes this bar
-    // -------------------------------------------------------------------------
-    const hasLong = portfolio.hasLongPosition;
-    const hasShort = portfolio.hasShortPosition;
-    const hasPosition = hasLong || hasShort;
-    const hasSlTp = activeStopLoss !== null || activeTakeProfit !== null;
-
-    if (hasPosition && hasSlTp) {
-      const side = hasLong ? 'long' : 'short';
-      const { slTriggered, tpTriggered } = checkSlTpTrigger(
-        candle,
-        side,
-        activeStopLoss,
-        activeTakeProfit,
-      );
-
-      let engineExitPrice: number | null = null;
-      let engineExitReason: 'stop_loss' | 'take_profit' | null = null;
-
-      if (slTriggered && tpTriggered) {
-        // Ambiguous: both triggered on same bar
-        // Determine sub-timeframe for resolution
-        const subTf = options.intraBarTimeframe === undefined
-          ? getSubTimeframe(validatedConfig.timeframe)
-          : options.intraBarTimeframe;
-
-        let subCandles: Candle[] = [];
-        if (subTf !== null) {
-          const barDurationMs = timeframeToMs(validatedConfig.timeframe);
-          subCandles = await fetchSubCandlesForBar(candle.timestamp, barDurationMs, subTf);
-        }
-
-        const exitResult = resolveAmbiguousExit(
-          subCandles,
-          side,
-          activeStopLoss!,
-          activeTakeProfit!,
-        );
-        engineExitPrice = exitResult.exitPrice;
-        engineExitReason = exitResult.exitType;
-        // Both SL and TP triggered on the same bar — count as pessimistic regardless of resolution
-        pessimisticSlTpCount++;
-      } else if (slTriggered) {
-        engineExitPrice = activeStopLoss!;
-        engineExitReason = 'stop_loss';
-      } else if (tpTriggered) {
-        engineExitPrice = activeTakeProfit!;
-        engineExitReason = 'take_profit';
-      }
-
-      // Track exit type counters
-      if (engineExitReason === 'stop_loss') engineStopLossCount++;
-      else if (engineExitReason === 'take_profit') engineTakeProfitCount++;
-
-      if (engineExitPrice !== null && engineExitReason !== null) {
-        // Apply slippage to the exit price
-        const fillPrice = applySlippageToExitPrice(engineExitPrice, side);
-        const feeRate = options.broker?.feeRate ?? 0;
-
-        // Close the position directly (bypass broker's pending order mechanism)
-        let engineTrade: Trade;
-        if (hasLong) {
-          const pos = portfolio.longPosition!;
-          engineTrade = portfolio.closeLong(pos.amount, fillPrice, candle.timestamp, feeRate);
-        } else {
-          const pos = portfolio.shortPosition!;
-          engineTrade = portfolio.closeShort(pos.amount, fillPrice, candle.timestamp, feeRate);
-        }
-
-        // Tag the trade with the exit reason
-        engineTrade.exitReason = engineExitReason;
-
-        // Attach funding income to this engine-managed close trade
-        if (engineTrade.closedPositionId && fundingByPositionId.has(engineTrade.closedPositionId)) {
-          engineTrade.fundingIncome = fundingByPositionId.get(engineTrade.closedPositionId)!;
-          fundingByPositionId.delete(engineTrade.closedPositionId);
-        }
-
-        // Attach nearest funding rate (futures mode)
-        if (allFundingRates.length > 0) {
-          const nearest = findNearestFundingRate(allFundingRates, candle.timestamp);
-          if (nearest) engineTrade.fundingRate = nearest.fundingRate;
-        }
-
-        trades.push(engineTrade);
-
-        // Clear SL/TP state — position is now closed
-        activeStopLoss = null;
-        activeTakeProfit = null;
-
-        // Create a synthetic filled order for onOrderFilled notification
-        if (strategy.onOrderFilled) {
-          const syntheticOrder: Order = {
-            id: uuidv4(),
-            symbol: validatedConfig.symbol,
-            side: side === 'long' ? 'sell' : 'buy',
-            type: 'market',
-            amount: engineTrade.amount,
-            status: 'filled',
-            createdAt: candle.timestamp,
-            filledAt: candle.timestamp,
-            filledPrice: fillPrice,
-          };
-          // We call onOrderFilled after updating context below
-          filledOrders.push(syntheticOrder);
-        }
-
-        // Update context so strategy sees the closed position in onBar()
-        updateContext(i);
-
-        // Call onOrderFilled for the engine-managed exit
-        if (strategy.onOrderFilled) {
-          const engineOrder = filledOrders[filledOrders.length - 1];
-          strategy.onOrderFilled(ctx, engineOrder);
-        }
-      }
-    }
-
-    // -------------------------------------------------------------------------
-    // STEP B: Normal strategy processing
-    // -------------------------------------------------------------------------
-
-    // Update reusable context and call strategy
-    updateContext(i);
-    strategy.onBar(ctx);
-
-    // When strategy closes a position, also clear any active SL/TP
-    // (detected by comparing position state before/after onBar)
-    if ((hasLong && !portfolio.hasLongPosition) || (hasShort && !portfolio.hasShortPosition)) {
-      activeStopLoss = null;
-      activeTakeProfit = null;
-    }
-
-    // Flush per-bar indicators into the main collector
-    for (const [name, value] of Object.entries(barIndicators)) {
-      if (!indicators[name]) {
-        indicators[name] = { timestamps: [], values: [] };
-      }
-      indicators[name].timestamps.push(candle.timestamp);
-      indicators[name].values.push(value);
-    }
-    barIndicators = {};
-
-    // Process strategy actions
-    for (const pendingAction of pendingActions) {
-      const amount = pendingAction.amount === 'all'
-        ? getPositionAmount(portfolio, pendingAction.action)
-        : pendingAction.amount;
-
-      if (amount > 0) {
-        broker.createOrder(
-          {
-            symbol: validatedConfig.symbol,
-            action: pendingAction.action,
-            type: 'market',
-            amount,
-          },
-          candle.timestamp
-        );
-      }
-    }
-
-    // Process pending orders
-    const { orders: processedOrders, trades: newTrades } = broker.processPendingOrders(candle);
-    filledOrders.push(...processedOrders);
-
-    // Attach nearest funding rate to each new trade (futures mode only)
-    if (allFundingRates.length > 0) {
-      for (const trade of newTrades) {
-        const nearest = findNearestFundingRate(allFundingRates, trade.timestamp);
-        if (nearest) trade.fundingRate = nearest.fundingRate;
-      }
-    }
-
-    // Attach funding income to close trades
-    for (const trade of newTrades) {
-      if (trade.closedPositionId && fundingByPositionId.has(trade.closedPositionId)) {
-        trade.fundingIncome = fundingByPositionId.get(trade.closedPositionId)!;
-        fundingByPositionId.delete(trade.closedPositionId); // Clean up
-      }
-    }
-
-    trades.push(...newTrades);
-
-    // Call onOrderFilled for each filled order
-    if (strategy.onOrderFilled) {
-      for (const order of processedOrders.filter((o) => o.status === 'filled')) {
-        strategy.onOrderFilled(ctx, order);
-      }
-    }
-
-    // Record equity point
-    equityTimestamps.push(candle.timestamp);
-    equityValues.push(portfolio.equity);
-
-    // Early termination check (every 100 bars to reduce overhead)
-    if (i % 100 === 0 && options.earlyStopEquityFraction !== undefined) {
-      if (portfolio.equity < validatedConfig.initialCapital * options.earlyStopEquityFraction) {
-        log(`Early termination: equity ${portfolio.equity.toFixed(2)} dropped below ${(options.earlyStopEquityFraction * 100).toFixed(0)}% of initial capital`, candle.timestamp);
-        break;
-      }
-    }
-
-    // Report progress
-    if (options.onProgress && i % 100 === 0) {
-      options.onProgress({
-        current: i + 1,
-        total: totalBars,
-        percent: ((i + 1) / totalBars) * 100,
-      });
-    }
-  }
-
-  // 8. Call strategy onEnd
-  if (strategy.onEnd) {
-    pendingActions = [];
-    updateContext(totalBars - 1);
-    strategy.onEnd(ctx);
-
-    // Process any final actions
-    for (const pendingAction of pendingActions) {
-      const amount = pendingAction.amount === 'all'
-        ? getPositionAmount(portfolio, pendingAction.action)
-        : pendingAction.amount;
-
-      if (amount > 0) {
-        broker.createOrder(
-          {
-            symbol: validatedConfig.symbol,
-            action: pendingAction.action,
-            type: 'market',
-            amount,
-          },
-          candles[totalBars - 1].timestamp
-        );
-      }
-    }
-
-    const { orders: finalOrders, trades: finalTrades } = broker.processPendingOrders(
-      candles[totalBars - 1]
-    );
-    filledOrders.push(...finalOrders);
-
-    // Attach nearest funding rate to each final trade (futures mode only)
-    if (allFundingRates.length > 0) {
-      for (const trade of finalTrades) {
-        const nearest = findNearestFundingRate(allFundingRates, trade.timestamp);
-        if (nearest) trade.fundingRate = nearest.fundingRate;
-      }
-    }
-
-    // Attach funding income to final close trades
-    for (const trade of finalTrades) {
-      if (trade.closedPositionId && fundingByPositionId.has(trade.closedPositionId)) {
-        trade.fundingIncome = fundingByPositionId.get(trade.closedPositionId)!;
-        fundingByPositionId.delete(trade.closedPositionId); // Clean up
-      }
-    }
-
-    trades.push(...finalTrades);
-  }
-
-  // 9. Generate equity curve with drawdown
   const equity = generateEquityCurve(
     equityTimestamps,
     equityValues,
     validatedConfig.initialCapital
   );
 
-  // 10. Calculate metrics
+  // 8. Calculate metrics
   log(`Calculating metrics from ${trades.length} trades`, Date.now());
   const metrics = calculateMetrics(trades, equity, validatedConfig.initialCapital, validatedConfig.timeframe);
   const rollingMetrics = calculateRollingMetrics(trades, equity, validatedConfig.initialCapital);
@@ -842,7 +938,7 @@ export async function runBacktest(
     (metrics as Record<string, unknown>).pessimisticSlTpCount = pessimisticSlTpCount;
   }
 
-  // 11. Build result
+  // 9. Build result
   const result: BacktestResult = {
     id: validatedConfig.id,
     config: { ...validatedConfig, params },
@@ -854,7 +950,7 @@ export async function runBacktest(
     createdAt: Date.now(),
   };
 
-  // 12. Save to database
+  // 10. Save to database
   if (options.saveResults) {
     log('Saving results to database', Date.now());
     await saveBacktestRun(result, undefined, options.strategyConfigId);
