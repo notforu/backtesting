@@ -33,8 +33,11 @@ export class SessionManager {
   /** Lazily initialized Telegram notifier (undefined = not yet checked) */
   private telegram: TelegramNotifier | null | undefined = undefined;
 
-  /** Daily summary timers keyed by sessionId */
+  /** Daily summary timers keyed by sessionId (kept for backward-compat cleanup of old timers) */
   private dailySummaryTimers: Map<string, ReturnType<typeof setTimeout> | ReturnType<typeof setInterval>> = new Map();
+
+  /** Single global digest timer — fires once per day for ALL sessions combined */
+  private globalDigestTimer: ReturnType<typeof setTimeout> | ReturnType<typeof setInterval> | null = null;
 
   // --------------------------------------------------------------------------
   // Create & Delete
@@ -116,10 +119,8 @@ export class SessionManager {
     // Register session with PriceWatcher for real-time equity updates
     await this.registerWithPriceWatcher(sessionId, session);
 
-    // Schedule daily summary at 09:00 UTC (only if Telegram is configured)
-    if (TelegramNotifier.isConfigured()) {
-      this.scheduleDailySummary(sessionId, session.name, engine);
-    }
+    // Ensure global digest timer is running (idempotent; handles Telegram config check internally)
+    this.ensureGlobalDigestScheduled();
   }
 
   /**
@@ -163,10 +164,8 @@ export class SessionManager {
       // Forward events to SSE listeners, Telegram, and event log
       this.registerEngineEventHandlers(engine, sessionId, session.name);
 
-      // Schedule daily summary if Telegram configured
-      if (TelegramNotifier.isConfigured()) {
-        this.scheduleDailySummary(sessionId, session.name, engine);
-      }
+      // Ensure global digest timer is running (idempotent)
+      this.ensureGlobalDigestScheduled();
 
       // Freshly created engine has _status='stopped', so call start() not resume()
       await engine.start();
@@ -309,9 +308,16 @@ export class SessionManager {
       `[SessionManager] Shutting down ${this.engines.size} active engine(s)`,
     );
 
-    // Clear all daily summary timers
+    // Clear all per-session daily summary timers (legacy cleanup)
     for (const sessionId of this.dailySummaryTimers.keys()) {
       this.clearDailySummaryTimer(sessionId);
+    }
+
+    // Clear the global digest timer
+    if (this.globalDigestTimer !== null) {
+      clearTimeout(this.globalDigestTimer as ReturnType<typeof setTimeout>);
+      clearInterval(this.globalDigestTimer as ReturnType<typeof setInterval>);
+      this.globalDigestTimer = null;
     }
 
     // Pause all engines so they can be restored on restart.
@@ -635,9 +641,12 @@ export class SessionManager {
         });
         break;
       case 'status_change':
-        telegram.notifySessionStatusChange(sessionName, event.oldStatus, event.newStatus).catch(err => {
-          console.error('[SessionManager] Telegram status_change error:', err);
-        });
+        // Only alert on error transitions — starting/pausing/resuming is not alert-worthy
+        if (event.newStatus === 'error') {
+          telegram.notifySessionStatusChange(sessionName, event.oldStatus, event.newStatus).catch(err => {
+            console.error('[SessionManager] Telegram status_change error:', err);
+          });
+        }
         break;
       case 'kill_switch_triggered':
         telegram.sendMessage(
@@ -651,73 +660,68 @@ export class SessionManager {
   }
 
   /**
-   * Send a daily summary for a session by querying current DB state.
+   * Ensure the global daily digest timer is running.
+   * Called when any session starts. Idempotent — only creates timer if none exists.
    */
-  private async sendDailySummary(sessionId: string, sessionName: string): Promise<void> {
-    const telegram = this.getTelegram();
-    if (!telegram) return;
+  private ensureGlobalDigestScheduled(): void {
+    if (this.globalDigestTimer !== null) return;
+    if (!TelegramNotifier.isConfigured()) return;
 
-    try {
-      const session = await paperDb.getPaperSession(sessionId);
-      if (!session) return;
-
-      const positions = await paperDb.getPaperPositions(sessionId);
-      // Fetch all trades (large limit) for daily summary stats
-      const { trades, total: totalTrades } = await paperDb.getPaperTrades(sessionId, 10_000, 0);
-
-      // Trades from the last 24 hours
-      const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
-      const todayTrades = trades.filter(t => t.timestamp >= dayAgo);
-      const todayPnl = todayTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
-
-      await telegram.notifyDailySummary({
-        sessionName,
-        equity: session.currentEquity,
-        initialCapital: session.initialCapital,
-        openPositions: positions.length,
-        totalTrades,
-        todayTrades: todayTrades.length,
-        todayPnl,
-      });
-    } catch (err) {
-      console.error(`[SessionManager] Daily summary error for ${sessionId}:`, err);
-    }
-  }
-
-  /**
-   * Schedule daily summary notifications at DAILY_DIGEST_HOUR_UTC (09:00 UTC).
-   * Sets a one-time timeout to the next occurrence of that hour, then a recurring 24h interval.
-   */
-  private scheduleDailySummary(
-    sessionId: string,
-    sessionName: string,
-    _engine: PaperTradingEngine,
-  ): void {
-
-    // Calculate ms until next 09:00 UTC
     const now = new Date();
     const next = new Date(now);
     next.setUTCHours(DAILY_DIGEST_HOUR_UTC, 0, 0, 0);
-
-    // If the target hour today has already passed (or is exactly now), schedule for tomorrow
     if (next.getTime() <= now.getTime()) {
       next.setUTCDate(next.getUTCDate() + 1);
     }
 
     const msUntilDigest = next.getTime() - now.getTime();
 
-    const timer = setTimeout(() => {
-      void this.sendDailySummary(sessionId, sessionName);
+    this.globalDigestTimer = setTimeout(() => {
+      void this.sendUnifiedDailySummary();
 
-      // Set up recurring 24h interval
-      const interval = setInterval(() => {
-        void this.sendDailySummary(sessionId, sessionName);
+      this.globalDigestTimer = setInterval(() => {
+        void this.sendUnifiedDailySummary();
       }, 24 * 60 * 60 * 1000);
-
-      this.dailySummaryTimers.set(sessionId, interval);
     }, msUntilDigest);
+  }
 
-    this.dailySummaryTimers.set(sessionId, timer);
+  /**
+   * Collect stats from ALL running/paused sessions and send one combined Telegram message.
+   */
+  private async sendUnifiedDailySummary(): Promise<void> {
+    const telegram = this.getTelegram();
+    if (!telegram) return;
+
+    try {
+      const allSessions = await paperDb.listPaperSessions();
+      const activeSessions = allSessions.filter(s => s.status === 'running' || s.status === 'paused');
+
+      if (activeSessions.length === 0) return;
+
+      const summaries = [];
+      for (const session of activeSessions) {
+        const positions = await paperDb.getPaperPositions(session.id);
+        const { trades, total: totalTrades } = await paperDb.getPaperTrades(session.id, 10_000, 0);
+
+        const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+        const todayTrades = trades.filter(t => t.timestamp >= dayAgo);
+        const todayPnl = todayTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+
+        summaries.push({
+          sessionName: session.name,
+          equity: session.currentEquity,
+          initialCapital: session.initialCapital,
+          openPositions: positions.length,
+          totalTrades,
+          todayTrades: todayTrades.length,
+          todayPnl,
+        });
+      }
+
+      await telegram.notifyUnifiedDailySummary(summaries);
+    } catch (err) {
+      console.error('[SessionManager] Unified daily summary error:', err);
+    }
   }
 
   /**
