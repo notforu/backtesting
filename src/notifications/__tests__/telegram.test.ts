@@ -439,7 +439,184 @@ describe('TelegramNotifier', () => {
   });
 
   // ==========================================================================
-  // 9. Correct API URL format
+  // 9. notifyUnifiedDailySummary
+  // ==========================================================================
+
+  describe('notifyUnifiedDailySummary', () => {
+    it('sends nothing when sessions array is empty', async () => {
+      await notifier.notifyUnifiedDailySummary([]);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('sends a combined message for multiple sessions', async () => {
+      const msgPromise = captureLastMessage();
+
+      await notifier.notifyUnifiedDailySummary([
+        {
+          sessionName: 'Bot A',
+          equity: 11_000,
+          initialCapital: 10_000,
+          openPositions: 2,
+          totalTrades: 20,
+          todayTrades: 3,
+          todayPnl: 150,
+        },
+        {
+          sessionName: 'Bot B',
+          equity: 9_500,
+          initialCapital: 10_000,
+          openPositions: 0,
+          totalTrades: 10,
+          todayTrades: 1,
+          todayPnl: -50,
+        },
+      ]);
+
+      const msg = await msgPromise;
+      expect(msg).toContain('Daily Digest');
+      expect(msg).toContain('2 sessions');
+      expect(msg).toContain('Bot A');
+      expect(msg).toContain('Bot B');
+    });
+
+    it('sums equity and capital correctly across sessions', async () => {
+      const msgPromise = captureLastMessage();
+
+      await notifier.notifyUnifiedDailySummary([
+        {
+          sessionName: 'X',
+          equity: 11_000,
+          initialCapital: 10_000,
+          openPositions: 1,
+          totalTrades: 5,
+          todayTrades: 1,
+          todayPnl: 100,
+        },
+        {
+          sessionName: 'Y',
+          equity: 9_000,
+          initialCapital: 10_000,
+          openPositions: 0,
+          totalTrades: 3,
+          todayTrades: 0,
+          todayPnl: 0,
+        },
+      ]);
+
+      const msg = await msgPromise;
+      // Total equity: 20000, total capital: 20000 → 0.00% return
+      expect(msg).toContain('20000.00');
+      expect(msg).toContain('0.00%');
+      // Total open positions: 1
+      expect(msg).toContain('Open Positions: 1');
+      // Total trades today: 1
+      expect(msg).toContain('Today: 1 trades');
+    });
+
+    it('shows overall return correctly for profitable portfolio', async () => {
+      const msgPromise = captureLastMessage();
+
+      await notifier.notifyUnifiedDailySummary([
+        {
+          sessionName: 'Z',
+          equity: 12_000,
+          initialCapital: 10_000,
+          openPositions: 0,
+          totalTrades: 10,
+          todayTrades: 2,
+          todayPnl: 200,
+        },
+      ]);
+
+      const msg = await msgPromise;
+      // 20% return
+      expect(msg).toContain('+20.00%');
+    });
+
+    it('shows negative return when portfolio is down', async () => {
+      const msgPromise = captureLastMessage();
+
+      await notifier.notifyUnifiedDailySummary([
+        {
+          sessionName: 'Z',
+          equity: 8_000,
+          initialCapital: 10_000,
+          openPositions: 0,
+          totalTrades: 5,
+          todayTrades: 1,
+          todayPnl: -200,
+        },
+      ]);
+
+      const msg = await msgPromise;
+      // -20% return
+      expect(msg).toContain('-20.00%');
+    });
+
+    it('sends a single Telegram call regardless of session count', async () => {
+      mockFetch.mockResolvedValue(makeSuccessResponse());
+
+      await notifier.notifyUnifiedDailySummary([
+        { sessionName: 'A', equity: 10_000, initialCapital: 10_000, openPositions: 0, totalTrades: 1, todayTrades: 0, todayPnl: 0 },
+        { sessionName: 'B', equity: 10_000, initialCapital: 10_000, openPositions: 0, totalTrades: 1, todayTrades: 0, todayPnl: 0 },
+        { sessionName: 'C', equity: 10_000, initialCapital: 10_000, openPositions: 0, totalTrades: 1, todayTrades: 0, todayPnl: 0 },
+      ]);
+
+      // Only one fetch call regardless of 3 sessions
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows green icon for profitable sessions and red for losing sessions', async () => {
+      const msgPromise = captureLastMessage();
+
+      await notifier.notifyUnifiedDailySummary([
+        {
+          sessionName: 'Profit Bot',
+          equity: 10_500,
+          initialCapital: 10_000,
+          openPositions: 1,
+          totalTrades: 5,
+          todayTrades: 2,
+          todayPnl: 100,
+        },
+        {
+          sessionName: 'Loss Bot',
+          equity: 9_500,
+          initialCapital: 10_000,
+          openPositions: 0,
+          totalTrades: 3,
+          todayTrades: 1,
+          todayPnl: -50,
+        },
+      ]);
+
+      const msg = await msgPromise;
+      expect(msg).toContain('🟢');
+      expect(msg).toContain('🔴');
+    });
+
+    it('handles zero initialCapital without dividing by zero', async () => {
+      const msgPromise = captureLastMessage();
+
+      await notifier.notifyUnifiedDailySummary([
+        {
+          sessionName: 'ZeroCapBot',
+          equity: 0,
+          initialCapital: 0,
+          openPositions: 0,
+          totalTrades: 0,
+          todayTrades: 0,
+          todayPnl: 0,
+        },
+      ]);
+
+      const msg = await msgPromise;
+      expect(msg).toContain('0.00%');
+    });
+  });
+
+  // ==========================================================================
+  // 10. Correct API URL format
   // ==========================================================================
 
   describe('sendMessage API call', () => {

@@ -136,6 +136,51 @@ export class TelegramNotifier {
     await this.sendMessage(msg);
   }
 
+  async notifyUnifiedDailySummary(sessions: Array<{
+    sessionName: string;
+    equity: number;
+    initialCapital: number;
+    openPositions: number;
+    totalTrades: number;
+    todayTrades: number;
+    todayPnl: number;
+  }>): Promise<void> {
+    if (sessions.length === 0) return;
+
+    // Totals across all sessions
+    const totalEquity = sessions.reduce((s, x) => s + x.equity, 0);
+    const totalCapital = sessions.reduce((s, x) => s + x.initialCapital, 0);
+    const totalOpen = sessions.reduce((s, x) => s + x.openPositions, 0);
+    const totalTradesToday = sessions.reduce((s, x) => s + x.todayTrades, 0);
+    const totalPnlToday = sessions.reduce((s, x) => s + x.todayPnl, 0);
+    const totalTradesAll = sessions.reduce((s, x) => s + x.totalTrades, 0);
+    const overallReturn = totalCapital > 0
+      ? ((totalEquity - totalCapital) / totalCapital * 100).toFixed(2)
+      : '0.00';
+
+    const lines: string[] = [
+      `📊 <b>Daily Digest (${sessions.length} sessions)</b>`,
+      `Total Equity: $${totalEquity.toFixed(2)} (${Number(overallReturn) >= 0 ? '+' : ''}${overallReturn}%)`,
+      `Open Positions: ${totalOpen}`,
+      `Today: ${totalTradesToday} trades, PnL $${totalPnlToday.toFixed(2)}`,
+      `All Time: ${totalTradesAll} trades`,
+      '',
+    ];
+
+    // Per-session breakdown
+    for (const s of sessions) {
+      const ret = s.initialCapital > 0
+        ? ((s.equity - s.initialCapital) / s.initialCapital * 100).toFixed(1)
+        : '0.0';
+      const pnlIcon = s.todayPnl >= 0 ? '🟢' : '🔴';
+      lines.push(
+        `${pnlIcon} <b>${s.sessionName}</b>: $${s.equity.toFixed(0)} (${Number(ret) >= 0 ? '+' : ''}${ret}%) | ${s.todayTrades}t ${s.todayPnl >= 0 ? '+' : ''}$${s.todayPnl.toFixed(0)}`,
+      );
+    }
+
+    await this.sendMessage(lines.join('\n'));
+  }
+
   async notifySessionStatusChange(
     sessionName: string,
     oldStatus: string,
