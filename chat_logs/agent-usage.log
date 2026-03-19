@@ -181,3 +181,17 @@
 
 [2026-03-18 13:20] commit (haiku) - Integrate RiskManager into paper trading engine + BybitConnector implementation
 [2026-03-18 14:00] docs-writer (haiku) - Create comprehensive session summary covering phases A, B, C
+[2026-03-18 13:46] commit (haiku) - docs: session summary and agent log commit for phases A, B, C
+[2026-03-18 15:59] fe-dev (sonnet) - Make AppHeader mobile-responsive with hamburger menu
+[2026-03-18 15:59] fe-dev (sonnet) - Make Trading page and Backtesting page mobile-responsive with master-detail pattern
+[2026-03-18 16:17] fe-dev (sonnet) - AppHeader mobile responsive hamburger menu + web test setup
+[2026-03-18 14:30] fe-dev (sonnet) - Mobile responsive header with hamburger menu + tests
+[2026-03-18 14:30] fe-dev (sonnet) - Mobile master-detail for Trading + Backtesting pages
+[2026-03-18 17:30] WF validation complete - 3/10 passed: DUSK, 1000PEPE, PAXG
+[2026-03-18 14:05] commit (haiku) - mobile responsive dashboard with hamburger menu + tests
+[2026-03-19 15:30] quant-lead (opus) - Critical analysis of SL/TP implementation in paper trading engine (4h ticks)
+[2026-03-19 11:55] quant-lead (opus) - Critical analysis of SL/TP handling in paper trading with 4h ticks
+[2026-03-19 15:45] be-dev (sonnet) - Create and run test-expanded-portfolios.ts: 8 aggregation backtests (4 portfolios x 2 alloc modes)
+[2026-03-19 01:00] be-dev (sonnet) - Expanded portfolio aggregation test (8 configs, 11 symbols)
+[2026-03-19 05:43] be-dev (sonnet) - create-expanded-pt-sessions script: 8sym and 11sym paper trading sessions on prod
+[2026-03-19 01:30] be-dev (sonnet) - Create 2 new PT sessions on prod (8 expanded + 11 max)
