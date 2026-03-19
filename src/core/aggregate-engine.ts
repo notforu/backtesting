@@ -13,7 +13,8 @@ import { getCandles, getFundingRates, saveBacktestRun } from '../data/db.js';
 import { calculateMetrics, generateEquityCurve, calculateRollingMetrics } from '../analysis/metrics.js';
 import { DEFAULT_BYBIT_TAKER_FEE_RATE } from './constants.js';
 import { validateFundingRateCoverage, validateCandleCoverage } from './funding-rate-validation.js';
-import { checkSlTpTrigger } from './intra-bar.js';
+import { checkSlTpTrigger, resolveAmbiguousExit, getSubTimeframe } from './intra-bar.js';
+import { timeframeToMs } from './types.js';
 
 interface AdapterWithData {
   adapter: SignalAdapter;
@@ -52,6 +53,13 @@ export interface AggregateEngineConfig {
    * Defaults to 0.9 (90%).
    */
   positionSizeFraction?: number;
+  /**
+   * Override sub-candle timeframe used for intra-bar SL/TP resolution when both SL and TP
+   * trigger on the same bar. When undefined (default), the sub-timeframe is derived
+   * automatically from the symbol's primary timeframe via getSubTimeframe(). Set to null to
+   * disable sub-candle resolution entirely (always pessimistic: SL wins).
+   */
+  intraBarTimeframe?: Timeframe | null;
 }
 
 /**
@@ -259,7 +267,10 @@ export async function runAggregateBacktest(
   // Engine SL/TP exit counters
   let engineStopLossCount = 0;
   let engineTakeProfitCount = 0;
+  // Count of all ambiguous bars (both SL and TP triggered on the same bar)
   let pessimisticSlTpCount = 0;
+  // Count of ambiguous bars where sub-candle data was available to resolve order
+  let subCandleResolvedCount = 0;
 
   // 4. Main loop over unified timeline
   for (let ti = 0; ti < timeline.length; ti++) {
@@ -331,10 +342,32 @@ export async function runAggregateBacktest(
           let exitReason: 'stop_loss' | 'take_profit';
 
           if (slTriggered && tpTriggered) {
-            // Both triggered on the same bar — pessimistic fill (SL wins)
-            exitPrice = sl!;
-            exitReason = 'stop_loss';
-            pessimisticSlTpCount++;
+            // Both triggered on the same bar — try sub-candle resolution to determine order
+            pessimisticSlTpCount++; // Count all ambiguous cases
+
+            const subTf = engineConfig.intraBarTimeframe === undefined
+              ? getSubTimeframe(awd.config.timeframe as Timeframe)
+              : engineConfig.intraBarTimeframe;
+
+            let subCandles: Candle[] = [];
+            if (subTf !== null) {
+              const barDurationMs = timeframeToMs(awd.config.timeframe as Timeframe);
+              subCandles = await getCandles(
+                awd.config.exchange || exchange,
+                awd.config.symbol,
+                subTf,
+                candle.timestamp,
+                candle.timestamp + barDurationMs - 1,
+              );
+            }
+
+            if (subCandles.length > 0) {
+              subCandleResolvedCount++;
+            }
+
+            const resolution = resolveAmbiguousExit(subCandles, side, sl!, tp!);
+            exitPrice = resolution.exitPrice;
+            exitReason = resolution.exitType;
           } else if (slTriggered) {
             exitPrice = sl!;
             exitReason = 'stop_loss';
@@ -599,6 +632,9 @@ export async function runAggregateBacktest(
     (metrics as Record<string, unknown>).engineStopLossCount = engineStopLossCount;
     (metrics as Record<string, unknown>).engineTakeProfitCount = engineTakeProfitCount;
     (metrics as Record<string, unknown>).pessimisticSlTpCount = pessimisticSlTpCount;
+    if (subCandleResolvedCount > 0) {
+      (metrics as Record<string, unknown>).subCandleResolvedCount = subCandleResolvedCount;
+    }
   }
 
   // 9. Build per-asset results

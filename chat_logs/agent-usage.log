@@ -195,3 +195,16 @@
 [2026-03-19 01:00] be-dev (sonnet) - Expanded portfolio aggregation test (8 configs, 11 symbols)
 [2026-03-19 05:43] be-dev (sonnet) - create-expanded-pt-sessions script: 8sym and 11sym paper trading sessions on prod
 [2026-03-19 01:30] be-dev (sonnet) - Create 2 new PT sessions on prod (8 expanded + 11 max)
+[2026-03-19 15:50] commit (haiku) - deploy 2 new paper trading sessions (8sym expanded + 11sym max)
+[2026-03-19 12:45] be-dev (sonnet) - Implement intra-bar SL/TP resolution in backtesting engine (TDD)
+[2026-03-19 12:53] be-dev (sonnet) - Implement intra-bar SL/TP resolution engine with sub-candle support
+[2026-03-19 14:30] docs-writer (haiku) - Create changelog for intra-bar SL/TP resolution feature
+[2026-03-19 13:06] be-dev (sonnet) - Create funding-rate-spike-v4 strategy with engine-managed SL/TP + add pessimistic SL/TP counters to engine output
+[2026-03-19 00:00] be-dev (sonnet) - Create compare-v2-v4.ts script to compare funding-rate-spike-v2 vs v4 across 3 aggregation configs
+[2026-03-19 13:16] be-dev (sonnet) - Create funding-rate-spike-v4 strategy + pessimistic SL/TP tracking + comparison script
+[2026-03-19 13:28] be-dev (sonnet) - Add engine-managed SL/TP support to aggregate engine (signal-adapter + aggregate-engine)
+[2026-03-19 13:39] be-dev (sonnet) - Add SL/TP support to aggregate engine + signal adapter + fix mode defaulting
+[2026-03-19 09:15] docs-writer (haiku) - Create changelog for funding-rate-spike-v4 strategy and aggregate engine SL/TP support
+[2025-03-19 14:30] commit (haiku) - intra-bar SL/TP resolution with sub-candle support
+[2026-03-19 12:00] be-dev (sonnet) - Add sub-candle resolution for ambiguous SL/TP in aggregate engine
+[2026-03-19 14:15] be-dev (sonnet) - Add sub-candle resolution to aggregate engine for ambiguous SL/TP
