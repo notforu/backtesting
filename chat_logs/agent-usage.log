@@ -252,3 +252,7 @@
 [2026-03-20 07:44] ui-tester (sonnet) - Production UI visual testing at 5.223.56.226
 [2026-03-20 06:42] fe-dev (sonnet) - Add refetchInterval: 30000 to usePaperEquity hook to fix blank equity chart
 [2026-03-20 07:00] fe-dev (sonnet) - Fix Tailwind v4 responsive classes missing in production build by adding @source and @config directives to index.css
+[2026-03-20 07:45] fe-dev (sonnet) - Fix Tailwind v4 @source/@config for responsive classes
+[2026-03-20 07:45] fe-dev (sonnet) - Fix usePaperEquity refetchInterval for chart refresh
+[2026-03-20 07:46] docs-writer (haiku) - Changelog for Tailwind v4 responsive fix
+[2026-03-20 07:55] fullstack-dev (sonnet) - Fix Docker build caching: add CACHEBUST ARG to Dockerfile.prod, separate build/up in deploy.yml
