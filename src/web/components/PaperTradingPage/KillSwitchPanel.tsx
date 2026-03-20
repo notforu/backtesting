@@ -149,11 +149,8 @@ export function KillSwitchPanel() {
   }
 
   if (isError || !data) {
-    return (
-      <div className="rounded-lg border border-red-700 bg-gray-800/50 p-4">
-        <p className="text-sm text-red-400">Failed to load kill switch settings.</p>
-      </div>
-    );
+    // Hide panel silently when not authenticated (401) or data unavailable
+    return null;
   }
 
   return (
