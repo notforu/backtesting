@@ -15,10 +15,17 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
+            set -e
             cd ~/backtesting
+            echo "=== Git pull ==="
             git pull origin main
+            echo "=== Current commit: $(git rev-parse --short HEAD) ==="
+            echo "=== Building api (no-cache) ==="
             docker compose --env-file .env.prod -f docker-compose.prod.yml build --no-cache api
-            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
-            echo "Waiting for health check..."
-            sleep 10
-            curl -sf http://localhost/health || echo "WARNING: Health check failed"
+            echo "=== Recreating containers ==="
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-recreate
+            echo "=== Waiting for health check ==="
+            sleep 15
+            curl -sf http://localhost/health && echo " OK" || echo " FAILED"
+            echo "=== Checking deployed CSS hash ==="
+            curl -s http://localhost | grep -o 'index-[A-Za-z0-9_-]*\.css' || echo "Could not find CSS hash"
