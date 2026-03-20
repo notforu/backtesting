@@ -26,6 +26,7 @@ const PUBLIC_GET_PREFIXES = [
   '/api/strategy-configs',
   '/api/aggregations',
   '/api/optimize',
+  '/api/settings',
 ];
 
 /**
