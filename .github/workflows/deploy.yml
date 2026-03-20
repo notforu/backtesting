@@ -17,6 +17,7 @@ jobs:
           script: |
             set -e
             cd /home/claude/backtesting
+            git config --global --add safe.directory /home/claude/backtesting
             echo "=== Git pull ==="
             git pull origin main
             echo "=== Current commit: $(git rev-parse --short HEAD) ==="
