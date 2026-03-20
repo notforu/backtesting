@@ -258,3 +258,5 @@
 [2026-03-20 07:55] fullstack-dev (sonnet) - Fix Docker build caching: add CACHEBUST ARG to Dockerfile.prod, separate build/up in deploy.yml
 [2026-03-20 08:05] fullstack-dev (sonnet) - Fix Docker CACHEBUST for deploy pipeline
 [2026-03-20 07:00] be-dev (sonnet) - Add git commit hash to health check endpoint and debug/assets diagnostic endpoint
+[2026-03-20 08:35] be-dev (sonnet) - Add BUILD_HASH to health endpoint + debug/assets endpoint
+[2026-03-20 09:55] ui-tester (sonnet) - Final prod UI verification after deploy
