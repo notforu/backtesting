@@ -17,7 +17,7 @@ jobs:
           script: |
             cd ~/backtesting
             git pull origin main
-            docker compose --env-file .env.prod -f docker-compose.prod.yml build --build-arg CACHEBUST=$(git rev-parse --short HEAD) api
+            docker compose --env-file .env.prod -f docker-compose.prod.yml build --no-cache api
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
             echo "Waiting for health check..."
             sleep 10
