@@ -21,7 +21,7 @@ jobs:
             git pull origin main
             echo "=== Current commit: $(git rev-parse --short HEAD) ==="
             echo "=== Building api (no-cache) ==="
-            docker compose --env-file .env.prod -f docker-compose.prod.yml build --no-cache api
+            docker compose --env-file .env.prod -f docker-compose.prod.yml build --no-cache --build-arg BUILD_HASH=$(git rev-parse --short HEAD) api
             echo "=== Recreating containers ==="
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-recreate
             echo "=== Waiting for health check ==="

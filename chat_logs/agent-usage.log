@@ -256,3 +256,5 @@
 [2026-03-20 07:45] fe-dev (sonnet) - Fix usePaperEquity refetchInterval for chart refresh
 [2026-03-20 07:46] docs-writer (haiku) - Changelog for Tailwind v4 responsive fix
 [2026-03-20 07:55] fullstack-dev (sonnet) - Fix Docker build caching: add CACHEBUST ARG to Dockerfile.prod, separate build/up in deploy.yml
+[2026-03-20 08:05] fullstack-dev (sonnet) - Fix Docker CACHEBUST for deploy pipeline
+[2026-03-20 07:00] be-dev (sonnet) - Add git commit hash to health check endpoint and debug/assets diagnostic endpoint

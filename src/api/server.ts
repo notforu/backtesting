@@ -5,8 +5,9 @@
 
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import Fastify from 'fastify';
+import { BUILD_HASH } from './build-info.js';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { backtestRoutes } from './routes/backtest.js';
@@ -55,7 +56,24 @@ fastify.get('/api/health', async () => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
+    commit: BUILD_HASH,
   };
+});
+
+// Diagnostic endpoint: list built frontend assets
+fastify.get('/api/debug/assets', async () => {
+  try {
+    const __filename2 = fileURLToPath(import.meta.url);
+    const __dirname2 = path.dirname(__filename2);
+    const webDist = path.join(__dirname2, '..', 'web', 'assets');
+    const webDistFallback = path.join(__dirname2, '..', '..', 'dist', 'web', 'assets');
+    const assetsDir = existsSync(webDist) ? webDist : existsSync(webDistFallback) ? webDistFallback : null;
+    if (!assetsDir) return { error: 'assets dir not found', checked: [webDist, webDistFallback] };
+    const files = readdirSync(assetsDir);
+    return { assetsDir, files };
+  } catch (e: unknown) {
+    return { error: String(e) };
+  }
 });
 
 // Register routes
