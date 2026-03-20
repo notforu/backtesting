@@ -15,6 +15,8 @@ import { TelegramNotifier } from '../notifications/telegram.js';
 import { priceWatcher } from './price-watcher.js';
 import { RiskManager } from '../risk/risk-manager.js';
 import { getPlatformSetting } from '../data/db.js';
+import { createConnector } from '../connectors/connector-factory.js';
+import type { ConnectorConfig, IConnector } from '../connectors/types.js';
 
 /**
  * Hour of the day (UTC) at which the daily summary digest is sent.
@@ -26,6 +28,9 @@ export const DAILY_DIGEST_HOUR_UTC = 9;
 export class SessionManager {
   /** Map of sessionId -> active engine (only sessions with a running/paused engine) */
   private engines: Map<string, PaperTradingEngine> = new Map();
+
+  /** Map of sessionId -> connector attached to the engine */
+  private connectors: Map<string, IConnector> = new Map();
 
   /** Map of sessionId -> set of event listeners (for SSE) */
   private eventListeners: Map<string, Set<(event: PaperTradingEvent) => void>> = new Map();
@@ -53,6 +58,7 @@ export class SessionManager {
     aggregationConfigId?: string;
     initialCapital?: number;
     userId?: string;
+    connectorType?: PaperSession['connectorType'];
   }): Promise<PaperSession> {
     const id = uuidv4();
     // Prefer explicit initialCapital override; fall back to config's value
@@ -65,6 +71,7 @@ export class SessionManager {
       aggregationConfigId: params.aggregationConfigId ?? null,
       initialCapital: capital,
       userId: params.userId,
+      connectorType: params.connectorType ?? 'paper',
     });
 
     return session;
@@ -82,6 +89,18 @@ export class SessionManager {
     }
     this.eventListeners.delete(sessionId);
     this.clearDailySummaryTimer(sessionId);
+
+    // Disconnect connector if present
+    const connector = this.connectors.get(sessionId);
+    if (connector) {
+      try {
+        await connector.disconnect();
+      } catch (err) {
+        console.error(`[SessionManager] Error disconnecting connector for session ${sessionId}:`, err);
+      }
+      this.connectors.delete(sessionId);
+    }
+
     await paperDb.deletePaperSession(sessionId);
   }
 
@@ -113,6 +132,13 @@ export class SessionManager {
       // Forward all paper-events to registered SSE listeners, Telegram, and event log
       this.registerEngineEventHandlers(engine, sessionId, session.name);
     }
+
+    // Create and attach connector before starting the engine
+    const connectorConfig = this.buildConnectorConfig(session);
+    const connector = createConnector(connectorConfig);
+    await connector.connect();
+    engine.setConnector(connector);
+    this.connectors.set(sessionId, connector);
 
     await engine.start();
 
@@ -167,6 +193,13 @@ export class SessionManager {
       // Ensure global digest timer is running (idempotent)
       this.ensureGlobalDigestScheduled();
 
+      // Create and attach connector before starting the engine
+      const connectorConfig = this.buildConnectorConfig(session);
+      const connector = createConnector(connectorConfig);
+      await connector.connect();
+      engine.setConnector(connector);
+      this.connectors.set(sessionId, connector);
+
       // Freshly created engine has _status='stopped', so call start() not resume()
       await engine.start();
 
@@ -202,6 +235,17 @@ export class SessionManager {
     this.clearDailySummaryTimer(sessionId);
     // Stop real-time equity updates when session is stopped
     priceWatcher.unregisterSession(sessionId);
+
+    // Disconnect the connector (if any) after engine has stopped
+    const connector = this.connectors.get(sessionId);
+    if (connector) {
+      try {
+        await connector.disconnect();
+      } catch (err) {
+        console.error(`[SessionManager] Error disconnecting connector for session ${sessionId}:`, err);
+      }
+      this.connectors.delete(sessionId);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -335,6 +379,16 @@ export class SessionManager {
     this.engines.clear();
     this.eventListeners.clear();
 
+    // Disconnect all connectors
+    for (const [sessionId, connector] of this.connectors) {
+      try {
+        await connector.disconnect();
+      } catch (err) {
+        console.error(`[SessionManager] Error disconnecting connector for session ${sessionId}:`, err);
+      }
+    }
+    this.connectors.clear();
+
     // Shut down the PriceWatcher WebSocket connection
     try {
       await priceWatcher.stop();
@@ -396,6 +450,39 @@ export class SessionManager {
       killSwitchDDPercent,
       symbolWhitelist: [],
     });
+  }
+
+  // --------------------------------------------------------------------------
+  // Connector factory (private)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Build a ConnectorConfig for the given session based on its connectorType.
+   * Throws for connector types that are not yet supported.
+   */
+  private buildConnectorConfig(session: PaperSession): ConnectorConfig {
+    const type = session.connectorType ?? 'paper';
+
+    if (type === 'paper') {
+      return {
+        type: 'paper',
+        initialCapital: session.initialCapital,
+        slippagePct: session.aggregationConfig.slippagePercent ?? 0.05,
+        feePct: session.aggregationConfig.feeRate != null
+          ? session.aggregationConfig.feeRate * 100  // convert decimal (0.001) to percent (0.1)
+          : 0.1,
+      };
+    }
+
+    if (type === 'bybit' || type === 'bybit-testnet') {
+      throw new Error(
+        `Connector type "${type}" requires API credentials which are not yet supported. Use "paper" for now.`,
+      );
+    }
+
+    // TypeScript exhaustiveness — should never reach here at runtime
+    const exhaustive: never = type;
+    throw new Error(`Unknown connector type: "${exhaustive}"`);
   }
 
   // --------------------------------------------------------------------------

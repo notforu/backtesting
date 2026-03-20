@@ -26,6 +26,7 @@ interface PaperSessionRow {
   aggregation_config_id: string | null;
   strategy_config_id: string | null;
   status: string;
+  connector_type: string;
   initial_capital: number | string;
   current_equity: number | string;
   current_cash: number | string;
@@ -89,6 +90,7 @@ function rowToSession(row: PaperSessionRow): PaperSession {
     aggregationConfigId: row.aggregation_config_id,
     strategyConfigId: row.strategy_config_id,
     status: row.status as PaperSession['status'],
+    connectorType: (row.connector_type ?? 'paper') as PaperSession['connectorType'],
     initialCapital: Number(row.initial_capital),
     currentEquity: Number(row.current_equity),
     currentCash: Number(row.current_cash),
@@ -154,26 +156,29 @@ function rowToSnapshot(row: PaperEquitySnapshotRow): PaperEquitySnapshot {
 /**
  * Create a new paper trading session.
  * The caller provides a pre-generated id and the aggregation config snapshot.
+ * connectorType defaults to 'paper' if not provided.
  */
 export async function createPaperSession(
-  session: Pick<PaperSession, 'id' | 'name' | 'aggregationConfig' | 'aggregationConfigId' | 'initialCapital'> & { userId?: string }
+  session: Pick<PaperSession, 'id' | 'name' | 'aggregationConfig' | 'aggregationConfigId' | 'initialCapital'> & { userId?: string; connectorType?: PaperSession['connectorType'] }
 ): Promise<PaperSession> {
   const p = getPool();
   const now = Date.now();
+  const connectorType = session.connectorType ?? 'paper';
 
   const { rows } = await p.query<PaperSessionRow>(
     `INSERT INTO paper_sessions
      (id, name, aggregation_config, aggregation_config_id, status,
-      initial_capital, current_equity, current_cash,
+      connector_type, initial_capital, current_equity, current_cash,
       tick_count, last_tick_at, next_tick_at, error_message,
       created_at, updated_at, user_id)
-     VALUES ($1, $2, $3, $4, 'stopped', $5, $5, $5, 0, NULL, NULL, NULL, $6, $6, $7)
+     VALUES ($1, $2, $3, $4, 'stopped', $5, $6, $6, $6, 0, NULL, NULL, NULL, $7, $7, $8)
      RETURNING *`,
     [
       session.id,
       session.name,
       JSON.stringify(session.aggregationConfig),
       session.aggregationConfigId ?? null,
+      connectorType,
       session.initialCapital,
       now,
       session.userId ?? null,

@@ -1,3 +1,5 @@
+[2026-03-19 16:32] be-dev (sonnet) - Implement connector integration in paper trading engine (setConnector, executeOpen/Close helpers, price sync)
+[2026-03-19 15:16] be-dev (sonnet) - Extract runCoreAggregateLoop() pure function from aggregate-engine.ts for testability
 [2026-03-18 12:24] fullstack-dev (sonnet) - Add kill switch toggle: DB table, API endpoints, UI toggles on Trading page
 [2026-03-18 12:38] docs-writer (haiku) - Changelog for kill switch toggle feature
 [2026-03-18 05:30] be-dev (sonnet) - Create final-prod-backtest-and-pt.ts: run V2 5sym WF-optimized backtest ($5k, slippage 0.10%) + create prod PT session
@@ -221,3 +223,18 @@
 [2026-03-19 14:30] qa (sonnet) - Write tests from scratch: price watcher + live data fetcher (69 new tests)
 [2026-03-19 14:30] Explore (haiku) - Analyze critical code coverage for mutation testing
 [2026-03-19 14:50] docs-writer (haiku) - Create changelog for mutation testing session: 110 tests, 15 coverage gaps fixed, 100% kill rate achieved
+[2026-03-19 15:11] commit (haiku) - mutation testing: 110 tests across 7 files, 15 coverage gaps fixed, 100% kill rate
+[2026-03-19 15:16] be-dev (sonnet) - Extract runCoreBacktestLoop from engine.ts for testability
+[2026-03-19 15:32] be-dev (sonnet) - DONE: extracted runCoreBacktestLoop, wrote 44 unit tests, all 1514 tests pass
+[2026-03-19 15:00] architect (opus) - Plan DI refactoring for engine.ts and aggregate-engine.ts
+[2026-03-19 15:05] be-dev (sonnet) - DI refactor: extract runCoreBacktestLoop from engine.ts + 44 tests
+[2026-03-19 15:05] be-dev (sonnet) - DI refactor: extract runCoreAggregateLoop from aggregate-engine.ts + 44 tests
+[2026-03-19 14:52] commit (haiku) - Extract pure core loops from engines via DI
+[2026-03-19 16:00] architect (opus) - Plan TDD integration of Connector abstraction into Paper Trading Engine
+[2026-03-19 16:14] be-dev (sonnet) - Write TDD tests for connector integration into paper trading engine
+[2026-03-19 16:14] be-dev (sonnet) - Add connector_type to paper_sessions (migration + types + DB layer)
+[2026-03-19 16:48] be-dev (sonnet) - Wire connector into session manager: create/connect/disconnect IConnector in startSession/stopSession/resumeSession
+[2026-03-19 16:10] be-dev (sonnet) - TDD: write connector integration tests (17 tests, 11 pending impl)
+[2026-03-19 16:10] be-dev (sonnet) - DB migration + types for connector_type in paper_sessions
+[2026-03-19 16:30] be-dev (sonnet) - Implement connector routing in engine (executeOpen/Close, setConnector)
+[2026-03-19 16:45] be-dev (sonnet) - Wire connector in session-manager (create, connect, disconnect lifecycle)

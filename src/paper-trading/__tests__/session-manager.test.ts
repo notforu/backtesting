@@ -43,6 +43,7 @@ const mockEngineForceTick = vi.fn().mockResolvedValue({
 });
 const mockEngineOn = vi.fn();
 const mockEngineSetRiskManager = vi.fn();
+const mockEngineSetConnector = vi.fn();
 
 // Use function keyword so `new PaperTradingEngine(...)` works as a constructor
 vi.mock('../engine.js', () => ({
@@ -57,6 +58,7 @@ vi.mock('../engine.js', () => ({
       forceTick: mockEngineForceTick,
       on: mockEngineOn,
       setRiskManager: mockEngineSetRiskManager,
+      setConnector: mockEngineSetConnector,
     };
   }),
 }));
@@ -69,12 +71,37 @@ vi.mock('../../notifications/telegram.js', () => ({
   },
 }));
 
+// Mock connector factory
+const mockConnectorConnect = vi.fn().mockResolvedValue(undefined);
+const mockConnectorDisconnect = vi.fn().mockResolvedValue(undefined);
+const mockConnectorIsConnected = vi.fn().mockReturnValue(true);
+const mockConnectorOn = vi.fn();
+
+vi.mock('../../connectors/connector-factory.js', () => ({
+  createConnector: vi.fn().mockImplementation(() => ({
+    type: 'paper',
+    connect: mockConnectorConnect,
+    disconnect: mockConnectorDisconnect,
+    isConnected: mockConnectorIsConnected,
+    on: mockConnectorOn,
+    openLong: vi.fn(),
+    openShort: vi.fn(),
+    closeLong: vi.fn(),
+    closeShort: vi.fn(),
+    closeAllPositions: vi.fn().mockResolvedValue([]),
+    getPositions: vi.fn().mockResolvedValue([]),
+    getPosition: vi.fn().mockResolvedValue(null),
+    getBalance: vi.fn().mockResolvedValue({ total: 10000, available: 10000, unrealizedPnl: 0 }),
+  })),
+}));
+
 // ============================================================================
 // Imports (after mock hoisting)
 // ============================================================================
 
 import { SessionManager } from '../session-manager.js';
 import * as paperDb from '../db.js';
+import { createConnector } from '../../connectors/connector-factory.js';
 
 // ============================================================================
 // Helpers
@@ -98,7 +125,9 @@ function makeSession(overrides: Partial<PaperSession> = {}): PaperSession {
     name: 'Test Session',
     aggregationConfig: testConfig,
     aggregationConfigId: null,
+    strategyConfigId: null,
     status: 'stopped',
+    connectorType: 'paper',
     initialCapital: 10_000,
     currentEquity: 10_000,
     currentCash: 10_000,
@@ -132,6 +161,11 @@ describe('SessionManager', () => {
     vi.mocked(paperDb.deletePaperSession).mockResolvedValue(true);
     vi.mocked(paperDb.getPaperPositions).mockResolvedValue([]);
     vi.mocked(paperDb.getPaperTrades).mockResolvedValue({ trades: [], total: 0 });
+
+    // Default connector mocks
+    mockConnectorConnect.mockResolvedValue(undefined);
+    mockConnectorDisconnect.mockResolvedValue(undefined);
+    mockConnectorIsConnected.mockReturnValue(true);
   });
 
   // ==========================================================================
@@ -174,6 +208,27 @@ describe('SessionManager', () => {
       const createArg = vi.mocked(paperDb.createPaperSession).mock.calls[0][0];
       expect(createArg.initialCapital).toBe(5_000);
     });
+
+    it('passes connectorType to createPaperSession when provided', async () => {
+      await manager.createSession({
+        name: 'Bybit Session',
+        aggregationConfig: testConfig,
+        connectorType: 'bybit',
+      });
+
+      const createArg = vi.mocked(paperDb.createPaperSession).mock.calls[0][0];
+      expect(createArg.connectorType).toBe('bybit');
+    });
+
+    it('defaults connectorType to "paper" when not provided', async () => {
+      await manager.createSession({
+        name: 'Default Session',
+        aggregationConfig: testConfig,
+      });
+
+      const createArg = vi.mocked(paperDb.createPaperSession).mock.calls[0][0];
+      expect(createArg.connectorType).toBe('paper');
+    });
   });
 
   // ==========================================================================
@@ -210,6 +265,50 @@ describe('SessionManager', () => {
       expect(paperDb.updatePaperSession).toHaveBeenCalledWith(
         'not-started',
         expect.objectContaining({ status: 'stopped' }),
+      );
+    });
+  });
+
+  // ==========================================================================
+  // 2b. Connector wiring
+  // ==========================================================================
+
+  describe('connector wiring', () => {
+    it('startSession creates a connector and attaches it to the engine', async () => {
+      await manager.startSession('sess-001');
+
+      // createConnector must have been called once
+      expect(createConnector).toHaveBeenCalledOnce();
+      // connector.connect() must be called before engine.start()
+      expect(mockConnectorConnect).toHaveBeenCalledBefore(mockEngineStart);
+      // engine.setConnector() must be called with the connector
+      expect(mockEngineSetConnector).toHaveBeenCalledOnce();
+    });
+
+    it('startSession builds PaperConnector config from session capital and defaults', async () => {
+      const session = makeSession({ initialCapital: 5_000 });
+      vi.mocked(paperDb.getPaperSession).mockResolvedValue(session);
+
+      await manager.startSession('sess-001');
+
+      const connectorArg = vi.mocked(createConnector).mock.calls[0][0];
+      expect(connectorArg.type).toBe('paper');
+      expect(connectorArg.initialCapital).toBe(5_000);
+    });
+
+    it('stopSession disconnects the connector', async () => {
+      await manager.startSession('sess-001');
+      await manager.stopSession('sess-001');
+
+      expect(mockConnectorDisconnect).toHaveBeenCalledOnce();
+    });
+
+    it('startSession with bybit connectorType throws not-yet-supported error', async () => {
+      const session = makeSession({ connectorType: 'bybit' });
+      vi.mocked(paperDb.getPaperSession).mockResolvedValue(session);
+
+      await expect(manager.startSession('sess-001')).rejects.toThrow(
+        /connector type.*bybit.*not yet supported/i,
       );
     });
   });

@@ -66,6 +66,7 @@ function makePaperSession(overrides: Partial<PaperSession> = {}): PaperSession {
     aggregationConfigId: null,
     strategyConfigId: null,
     status: 'stopped',
+    connectorType: 'paper',
     initialCapital: 10_000,
     currentEquity: 10_000,
     currentCash: 10_000,

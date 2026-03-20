@@ -498,6 +498,7 @@ export interface PaperSession {
   aggregationConfigId: string | null;
   strategyConfigId?: string | null;
   status: 'running' | 'paused' | 'stopped' | 'error';
+  connectorType: 'paper' | 'bybit' | 'bybit-testnet';
   initialCapital: number;
   currentEquity: number;
   currentCash: number;
@@ -583,6 +584,7 @@ export interface CreatePaperSessionRequest {
   strategyConfig?: SimpleStrategyConfig;
   backtestRunId?: string;
   initialCapital?: number;
+  connectorType?: 'paper' | 'bybit' | 'bybit-testnet';
 }
 
 export interface PaperSessionEvent {

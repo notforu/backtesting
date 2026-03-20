@@ -30,6 +30,8 @@ import * as paperDb from './db.js';
 import { saveFundingRates } from '../data/db.js';
 import type { Trade } from '../core/types.js';
 import type { RiskManager } from '../risk/risk-manager.js';
+import type { IConnector } from '../connectors/types.js';
+import { PaperConnector } from '../connectors/paper-connector.js';
 
 const WARMUP_CANDLES = 200; // Historical candles for strategy warmup
 const MAX_RETRIES = 10; // Maximum transient error retries before giving up
@@ -96,6 +98,11 @@ export class PaperTradingEngine extends EventEmitter {
   // When absent, the engine operates as before (backward compatible).
   private riskManager?: RiskManager;
 
+  // Optional connector — when set, trade execution is routed through the connector
+  // and the portfolio is updated to mirror the connector's fills.
+  // When absent, the engine uses the legacy direct portfolio path.
+  private connector?: IConnector;
+
   constructor(session: PaperSession) {
     super();
     this.sessionId = session.id;
@@ -120,6 +127,16 @@ export class PaperTradingEngine extends EventEmitter {
   /** Attach a RiskManager to this engine. Must be called before the engine starts. */
   setRiskManager(rm: RiskManager): void {
     this.riskManager = rm;
+  }
+
+  /**
+   * Attach a connector to this engine.
+   * When set, all trade execution is routed through the connector and the portfolio
+   * is updated to mirror the connector's actual fill prices and amounts.
+   * Can be called at any time before or after start().
+   */
+  setConnector(connector: IConnector): void {
+    this.connector = connector;
   }
 
   get currentRetryCount(): number {
@@ -530,7 +547,9 @@ export class PaperTradingEngine extends EventEmitter {
 
       const frCache = new Map<string, FundingRate[]>(); // symbol -> funding rates
 
-      if (this.config.mode === 'futures') {
+      // Always fetch funding rates — mode is deprecated and "always futures".
+      // Spot sessions simply receive empty arrays from the fetcher and no payments are applied.
+      {
         const uniqueSymbols = [...new Set(this.config.subStrategies.map(s => s.symbol))];
         for (const symbol of uniqueSymbols) {
           const fundingRates = await this.fetcher.fetchLatestFundingRates(symbol, 100);
@@ -703,11 +722,17 @@ export class PaperTradingEngine extends EventEmitter {
       for (let barIdx = minNewStart; barIdx <= maxBarIndex; barIdx++) {
         // ----------------------------------------------------------------
         // Step 3: Update portfolio prices with the close of this bar.
+        // Also sync price to PaperConnector (if one is attached) so that
+        // it can use the correct mark price for slippage calculation.
         // ----------------------------------------------------------------
         for (const awd of this.adapters) {
           if (barIdx < awd.candles.length) {
             const bar = awd.candles[barIdx];
             this.portfolio.updatePrice(awd.config.symbol, bar.close);
+            // Sync price to connector if it exposes setPrice (e.g. PaperConnector)
+            if (this.connector && 'setPrice' in this.connector) {
+              (this.connector as PaperConnector).setPrice(awd.config.symbol, bar.close);
+            }
             // M3: Track latest candle timestamp
             if (!latestCandleTimestampSet || bar.timestamp > latestCandleTimestamp) {
               latestCandleTimestamp = bar.timestamp;
@@ -717,11 +742,12 @@ export class PaperTradingEngine extends EventEmitter {
         }
 
         // ----------------------------------------------------------------
-        // Step 4: Process funding payments (futures mode only).
+        // Step 4: Process funding payments.
         // Only apply FR timestamps that fall within the range of this bar
         // (between the previous bar's open and this bar's close timestamp).
+        // mode is deprecated — always process funding if any rates exist.
         // ----------------------------------------------------------------
-        if (this.config.mode === 'futures') {
+        {
           for (const awd of this.adapters) {
             if (barIdx >= awd.candles.length) continue;
 
@@ -810,54 +836,58 @@ export class PaperTradingEngine extends EventEmitter {
             if (positions.longPosition) {
               // Long exit is a sell — slippage reduces the fill price
               const closePrice = this.applySlippage(closeCandle.close, 'sell');
-              const trade = this.portfolio.closeLong(
+              const trade = await this.executeClose(
                 awd.config.symbol,
-                'all',
+                'long',
+                positions.longPosition.amount,
                 closePrice,
                 closeTimestamp,
-                this.getFeeRate(),
               );
-              const paperTrade = await this.saveTrade(awd, trade, 'close_long', awd.accumulatedFunding);
-              tradesClosed.push(paperTrade);
-              awd.accumulatedFunding = 0;
-              await paperDb.deletePaperPosition(
-                this.sessionId,
-                `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`,
-                'long',
-              );
-              // Notify RiskManager of closed position
-              if (this.riskManager) {
-                this.riskManager.onTradeClosed({
-                  symbol: awd.config.symbol,
-                  pnl: paperTrade.pnl ?? 0,
-                });
+              if (trade !== null) {
+                const paperTrade = await this.saveTrade(awd, trade, 'close_long', awd.accumulatedFunding);
+                tradesClosed.push(paperTrade);
+                awd.accumulatedFunding = 0;
+                await paperDb.deletePaperPosition(
+                  this.sessionId,
+                  `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`,
+                  'long',
+                );
+                // Notify RiskManager of closed position
+                if (this.riskManager) {
+                  this.riskManager.onTradeClosed({
+                    symbol: awd.config.symbol,
+                    pnl: paperTrade.pnl ?? 0,
+                  });
+                }
               }
             }
 
             if (positions.shortPosition) {
               // Short exit is a buy — slippage increases the fill price
               const closePrice = this.applySlippage(closeCandle.close, 'buy');
-              const trade = this.portfolio.closeShort(
+              const trade = await this.executeClose(
                 awd.config.symbol,
-                'all',
+                'short',
+                positions.shortPosition.amount,
                 closePrice,
                 closeTimestamp,
-                this.getFeeRate(),
               );
-              const paperTrade = await this.saveTrade(awd, trade, 'close_short', awd.accumulatedFunding);
-              tradesClosed.push(paperTrade);
-              awd.accumulatedFunding = 0;
-              await paperDb.deletePaperPosition(
-                this.sessionId,
-                `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`,
-                'short',
-              );
-              // Notify RiskManager of closed position
-              if (this.riskManager) {
-                this.riskManager.onTradeClosed({
-                  symbol: awd.config.symbol,
-                  pnl: paperTrade.pnl ?? 0,
-                });
+              if (trade !== null) {
+                const paperTrade = await this.saveTrade(awd, trade, 'close_short', awd.accumulatedFunding);
+                tradesClosed.push(paperTrade);
+                awd.accumulatedFunding = 0;
+                await paperDb.deletePaperPosition(
+                  this.sessionId,
+                  `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`,
+                  'short',
+                );
+                // Notify RiskManager of closed position
+                if (this.riskManager) {
+                  this.riskManager.onTradeClosed({
+                    symbol: awd.config.symbol,
+                    pnl: paperTrade.pnl ?? 0,
+                  });
+                }
               }
             }
 
@@ -969,26 +999,21 @@ export class PaperTradingEngine extends EventEmitter {
           }
 
           try {
-            let trade: Trade;
-            if (signal.direction === 'long') {
-              trade = this.portfolio.openLong(
-                awd.config.symbol,
-                amount,
-                entryPrice,
-                entryTimestamp,
-                this.getFeeRate(),
-              );
-            } else {
-              trade = this.portfolio.openShort(
-                awd.config.symbol,
-                amount,
-                entryPrice,
-                entryTimestamp,
-                this.getFeeRate(),
-              );
+            const direction = signal.direction as 'long' | 'short';
+            const trade = await this.executeOpen(
+              awd.config.symbol,
+              direction,
+              amount,
+              entryPrice,
+              entryTimestamp,
+            );
+
+            if (trade === null) {
+              // Connector rejected or errored — skip this signal
+              continue;
             }
 
-            const action = signal.direction === 'long' ? 'open_long' : 'open_short';
+            const action = direction === 'long' ? 'open_long' : 'open_short';
             const paperTrade = await this.saveTrade(awd, trade, action, 0);
             tradesOpened.push(paperTrade);
 
@@ -1000,8 +1025,9 @@ export class PaperTradingEngine extends EventEmitter {
               });
             }
 
-            // Confirm in adapter so shadow state stays in sync
-            awd.adapter.confirmExecutionAtBar(signal.direction, barIndex);
+            // Confirm in adapter so shadow state stays in sync.
+            // Use the actual fill price from the trade (connector may have used different price).
+            awd.adapter.confirmExecutionWithPrice(direction, trade.price, entryTimestamp);
             awd.accumulatedFunding = 0;
 
             // Persist position to DB.
@@ -1012,16 +1038,16 @@ export class PaperTradingEngine extends EventEmitter {
             const { stopLoss, takeProfit } = this.computeSlTp(
               awd,
               barIndex,
-              entryPrice,
-              signal.direction as 'long' | 'short',
+              trade.price,
+              direction,
             );
             await paperDb.savePaperPosition({
               sessionId: this.sessionId,
               symbol: awd.config.symbol,
-              direction: signal.direction as 'long' | 'short',
+              direction,
               subStrategyKey: `${awd.config.strategyName}:${awd.config.symbol}:${awd.config.timeframe}`,
-              entryPrice,
-              amount,
+              entryPrice: trade.price,
+              amount: trade.amount,
               entryTime: entryTimestamp,
               unrealizedPnl: 0,
               fundingAccumulated: 0,
@@ -1203,6 +1229,103 @@ export class PaperTradingEngine extends EventEmitter {
   }
 
   /**
+   * Execute an open (long or short) through the connector when present, or fall back
+   * to the direct portfolio path for backward compatibility.
+   *
+   * Connector path:
+   *  1. Call connector.openLong/openShort(symbol, amount).
+   *  2. If the result is 'filled', mirror the fill to the portfolio using the
+   *     connector's actual fill price/amount.
+   *  3. If the result is 'rejected', do NOT touch the portfolio.
+   *  4. If the connector throws, emit an 'error' event and do NOT touch the portfolio.
+   *
+   * Legacy path (no connector): call portfolio.openLong/openShort directly.
+   */
+  private async executeOpen(
+    symbol: string,
+    direction: 'long' | 'short',
+    amount: number,
+    price: number,
+    timestamp: number,
+  ): Promise<Trade | null> {
+    const feeRate = this.getFeeRate();
+
+    if (this.connector) {
+      try {
+        const result = direction === 'long'
+          ? await this.connector.openLong(symbol, amount)
+          : await this.connector.openShort(symbol, amount);
+
+        if (result.status !== 'filled') {
+          // Rejected — do not touch portfolio
+          return null;
+        }
+
+        // Mirror the connector fill to the portfolio using the actual fill price/amount
+        const trade = direction === 'long'
+          ? this.portfolio.openLong(symbol, result.amount, result.price, timestamp, feeRate)
+          : this.portfolio.openShort(symbol, result.amount, result.price, timestamp, feeRate);
+
+        return trade;
+      } catch (err) {
+        // Connector error — do not touch portfolio; surface via error event
+        this.emit('error', err instanceof Error ? err : new Error(String(err)));
+        return null;
+      }
+    } else {
+      // Legacy path — direct portfolio execution
+      const trade = direction === 'long'
+        ? this.portfolio.openLong(symbol, amount, price, timestamp, feeRate)
+        : this.portfolio.openShort(symbol, amount, price, timestamp, feeRate);
+      return trade;
+    }
+  }
+
+  /**
+   * Execute a close (long or short) through the connector when present, or fall back
+   * to the direct portfolio path for backward compatibility.
+   */
+  private async executeClose(
+    symbol: string,
+    direction: 'long' | 'short',
+    amount: number,
+    price: number,
+    timestamp: number,
+  ): Promise<Trade | null> {
+    const feeRate = this.getFeeRate();
+
+    if (this.connector) {
+      try {
+        const result = direction === 'long'
+          ? await this.connector.closeLong(symbol, amount)
+          : await this.connector.closeShort(symbol, amount);
+
+        if (result.status !== 'filled') {
+          // Rejected — do not touch portfolio
+          return null;
+        }
+
+        // Mirror the connector fill to the portfolio using the actual fill price/amount
+        const trade = direction === 'long'
+          ? this.portfolio.closeLong(symbol, 'all', result.price, timestamp, feeRate)
+          : this.portfolio.closeShort(symbol, 'all', result.price, timestamp, feeRate);
+
+        return trade;
+      } catch (err) {
+        // Connector error — do not touch portfolio; surface via error event
+        this.emit('error', err instanceof Error ? err : new Error(String(err)));
+        return null;
+      }
+    } else {
+      // Legacy path — direct portfolio execution
+      const trade = direction === 'long'
+        ? this.portfolio.closeLong(symbol, 'all', price, timestamp, feeRate)
+        : this.portfolio.closeShort(symbol, 'all', price, timestamp, feeRate);
+      return trade;
+    }
+  }
+
+  /**
    * Apply slippage to a price.
    * Buys (long entry, short exit) get a higher fill price.
    * Sells (long exit, short entry) get a lower fill price.
@@ -1332,6 +1455,26 @@ export class PaperTradingEngine extends EventEmitter {
     }
 
     return { stopLoss: null, takeProfit: null };
+  }
+
+  /**
+   * Public method to forcefully close all open positions.
+   * When a connector is attached, delegates to connector.closeAllPositions().
+   * Falls back to the legacy portfolio close path when no connector is present.
+   * Useful for kill-switch scenarios and testing.
+   */
+  async forceClosePositions(): Promise<void> {
+    if (this.connector) {
+      await this.connector.closeAllPositions();
+      // Clean up DB records after connector has closed positions on the exchange
+      const dbPositions = await paperDb.getPaperPositions(this.sessionId);
+      for (const pos of dbPositions) {
+        await paperDb.deletePaperPosition(this.sessionId, pos.subStrategyKey, pos.direction as 'long' | 'short');
+      }
+      return;
+    }
+    // Legacy path
+    await this.forceCloseAllPositions();
   }
 
   /**

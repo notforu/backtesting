@@ -44,6 +44,7 @@ function makeSessionRow(overrides: Record<string, unknown> = {}): Record<string,
     },
     aggregation_config_id: null,
     status: 'stopped',
+    connector_type: 'paper',
     initial_capital: '10000',
     current_equity: '10000',
     current_cash: '10000',
@@ -126,6 +127,7 @@ describe('Paper Trading DB Persistence', () => {
       expect(session!.id).toBe('sess-001');
       expect(session!.name).toBe('Test Session');
       expect(session!.status).toBe('stopped');
+      expect(session!.connectorType).toBe('paper');
       expect(session!.initialCapital).toBe(10_000);
       expect(session!.currentEquity).toBe(10_000);
       expect(session!.currentCash).toBe(10_000);
@@ -154,6 +156,99 @@ describe('Paper Trading DB Persistence', () => {
       const session = await paperDb.getPaperSession('sess-001');
       expect(session!.lastTickAt).toBe(1_700_000_001_000);
       expect(session!.nextTickAt).toBe(1_700_000_005_000);
+    });
+
+    it('returns connectorType as "bybit" when stored as such', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [makeSessionRow({ connector_type: 'bybit' })],
+      });
+
+      const session = await paperDb.getPaperSession('sess-001');
+      expect(session!.connectorType).toBe('bybit');
+    });
+
+    it('returns connectorType as "bybit-testnet" when stored as such', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [makeSessionRow({ connector_type: 'bybit-testnet' })],
+      });
+
+      const session = await paperDb.getPaperSession('sess-001');
+      expect(session!.connectorType).toBe('bybit-testnet');
+    });
+
+    it('defaults connectorType to "paper" when column is null (legacy rows)', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [makeSessionRow({ connector_type: null })],
+      });
+
+      const session = await paperDb.getPaperSession('sess-001');
+      expect(session!.connectorType).toBe('paper');
+    });
+  });
+
+  // ==========================================================================
+  // connector_type create: createPaperSession stores and returns correct value
+  // ==========================================================================
+
+  describe('createPaperSession', () => {
+    const baseSession = {
+      id: 'sess-new',
+      name: 'New Session',
+      aggregationConfig: {
+        subStrategies: [],
+        allocationMode: 'single_strongest' as const,
+        maxPositions: 1,
+        initialCapital: 5000,
+        startDate: 0,
+        endDate: 0,
+        exchange: 'bybit',
+      },
+      aggregationConfigId: null,
+      initialCapital: 5000,
+    };
+
+    it('passes connector_type to INSERT and returns it in the result', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [makeSessionRow({ id: 'sess-new', connector_type: 'bybit' })],
+      });
+
+      const result = await paperDb.createPaperSession({
+        ...baseSession,
+        connectorType: 'bybit',
+      });
+
+      expect(result.connectorType).toBe('bybit');
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('connector_type');
+      expect(params).toContain('bybit');
+    });
+
+    it('defaults connector_type to "paper" when not provided', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [makeSessionRow({ id: 'sess-new', connector_type: 'paper' })],
+      });
+
+      const result = await paperDb.createPaperSession(baseSession);
+
+      expect(result.connectorType).toBe('paper');
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('connector_type');
+      expect(params).toContain('paper');
+    });
+
+    it('stores bybit-testnet connector_type correctly', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [makeSessionRow({ id: 'sess-new', connector_type: 'bybit-testnet' })],
+      });
+
+      const result = await paperDb.createPaperSession({
+        ...baseSession,
+        connectorType: 'bybit-testnet',
+      });
+
+      expect(result.connectorType).toBe('bybit-testnet');
+      const [_, params] = mockQuery.mock.calls[0];
+      expect(params).toContain('bybit-testnet');
     });
   });
 

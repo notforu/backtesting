@@ -6,6 +6,7 @@
  */
 
 import type { AggregateBacktestConfig } from '../core/signal-types.js';
+import type { ConnectorType } from '../connectors/types.js';
 
 export interface PaperSession {
   id: string;
@@ -14,6 +15,7 @@ export interface PaperSession {
   aggregationConfigId: string | null;
   strategyConfigId: string | null;  // FK to strategy_configs (single-asset sessions)
   status: 'running' | 'paused' | 'stopped' | 'error';
+  connectorType: ConnectorType;  // which trading backend this session uses
   initialCapital: number;
   currentEquity: number;
   currentCash: number;

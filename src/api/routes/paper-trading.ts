@@ -35,6 +35,7 @@ const CreateSessionSchema = z
     strategyConfig: SimpleStrategyConfigSchema.optional(),
     backtestRunId: z.string().min(1).optional(),
     initialCapital: z.number().positive().optional(),
+    connectorType: z.enum(['paper', 'bybit', 'bybit-testnet']).optional().default('paper'),
   })
   .refine((data) => data.aggregationConfigId || data.strategyConfig || data.backtestRunId, {
     message: 'Either aggregationConfigId, strategyConfig, or backtestRunId is required',
@@ -195,6 +196,7 @@ export async function paperTradingRoutes(fastify: FastifyInstance) {
         aggregationConfigId,
         initialCapital: parsed.initialCapital,
         userId: request.user?.userId,
+        connectorType: parsed.connectorType,
       });
 
       return reply.status(201).send(session);
