@@ -34,7 +34,7 @@ export function TradesTable({
 
       {/* PnL Clarity Banner - shown only in futures mode when funding income data is available */}
       {isFutures && !showAssetColumn && (
-        <div className="mb-4 p-3 bg-blue-900/30 border border-blue-700/50 rounded-lg flex flex-wrap gap-x-6 gap-y-2 text-sm">
+        <div className="mb-4 p-3 bg-blue-900/30 border border-blue-700/50 rounded-lg flex flex-wrap gap-x-3 sm:gap-x-6 gap-y-2 text-xs sm:text-sm">
           <div>
             <span className="text-gray-400">Trading P&amp;L: </span>
             <span
@@ -80,33 +80,34 @@ export function TradesTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-gray-400 border-b border-gray-700">
-              <th className="pb-2 pr-4">#</th>
+              <th className="pb-2 pr-4 hidden md:table-cell">#</th>
               {showAssetColumn && <th className="pb-2 pr-4">Asset</th>}
               <th className="pb-2 pr-4">Action</th>
               <th className="pb-2 pr-4">Price</th>
-              <th className="pb-2 pr-4">Amount</th>
-              <th className="pb-2 pr-4">P&L</th>
-              <th className="pb-2 pr-4">P&L %</th>
-              <th className="pb-2 pr-4">Cost</th>
+              <th className="pb-2 pr-4 hidden md:table-cell">Amount</th>
+              <th className="pb-2 pr-4">P&amp;L</th>
+              <th className="pb-2 pr-4 hidden sm:table-cell">P&amp;L %</th>
+              <th className="pb-2 pr-4 hidden lg:table-cell">Cost</th>
               {isFutures && (
                 <>
-                  <th className="pb-2 pr-4">Funding</th>
-                  <th className="pb-2 pr-4">FR Rate</th>
+                  <th className="pb-2 pr-4 hidden md:table-cell">Funding</th>
+                  <th className="pb-2 pr-4 hidden lg:table-cell">FR Rate</th>
                 </>
               )}
-              <th className="pb-2 pr-4">Balance</th>
+              <th className="pb-2 pr-4 hidden sm:table-cell">Balance</th>
               <th className="pb-2">Time</th>
             </tr>
           </thead>
           <tbody>
             {displayedTrades.slice(0, 100).map((trade, index) => {
               const hasClosePnl = isCloseTrade(trade);
+              const tradeDate = new Date(trade.timestamp);
               return (
                 <tr
                   key={trade.id}
                   className="border-b border-gray-700/50 hover:bg-gray-700/30"
                 >
-                  <td className="py-2 pr-4 text-gray-500">{index + 1}</td>
+                  <td className="py-2 pr-4 text-gray-500 hidden md:table-cell">{index + 1}</td>
                   {showAssetColumn && (
                     <td className="py-2 pr-4 text-gray-400 text-xs">
                       {trade.symbol?.replace('/USDT:USDT', '') ?? '-'}
@@ -125,7 +126,7 @@ export function TradesTable({
                       maximumFractionDigits: 2,
                     })}
                   </td>
-                  <td className="py-2 pr-4 text-gray-300">{trade.amount.toFixed(6)}</td>
+                  <td className="py-2 pr-4 text-gray-300 hidden md:table-cell">{trade.amount.toFixed(6)}</td>
                   <td
                     className={`py-2 pr-4 ${
                       hasClosePnl
@@ -140,7 +141,7 @@ export function TradesTable({
                       : '-'}
                   </td>
                   <td
-                    className={`py-2 pr-4 ${
+                    className={`py-2 pr-4 hidden sm:table-cell ${
                       hasClosePnl
                         ? (trade.pnlPercent ?? 0) >= 0
                           ? 'text-green-400'
@@ -152,7 +153,7 @@ export function TradesTable({
                       ? `${(trade.pnlPercent ?? 0) >= 0 ? '+' : ''}${(trade.pnlPercent ?? 0).toFixed(2)}%`
                       : '-'}
                   </td>
-                  <td className="py-2 pr-4 text-gray-400">
+                  <td className="py-2 pr-4 text-gray-400 hidden lg:table-cell">
                     {trade.fee || trade.slippage
                       ? `$${((trade.fee ?? 0) + (trade.slippage ?? 0)).toFixed(2)}`
                       : '-'}
@@ -160,7 +161,7 @@ export function TradesTable({
                   {isFutures && (
                     <>
                       <td
-                        className={`py-2 pr-4 ${
+                        className={`py-2 pr-4 hidden md:table-cell ${
                           trade.fundingIncome == null
                             ? 'text-gray-600'
                             : trade.fundingIncome >= 0
@@ -173,7 +174,7 @@ export function TradesTable({
                           : '-'}
                       </td>
                       <td
-                        className={`py-2 pr-4 font-mono text-xs ${
+                        className={`py-2 pr-4 font-mono text-xs hidden lg:table-cell ${
                           trade.fundingRate == null
                             ? 'text-gray-600'
                             : trade.fundingRate >= 0
@@ -187,14 +188,21 @@ export function TradesTable({
                       </td>
                     </>
                   )}
-                  <td className="py-2 pr-4 text-gray-300">
+                  <td className="py-2 pr-4 text-gray-300 hidden sm:table-cell">
                     ${trade.balanceAfter.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
                   </td>
                   <td className="py-2 text-gray-400">
-                    {new Date(trade.timestamp).toLocaleString()}
+                    {/* Mobile: date only */}
+                    <span className="block sm:hidden">
+                      {tradeDate.toLocaleDateString()}
+                    </span>
+                    {/* Desktop: full datetime */}
+                    <span className="hidden sm:block">
+                      {tradeDate.toLocaleString()}
+                    </span>
                   </td>
                 </tr>
               );

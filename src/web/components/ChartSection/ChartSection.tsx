@@ -3,12 +3,27 @@
  * Renders either a per-asset chart, portfolio chart, or single-asset chart.
  */
 
+import { useState, useEffect } from 'react';
 import { Chart } from '../Chart';
 import { PortfolioChart } from '../Chart/PortfolioChart';
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary';
 import { getFrShortThreshold, getFrLongThreshold, configDateToTimestamp } from '../../utils/frThresholds';
 import type { BacktestResult, Timeframe } from '../../types';
 import type { MultiAssetItem } from '../../hooks/useMultiAsset';
+
+function useChartHeight(): number {
+  const [height, setHeight] = useState(() => window.innerWidth < 768 ? 300 : 450);
+
+  useEffect(() => {
+    function handleResize() {
+      setHeight(window.innerWidth < 768 ? 300 : 450);
+    }
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return height;
+}
 
 interface ChartSectionProps {
   currentResult: BacktestResult | null;
@@ -30,15 +45,16 @@ export function ChartSection({
   assetCandles,
 }: ChartSectionProps) {
   const result = currentResult as BacktestResult;
+  const chartHeight = useChartHeight();
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-y-1">
         <h2 className="text-lg font-semibold text-white">
           {isMultiAsset ? 'Multi-Asset Portfolio' : 'Chart'}
         </h2>
         {currentResult && (
-          <div className="flex items-center gap-4 text-sm text-gray-400">
+          <div className="flex items-center flex-wrap gap-2 md:gap-4 text-sm text-gray-400">
             <span>
               {isMultiAsset && selectedAsset
                 ? `${selectedAsset.label} / ${selectedAsset.timeframe}`
@@ -51,7 +67,7 @@ export function ChartSection({
               -{' '}
               {new Date(currentResult.config.endDate).toLocaleDateString()}
             </span>
-            <span>
+            <span className="hidden sm:inline">
               {isMultiAsset && selectedAsset
                 ? `${assetCandles?.length ?? 0} candles`
                 : isMultiAsset
@@ -99,7 +115,7 @@ export function ChartSection({
               <Chart
                 candles={assetCandles}
                 trades={currentResult!.trades.filter((t) => t.symbol === selectedAsset.symbol)}
-                height={450}
+                height={chartHeight}
                 isFutures={true}
                 backtestTimeframe={selectedAsset.timeframe as Timeframe}
                 exchange={result.config.exchange}
@@ -112,7 +128,10 @@ export function ChartSection({
                 indicators={(currentResult as any).perAssetResults?.[selectedAsset.symbol]?.indicators}
               />
             ) : (
-              <div className="h-[450px] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500">
+              <div
+                className="bg-gray-800 rounded-lg flex items-center justify-center text-gray-500"
+                style={{ height: chartHeight }}
+              >
                 Loading candles for {selectedAsset.label}...
               </div>
             )}
@@ -123,14 +142,14 @@ export function ChartSection({
             equity={(currentResult as any).equity ?? []}
             rollingMetrics={(currentResult as any).rollingMetrics}
             trades={currentResult!.trades}
-            height={450}
+            height={chartHeight}
           />
         ) : (
           /* Single-asset chart */
           <Chart
             candles={result?.candles ?? []}
             trades={currentResult?.trades ?? []}
-            height={450}
+            height={chartHeight}
             isFutures={
               (currentResult as any)?.config?.mode === 'futures' ||
               result?.metrics?.totalFundingIncome !== undefined

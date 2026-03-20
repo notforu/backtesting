@@ -129,15 +129,15 @@ export function PaperPositionsTable({ positions, chartCandles }: PaperPositionsT
                   <tr className="text-gray-500 border-b border-gray-800">
                     <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Symbol</th>
                     <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Size</th>
-                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Entry Price</th>
-                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Mark Price</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap hidden md:table-cell">Entry Price</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap hidden md:table-cell">Mark Price</th>
                     <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Unr. PnL</th>
                     <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">PnL %</th>
-                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Margin</th>
-                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Funding</th>
-                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">SL</th>
-                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">TP</th>
-                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Entry Time</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap hidden lg:table-cell">Margin</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap hidden lg:table-cell">Funding</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap hidden md:table-cell">SL</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap hidden md:table-cell">TP</th>
+                    <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap hidden sm:table-cell">Entry Time</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -159,7 +159,8 @@ export function PaperPositionsTable({ positions, chartCandles }: PaperPositionsT
                                 ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                                 : 'bg-red-500/20 text-red-400 border border-red-500/30'
                             }`}>
-                              {pos.direction === 'long' ? 'Long' : 'Short'}
+                              <span className="sm:hidden">{pos.direction === 'long' ? 'L' : 'S'}</span>
+                              <span className="hidden sm:inline">{pos.direction === 'long' ? 'Long' : 'Short'}</span>
                             </span>
                             <span className="text-white font-semibold">
                               {symbolLabel(pos.symbol)}
@@ -169,10 +170,10 @@ export function PaperPositionsTable({ positions, chartCandles }: PaperPositionsT
                         <td className="px-3 py-2.5 text-right text-gray-300 font-mono">
                           {pos.amount.toFixed(pos.amount < 0.01 ? 6 : pos.amount < 1 ? 4 : 3)}
                         </td>
-                        <td className="px-3 py-2.5 text-right text-gray-300 font-mono">
+                        <td className="px-3 py-2.5 text-right text-gray-300 font-mono hidden md:table-cell">
                           {fmtPrice(pos.entryPrice)}
                         </td>
-                        <td className="px-3 py-2.5 text-right text-gray-200 font-mono">
+                        <td className="px-3 py-2.5 text-right text-gray-200 font-mono hidden md:table-cell">
                           {fmtPrice(mark)}
                         </td>
                         <td className={`px-3 py-2.5 text-right font-mono font-semibold ${pnlPositive ? 'text-green-400' : 'text-red-400'}`}>
@@ -181,28 +182,28 @@ export function PaperPositionsTable({ positions, chartCandles }: PaperPositionsT
                         <td className={`px-3 py-2.5 text-right font-mono ${pnlPositive ? 'text-green-400' : 'text-red-400'}`}>
                           {pnlPositive ? '+' : ''}{pnlPct.toFixed(2)}%
                         </td>
-                        <td className="px-3 py-2.5 text-right text-gray-400 font-mono">
+                        <td className="px-3 py-2.5 text-right text-gray-400 font-mono hidden lg:table-cell">
                           {fmtUsd(notional)}
                         </td>
-                        <td className={`px-3 py-2.5 text-right font-mono ${pos.fundingAccumulated >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        <td className={`px-3 py-2.5 text-right font-mono hidden lg:table-cell ${pos.fundingAccumulated >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                           {pos.fundingAccumulated !== 0
                             ? `${pos.fundingAccumulated >= 0 ? '+' : ''}${fmtUsd(pos.fundingAccumulated)}`
                             : <span className="text-gray-600">—</span>
                           }
                         </td>
-                        <td className="px-3 py-2.5 text-right font-mono">
+                        <td className="px-3 py-2.5 text-right font-mono hidden md:table-cell">
                           {pos.stopLoss != null
                             ? <span className="text-red-400">{fmtPrice(pos.stopLoss)}</span>
                             : <span className="text-gray-600">—</span>
                           }
                         </td>
-                        <td className="px-3 py-2.5 text-right font-mono">
+                        <td className="px-3 py-2.5 text-right font-mono hidden md:table-cell">
                           {pos.takeProfit != null
                             ? <span className="text-green-400">{fmtPrice(pos.takeProfit)}</span>
                             : <span className="text-gray-600">—</span>
                           }
                         </td>
-                        <td className="px-3 py-2.5 text-right text-gray-500 whitespace-nowrap">
+                        <td className="px-3 py-2.5 text-right text-gray-500 whitespace-nowrap hidden sm:table-cell">
                           {new Date(pos.entryTime).toLocaleString(undefined, {
                             month: 'short', day: 'numeric',
                             hour: '2-digit', minute: '2-digit',
@@ -232,10 +233,10 @@ export function PaperPositionsTable({ positions, chartCandles }: PaperPositionsT
                   <tr className="text-gray-500 border-b border-gray-800">
                     <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Symbol</th>
                     <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Type</th>
-                    <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Side</th>
+                    <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap hidden sm:table-cell">Side</th>
                     <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Trigger Price</th>
                     <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Size</th>
-                    <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Status</th>
+                    <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap hidden sm:table-cell">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -253,7 +254,8 @@ export function PaperPositionsTable({ positions, chartCandles }: PaperPositionsT
                                 ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                                 : 'bg-red-500/20 text-red-400 border border-red-500/30'
                             }`}>
-                              {order.direction === 'long' ? 'Long' : 'Short'}
+                              <span className="sm:hidden">{order.direction === 'long' ? 'L' : 'S'}</span>
+                              <span className="hidden sm:inline">{order.direction === 'long' ? 'Long' : 'Short'}</span>
                             </span>
                             <span className="text-white font-semibold">
                               {symbolLabel(order.symbol)}
@@ -266,10 +268,11 @@ export function PaperPositionsTable({ positions, chartCandles }: PaperPositionsT
                               ? 'bg-red-500/15 text-red-400 border border-red-500/25'
                               : 'bg-green-500/15 text-green-400 border border-green-500/25'
                           }`}>
-                            {order.type}
+                            <span className="sm:hidden">{isSL ? 'SL' : 'TP'}</span>
+                            <span className="hidden sm:inline">{order.type}</span>
                           </span>
                         </td>
-                        <td className="px-3 py-2.5">
+                        <td className="px-3 py-2.5 hidden sm:table-cell">
                           <span className={`font-semibold ${order.side === 'Sell' ? 'text-red-400' : 'text-green-400'}`}>
                             {order.side}
                           </span>
@@ -280,7 +283,7 @@ export function PaperPositionsTable({ positions, chartCandles }: PaperPositionsT
                         <td className="px-3 py-2.5 text-right font-mono text-gray-300">
                           {order.amount.toFixed(order.amount < 0.01 ? 6 : order.amount < 1 ? 4 : 3)}
                         </td>
-                        <td className="px-3 py-2.5">
+                        <td className="px-3 py-2.5 hidden sm:table-cell">
                           <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-yellow-500/15 text-yellow-400 border border-yellow-500/25">
                             Pending
                           </span>

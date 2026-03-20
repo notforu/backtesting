@@ -87,13 +87,13 @@ export function ScannerResults() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-gray-400 border-b border-gray-700">
-                <th className="pb-2 pr-4">#</th>
+                <th className="hidden md:table-cell pb-2 pr-4">#</th>
                 <th className="pb-2 pr-4">Market</th>
                 <th className="pb-2 pr-4 text-right">Sharpe</th>
                 <th className="pb-2 pr-4 text-right">Return %</th>
-                <th className="pb-2 pr-4 text-right">Trades</th>
-                <th className="pb-2 pr-4 text-right">Win Rate %</th>
-                <th className="pb-2 pr-4 text-right">Max DD %</th>
+                <th className="hidden md:table-cell pb-2 pr-4 text-right">Trades</th>
+                <th className="hidden md:table-cell pb-2 pr-4 text-right">Win Rate %</th>
+                <th className="hidden sm:table-cell pb-2 pr-4 text-right">Max DD %</th>
                 <th className="pb-2 text-right">Status</th>
               </tr>
             </thead>
@@ -111,7 +111,7 @@ export function ScannerResults() {
                       ${isError || !isAuthenticated ? 'opacity-50 cursor-default' : 'hover:bg-gray-700/30 cursor-pointer'}
                     `}
                   >
-                    <td className="py-2 pr-4 text-gray-500">{index + 1}</td>
+                    <td className="hidden md:table-cell py-2 pr-4 text-gray-500">{index + 1}</td>
                     <td className="py-2 pr-4 text-white max-w-[200px] truncate" title={result.symbol}>
                       {result.symbol.replace('PM:', '')}
                     </td>
@@ -121,13 +121,13 @@ export function ScannerResults() {
                     <td className={`py-2 pr-4 text-right ${isProfitable ? 'text-green-400' : isError ? 'text-gray-500' : 'text-red-400'}`}>
                       {isError ? '-' : `${result.metrics.totalReturnPercent >= 0 ? '+' : ''}${result.metrics.totalReturnPercent.toFixed(1)}%`}
                     </td>
-                    <td className="py-2 pr-4 text-right text-gray-300">
+                    <td className="hidden md:table-cell py-2 pr-4 text-right text-gray-300">
                       {isError ? '-' : result.tradesCount}
                     </td>
-                    <td className="py-2 pr-4 text-right text-gray-300">
+                    <td className="hidden md:table-cell py-2 pr-4 text-right text-gray-300">
                       {isError ? '-' : `${result.metrics.winRate.toFixed(1)}%`}
                     </td>
-                    <td className="py-2 pr-4 text-right text-red-400">
+                    <td className="hidden sm:table-cell py-2 pr-4 text-right text-red-400">
                       {isError ? '-' : `-${result.metrics.maxDrawdownPercent.toFixed(1)}%`}
                     </td>
                     <td className="py-2 text-right">
@@ -151,7 +151,7 @@ export function ScannerResults() {
 
       {/* Summary footer */}
       {scanSummary && (
-        <div className="mt-3 pt-3 border-t border-gray-700 flex items-center gap-4 text-xs text-gray-400">
+        <div className="mt-3 pt-3 border-t border-gray-700 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
           <span>Total: {scanSummary.total} markets</span>
           <span className="text-green-400">{scanSummary.profitable} profitable</span>
           <span>Avg Sharpe: {scanSummary.avgSharpe.toFixed(2)}</span>
