@@ -36,6 +36,7 @@ COPY --from=builder /app/node_modules ./node_modules
 
 # Copy runtime-required files
 COPY --from=builder /app/package.json ./
+COPY --from=builder /app/BUILD_HASH ./
 COPY --from=builder /app/dist/strategies ./dist/strategies
 COPY --from=builder /app/strategies ./strategies
 COPY --from=builder /app/migrations ./migrations
