@@ -1,3 +1,4 @@
+[2026-03-20 06:40] docs-writer (haiku) - Create changelog for mobile responsive fixes across TradesTable, PaperPositionsTable, ConfigurationsPage, ChartSection, ScannerResults
 [2026-03-19 16:32] be-dev (sonnet) - Implement connector integration in paper trading engine (setConnector, executeOpen/Close helpers, price sync)
 [2026-03-19 15:16] be-dev (sonnet) - Extract runCoreAggregateLoop() pure function from aggregate-engine.ts for testability
 [2026-03-18 12:24] fullstack-dev (sonnet) - Add kill switch toggle: DB table, API endpoints, UI toggles on Trading page
@@ -238,3 +239,16 @@
 [2026-03-19 16:10] be-dev (sonnet) - DB migration + types for connector_type in paper_sessions
 [2026-03-19 16:30] be-dev (sonnet) - Implement connector routing in engine (executeOpen/Close, setConnector)
 [2026-03-19 16:45] be-dev (sonnet) - Wire connector in session-manager (create, connect, disconnect lifecycle)
+[2026-03-20 06:32] fe-dev (sonnet) - Make PaperPositionsTable mobile-responsive with Tailwind column hiding
+[2026-03-20 06:32] fe-dev (sonnet) - Make TradesTable mobile-responsive with column hiding via Tailwind breakpoints
+[2026-03-20 06:33] fe-dev (sonnet) - Refactor ConfigurationsPage for mobile responsiveness with master-detail pattern
+[2026-03-20 06:35] fe-dev (sonnet) - Fix chart height responsive, ChartSection info bar overflow, ScannerResults mobile columns
+[2026-03-20 06:20] Explore (haiku) - Analyze frontend responsive state for mobile fixes
+[2026-03-20 06:25] fe-dev (sonnet) - Mobile fix: TradesTable responsive column hiding + 21 tests
+[2026-03-20 06:25] fe-dev (sonnet) - Mobile fix: PaperPositionsTable responsive column hiding
+[2026-03-20 06:25] fe-dev (sonnet) - Mobile fix: ConfigurationsPage master-detail refactor
+[2026-03-20 06:25] fe-dev (sonnet) - Mobile fix: Chart responsive height + ChartSection info bar + ScannerResults
+[2026-03-20 06:42] commit (haiku) - comprehensive mobile responsiveness fix for frontend
+[2026-03-20 07:44] ui-tester (sonnet) - Production UI visual testing at 5.223.56.226
+[2026-03-20 06:42] fe-dev (sonnet) - Add refetchInterval: 30000 to usePaperEquity hook to fix blank equity chart
+[2026-03-20 07:00] fe-dev (sonnet) - Fix Tailwind v4 responsive classes missing in production build by adding @source and @config directives to index.css

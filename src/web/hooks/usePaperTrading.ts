@@ -67,6 +67,7 @@ export function usePaperEquity(id: string | null) {
     queryKey: equityKey(id ?? ''),
     queryFn: () => getPaperEquity(id!),
     enabled: !!id,
+    refetchInterval: 30000,
   });
 }
 

@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@source "../../";
+@config "../../tailwind.config.js";
 
 /* Custom scrollbar for dark theme */
 ::-webkit-scrollbar {
