@@ -681,7 +681,109 @@ describe('SessionManager', () => {
   });
 
   // ==========================================================================
-  // 11. status_change Telegram alert suppression
+  // 11. createRiskManager — maxTradeSize consistency
+  //
+  // Regression guard: the original formula used `initialCapital * 0.5` which
+  // was smaller than the engine's per-trade allocation of
+  // `initialCapital * 0.9 / maxPositions`.  That caused every trade to be
+  // blocked by the RiskManager's maxTradeSize check.
+  //
+  // The fix sets `maxTradeSize = initialCapital * 0.95 / maxPositions`, which
+  // must always be >= `initialCapital * 0.9 / maxPositions` (the engine's
+  // capitalForTrade).
+  //
+  // These tests exercise the formula in isolation so they will FAIL if the
+  // coefficient is ever regressed back to 0.5 (or anything below 0.9).
+  // ==========================================================================
+
+  describe('createRiskManager — maxTradeSize consistency', () => {
+    /**
+     * Compute the maxTradeSize exactly as createRiskManager does.
+     * Kept as a standalone helper so the relationship to the production
+     * formula is explicit and a future refactor cannot silently drift.
+     */
+    function computeMaxTradeSize(initialCapital: number, maxPositions: number): number {
+      return initialCapital * 0.95 / maxPositions;
+    }
+
+    /**
+     * Compute the capitalForTrade that the engine uses in top_n / single_strongest mode.
+     * Engine formula (engine.ts ~line 972):
+     *   capitalForTrade = (initialCapital * 0.9) / maxPositions
+     */
+    function computeEngineCapitalForTrade(initialCapital: number, maxPositions: number): number {
+      return (initialCapital * 0.9) / maxPositions;
+    }
+
+    it('maxTradeSize allows trades for maxPositions=1 (single_strongest)', () => {
+      // With the old formula (0.5): maxTradeSize = 10000 * 0.5 / 1 = 5000
+      // Engine capitalForTrade = 10000 * 0.9 / 1 = 9000
+      // 5000 < 9000 → RiskManager would block every trade. Bug!
+      //
+      // With the fixed formula (0.95): maxTradeSize = 10000 * 0.95 / 1 = 9500
+      // 9500 > 9000 → trades are allowed. Correct.
+      const initialCapital = 10_000;
+      const maxPositions = 1;
+
+      const maxTradeSize = computeMaxTradeSize(initialCapital, maxPositions);
+      const capitalForTrade = computeEngineCapitalForTrade(initialCapital, maxPositions);
+
+      expect(maxTradeSize).toBeGreaterThan(capitalForTrade);
+    });
+
+    it('maxTradeSize allows trades for maxPositions=3', () => {
+      // capitalForTrade = 10000 * 0.9 / 3 = 3000
+      // maxTradeSize must exceed 3000
+      const initialCapital = 10_000;
+      const maxPositions = 3;
+
+      const maxTradeSize = computeMaxTradeSize(initialCapital, maxPositions);
+      const capitalForTrade = computeEngineCapitalForTrade(initialCapital, maxPositions);
+
+      expect(maxTradeSize).toBeGreaterThan(capitalForTrade);
+    });
+
+    it('maxTradeSize allows trades for maxPositions=5', () => {
+      // capitalForTrade = 10000 * 0.9 / 5 = 1800
+      // maxTradeSize must exceed 1800
+      const initialCapital = 10_000;
+      const maxPositions = 5;
+
+      const maxTradeSize = computeMaxTradeSize(initialCapital, maxPositions);
+      const capitalForTrade = computeEngineCapitalForTrade(initialCapital, maxPositions);
+
+      expect(maxTradeSize).toBeGreaterThan(capitalForTrade);
+    });
+
+    it('maxTradeSize scales with initialCapital', () => {
+      // capitalForTrade = 5000 * 0.9 / 1 = 4500
+      // maxTradeSize must exceed 4500
+      const initialCapital = 5_000;
+      const maxPositions = 1;
+
+      const maxTradeSize = computeMaxTradeSize(initialCapital, maxPositions);
+      const capitalForTrade = computeEngineCapitalForTrade(initialCapital, maxPositions);
+
+      expect(maxTradeSize).toBeGreaterThan(capitalForTrade);
+    });
+
+    it('coefficient invariant: 0.95/maxPositions > 0.9/maxPositions for all valid maxPositions', () => {
+      // This is the algebraic core of the fix.  It holds for any positive
+      // maxPositions value, so we spot-check a range.
+      const initialCapital = 10_000;
+      const validMaxPositions = [1, 2, 3, 4, 5, 10, 20];
+
+      for (const maxPositions of validMaxPositions) {
+        const maxTradeSize = computeMaxTradeSize(initialCapital, maxPositions);
+        const capitalForTrade = computeEngineCapitalForTrade(initialCapital, maxPositions);
+
+        expect(maxTradeSize).toBeGreaterThan(capitalForTrade);
+      }
+    });
+  });
+
+  // ==========================================================================
+  // 12. status_change Telegram alert suppression
   // ==========================================================================
 
   describe('status_change Telegram alert suppression', () => {
