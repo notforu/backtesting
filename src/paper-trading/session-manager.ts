@@ -444,7 +444,7 @@ export class SessionManager {
     const maxPositions = session.aggregationConfig.maxPositions ?? 5;
     return new RiskManager({
       maxCapital: session.initialCapital,
-      maxTradeSize: session.initialCapital * 0.5,
+      maxTradeSize: session.initialCapital * 0.95 / maxPositions,
       maxPositions,
       killSwitchEnabled,
       killSwitchDDPercent,
